@@ -2,6 +2,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import CategoryPopup from './CategoryPopup'; 
+import { availableIcons, CategoryIcon } from '../../utils/categoryIcons';
+import { 
+  AlertCircle, Banknote, Layers, ArrowDownLeft, ArrowUpRight, 
+  LayoutGrid, Calendar, FileText, Mic, Check, X 
+} from 'lucide-react';
 
 export default function AddTransaction() {
   const [formData, setFormData] = useState({
@@ -20,42 +25,11 @@ export default function AddTransaction() {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState('');
-  const [selectedIcon, setSelectedIcon] = useState('🍽️');
+  const [selectedIcon, setSelectedIcon] = useState('Utensils');
   const [newCategoryType, setNewCategoryType] = useState('expense');
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [selectedCategoryGroup, setSelectedCategoryGroup] = useState('สารสาธารณูปโภค');
   const [selectedTag, setSelectedTag] = useState('');
-
-  const availableIcons = [
-    { value: ['💡', '🚰', '🔥', '📶', '🛢️', '🔌', '📡', '💧', '⚡'], label: 'สารสาธารณูปโภค' },
-    { value: ['🚗', '⛽', '🚙', '🅿️', '🚦', '🚘', '🛣️', '🚖', '🔧'], label: 'รถยนต์' },
-    { value: ['💰', '📈', '🏦', '💳', '💵', '💸', '🧾', '💷', '💎'], label: 'การเงิน' },
-    { value: ['👨‍👩‍👧‍👦', '🍼', '🎒', '🧸', '👶', '👧', '👦', '🏡', '👩‍🍼'], label: 'ครอบครัวและเด็ก' },
-    { value: ['🛍️', '🎁', '👗', '👟', '💄', '⌚', '👒', '👜', '💍', '👕'], label: 'ช้อปปิ้ง' },
-    { value: ['🍽️', '🍹', '🍔', '🍜', '🍕', '🥗', '🥩', '🍱', '🍩', '🍊'], label: 'อาหารและเครื่องดื่ม' },
-    { value: ['🎓', '📚', '🖊️', '🏫', '📖', '✏️', '📒', '🧮', '🧑‍🏫', '📎'], label: 'การศึกษา' },
-    { value: ['🎬', '🎵', '🎮', '📺', '🎤', '🎧', '🎨', '🎲', '🎷', '📸'], label: 'บันเทิง' },
-    { value: ['🩺', '💊', '🏥', '🧘', '🥗', '🩹', '🧴', '⚕️', '🚑'], label: 'สุขภาพ' },
-    { value: ['📦', '🧰', '📌', '🔑', '🗂️', '✂️', '📎', '🔨', '🧾'], label: 'เบ็ดเตล็ด' },
-    { value: ['🏠', '🛋️', '🪑', '🚪', '🖼️', '🛏️', '🧹'], label: 'บ้าน' },
-    { value: ['🐶', '🐱', '🐾', '🐟', '🦜', '🐇', '🐢', '🐕', '🐈', '🦎'], label: 'สัตว์เลี้ยง' },
-    { value: ['🚌', '🚆', '🚲', '🚕', '🚤', '🚉', '🚄', '🚝', '🚍', '🛺'], label: 'การเดินทาง' },
-    { value: ['✈️', '🗺️', '🏖️', '🏔️', '🛳️', '🛩️', '🏝️', '🛤️', '🗽', '🏯'], label: 'ท่องเที่ยว' },
-    { value: ['🤲', '❤️', '🙏', '🎗️', '🕊️', '💝', '📦', '🍲', '💟'], label: 'บริจาค' },
-    { value: ['🧴', '👕', '🩳', '👟', '🧼', '🧴', '💅', '🧢'], label: 'ของใช้ส่วนตัว' },
-    { value: ['🏨', '🛏️', '🛎️', '🧳', '🚪', '🍽️', '🛋️', '🏩', '🛁'], label: 'ที่พักโรงแรม' },
-    { value: ['🌳', '🌻', '🪴', '🌹', '🌿', '🍀', '🌲', '🌼', '🪵', '🌱'], label: 'จัดสวน' },
-    { value: ['⚽', '🏀', '🏋️', '🏊', '🚴', '🎾', '🏐', '🥊', '⛳', '🏸'], label: 'กีฬา' },
-    { value: ['💞', '💌', '🌹', '🥂', '💍', '👩‍❤️‍👨', '👩‍❤️‍👩', '👨‍❤️‍👨', '❤️', '😘'], label: 'เพื่อน-คนรัก' },
-    { value: ['💻', '🖥️', '⌨️', '🖱️', '📱', '📡', '🤖', '💾', '🕹️', '🔋'], label: 'เทคโนโลยี/ดิจิทัล' },
-    { value: ['💼', '🗂️', '📊', '📅', '🖊️', '📇', '📠', '🏢', '🧑‍💼', '🗃️'], label: 'งาน/อาชีพ' },
-    { value: ['📸', '🎨', '🎭', '🎹', '🖌️', '🎤', '🎧', '🧵', '🎯', '📷'], label: 'ศิลปะ/งานสร้างสรรค์' },
-    { value: ['🎂', '🎉', '🎊', '🎈', '🍰', '🥂', '🍾', '🎇', '🎆', '🍻'], label: 'งานเลี้ยง/เทศกาล' },
-    { value: ['📖', '📰', '✏️', '📑', '📝', '📓', '📒', '📚', '📔', '🖋️'], label: 'การเรียนรู้/ศึกษาเพิ่มเติม' },
-    { value: ['🧳', '🚖', '🚉', '🛫', '🛬', '🚢', '🚄', '🚲', '🚙', '🛣️'], label: 'โลจิสติกส์/การขนส่ง' },
-    { value: ['💤', '🛌', '🛁', '🧼', '🪑', '🕯️', '🧖', '📺', '🎧'], label: 'การพักผ่อน' },
-    { value: ['🧑‍🍳', '🥗', '🍱', '🥘', '🍲', '🍳', '🥩', '🥖', '🍜', '🍕'], label: 'ครัว/การปรุงอาหาร' },
-  ];
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -79,7 +53,7 @@ export default function AddTransaction() {
 
   const fetchCategories = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/categories', {
+      const res = await fetch('http://localhost:5050/api/categories', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -113,7 +87,7 @@ export default function AddTransaction() {
       if (!isDuplicate) {
         try {
           const token = localStorage.getItem('token');
-          const res = await fetch('http://localhost:5000/api/categories', {
+          const res = await fetch('http://localhost:5050/api/categories', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -145,7 +119,7 @@ export default function AddTransaction() {
   const deleteCategory = async (categoryId) => {
     const token = localStorage.getItem('token');
     try {
-      const budgetRes = await fetch('http://localhost:5000/api/budgets', {
+      const budgetRes = await fetch('http://localhost:5050/api/budgets', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const budgetData = await budgetRes.json();
@@ -167,7 +141,7 @@ export default function AddTransaction() {
             `คุณแน่ใจหรือไม่ว่าต้องการลบหมวดหมู่ "${categories.find(cat => cat._id === categoryId)?.name}"? การลบจะรวมถึงการลบข้อมูลประวัติหมวดหมู่ในรายการธุรกรรมด้วย`
           )
         ) {
-          const res = await fetch(`http://localhost:5000/api/categories/${categoryId}`, {
+          const res = await fetch(`http://localhost:5050/api/categories/${categoryId}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -286,7 +260,7 @@ export default function AddTransaction() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/transactions', {
+      const res = await fetch('http://localhost:5050/api/transactions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -341,9 +315,7 @@ export default function AddTransaction() {
 
           {error && (
             <div className="bg-red-500/10 border-l-4 border-red-500 p-3 rounded-r-lg flex items-start space-x-2 shadow-lg backdrop-blur-xl m-4">
-              <svg className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
-              </svg>
+              <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="text-xs font-medium text-red-300">{error}</p>
               </div>
@@ -355,9 +327,7 @@ export default function AddTransaction() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                 <div className="p-1 bg-green-100 rounded">
-                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
-                  </svg>
+                  <Banknote className="w-3 h-3 text-green-600" />
                 </div>
                 <span>จำนวนเงิน (บาท)</span>
               </label>
@@ -387,9 +357,7 @@ export default function AddTransaction() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                 <div className="p-1 bg-blue-100 rounded">
-                  <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <Layers className="w-3 h-3 text-blue-600" />
                 </div>
                 <span>ประเภท</span>
               </label>
@@ -403,9 +371,7 @@ export default function AddTransaction() {
                       : 'bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 11l5-5m0 0l5 5m-5-5v12" />
-                  </svg>
+                  <ArrowDownLeft className="w-4 h-4" />
                   <span>รายรับ</span>
                 </button>
                 <button
@@ -417,9 +383,7 @@ export default function AddTransaction() {
                       : 'bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
-                  </svg>
+                  <ArrowUpRight className="w-4 h-4" />
                   <span>รายจ่าย</span>
                 </button>
               </div>
@@ -429,9 +393,7 @@ export default function AddTransaction() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                 <div className="p-1 bg-purple-100 rounded">
-                  <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
+                  <LayoutGrid className="w-3 h-3 text-purple-600" />
                 </div>
                 <span>หมวดหมู่</span>
               </label>
@@ -448,9 +410,7 @@ export default function AddTransaction() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                 <div className="p-1 bg-orange-100 rounded">
-                  <svg className="w-3 h-3 text-orange-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
+                  <Calendar className="w-3 h-3 text-orange-600" />
                 </div>
                 <span>วันที่</span>
               </label>
@@ -463,9 +423,7 @@ export default function AddTransaction() {
                   required
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
-                  </svg>
+                  <Calendar className="w-4 h-4 text-gray-400" />
                 </div>
               </div>
             </div>
@@ -474,9 +432,7 @@ export default function AddTransaction() {
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                 <div className="p-1 bg-indigo-100 rounded">
-                  <svg className="w-3 h-3 text-indigo-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
+                  <FileText className="w-3 h-3 text-indigo-600" />
                 </div>
                 <span>โน็ต (ถ้ามี)</span>
               </label>
@@ -494,9 +450,7 @@ export default function AddTransaction() {
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-2 flex items-center space-x-1">
                   <div className="p-1 bg-cyan-100 rounded">
-                    <svg className="w-3 h-3 text-cyan-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
+                    <Mic className="w-3 h-3 text-cyan-600" />
                   </div>
                   <span>บันทึกด้วยเสียง</span>
                 </label>
@@ -509,9 +463,7 @@ export default function AddTransaction() {
                       : 'bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700'
                   }`}
                 >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0 5 5 0 01-10 0 1 1 0 10-2 0 7.001 7.001 0 006 6.93V17a1 1 0 102 0v-2.07z" clipRule="evenodd" />
-                  </svg>
+                  <Mic className="w-5 h-5" />
                   <span className="text-sm">{isRecording ? 'หยุดการบันทึกเสียง' : 'บันทึกด้วยเสียง'}</span>
                 </button>
                 {transcript && (
@@ -539,9 +491,7 @@ export default function AddTransaction() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+                    <Check className="w-4 h-4" />
                     <span>บันทึก</span>
                   </div>
                 )}
@@ -551,9 +501,7 @@ export default function AddTransaction() {
                 className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-center transition-all duration-200 font-semibold text-base border-2 border-gray-200 hover:border-gray-300"
               >
                 <div className="flex items-center justify-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-4 h-4" />
                   <span>ยกเลิก</span>
                 </div>
               </Link>
@@ -569,7 +517,7 @@ export default function AddTransaction() {
           onClick={() => {
             setShowAddCategoryModal(false);
             setNewCategory('');
-            setSelectedIcon('🍽️');
+            setSelectedIcon('Utensils');
             setNewCategoryType('expense');
             setSelectedCategoryGroup('สารสาธารณูปโภค');
           }}
@@ -606,10 +554,10 @@ export default function AddTransaction() {
                       key={icon}
                       onClick={() => setSelectedIcon(icon)}
                       type="button"
-                      className={`w-12 h-12 rounded-lg flex items-center justify-center text-3xl ${selectedIcon === icon ? 'bg-[#299D91] text-white' : 'bg-white hover:bg-gray-100'
+                      className={`w-12 h-12 rounded-lg flex items-center justify-center ${selectedIcon === icon ? 'bg-[#299D91] text-white' : 'bg-white hover:bg-gray-100'
                         } border border-gray-200 transition-colors shadow-sm`}
                     >
-                      {icon}
+                      <CategoryIcon iconName={icon} size={24} className={selectedIcon === icon ? 'text-white' : 'text-gray-600'} />
                     </button>
                   ))}
               </div>
@@ -635,7 +583,7 @@ export default function AddTransaction() {
                 onClick={() => {
                   setShowAddCategoryModal(false);
                   setNewCategory('');
-                  setSelectedIcon('🍽️');
+                  setSelectedIcon('Utensils');
                   setNewCategoryType('expense');
                   setSelectedCategoryGroup('สารสาธารณูปโภค');
                 }}

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Pie, Bar } from 'react-chartjs-2';
+import { CategoryIcon } from '../utils/categoryIcons';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -64,7 +65,7 @@ export default function Analytics() {
 
   const fetchTransactions = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/transactions', {
+      const res = await fetch('http://localhost:5050/api/transactions', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -80,7 +81,7 @@ export default function Analytics() {
 
   const fetchCategories = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/categories', {
+      const res = await fetch('http://localhost:5050/api/categories', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -452,7 +453,9 @@ export default function Analytics() {
                   {categories.map((cat) => (
                     incomeByCategory[cat.name] > 0 && (
                       <div key={cat._id} className="group bg-gradient-to-br from-green-100 to-emerald-100 p-3 rounded-2xl text-center border border-green-200 hover:shadow-xl transition-all duration-300 transform hover:scale-110 hover:-rotate-1">
-                        <div className="text-2xl mb-2 group-hover:scale-125 transition-transform duration-300">{cat.icon}</div>
+                        <div className="mb-2 group-hover:scale-125 transition-transform duration-300 flex justify-center">
+                          <CategoryIcon iconName={cat.icon} size={24} className="text-gray-700" />
+                        </div>
                         <h4 className="text-xs font-semibold text-gray-700 mb-1">{cat.name}</h4>
                         <p className="text-sm font-bold text-green-600">{incomeByCategory[cat.name].toLocaleString()} บาท</p>
                       </div>
@@ -480,7 +483,9 @@ export default function Analytics() {
                     .map((cat) => (
                       expenseByCategory[cat.name] > 0 && (
                         <div key={cat._id} className="group bg-gradient-to-br from-red-100 to-pink-100 p-3 rounded-2xl text-center border border-red-200 hover:shadow-xl transition-all duration-300 transform hover:scale-110 hover:rotate-1">
-                          <div className="text-2xl mb-2 group-hover:scale-125 transition-transform duration-300">{cat.icon}</div>
+                          <div className="mb-2 group-hover:scale-125 transition-transform duration-300 flex justify-center">
+                            <CategoryIcon iconName={cat.icon} size={24} className="text-gray-700" />
+                          </div>
                           <h4 className="text-xs font-semibold text-gray-700 mb-1">{cat.name}</h4>
                           <p className="text-sm font-bold text-red-600">{expenseByCategory[cat.name].toLocaleString()} บาท</p>
                         </div>

@@ -19,7 +19,7 @@ export default function Notifications() {
   const fetchNotifications = async (token) => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/notifications', {
+      const res = await fetch('http://localhost:5050/api/notifications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

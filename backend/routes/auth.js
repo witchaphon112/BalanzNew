@@ -35,6 +35,7 @@ const transporter = nodemailer.createTransport({
 
 // Register
 router.post('/register', async (req, res) => {
+  console.log('POST /register called', req.body);
   const { email, password, name } = req.body;
   try {
     if (!email || !password) {

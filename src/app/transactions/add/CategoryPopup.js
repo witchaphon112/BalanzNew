@@ -1,6 +1,8 @@
 // CategoryPopup.js
 
 import { useState } from "react";
+import { CategoryIcon } from "../../utils/categoryIcons";
+import { ChevronRight, Tag, Plus, Settings, Trash2, X, FolderOpen } from "lucide-react";
 
 export default function CategoryPopup({ categories, formData, selectCategory, deleteCategory, setShowAddCategoryModal }) {
   const [showPopup, setShowPopup] = useState(false);
@@ -27,15 +29,13 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
         >
           <div className="flex items-center gap-3">
             <div className="p-1 bg-gray-100 rounded group-hover:bg-[#299D91]/10 transition-colors">
-              <span className="text-xl">{selectedCategory?.icon || '🗂️'}</span>
+              <CategoryIcon iconName={selectedCategory?.icon || 'Folder'} size={24} className="text-gray-600" />
             </div>
             <span className={`font-semibold text-base ${selectedCategory ? 'text-gray-800' : 'text-gray-500'}`}>
               {selectedCategory?.name || 'เลือกหมวดหมู่'}
             </span>
           </div>
-          <svg className="w-5 h-5 text-gray-400 group-hover:text-[#299D91] transition-colors" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
+          <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-[#299D91] transition-colors" />
         </button>
       </div>
 
@@ -50,9 +50,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
             <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-4">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-gradient-to-br from-[#299D91] to-[#238A80] rounded-xl shadow-lg">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
+                    <Tag className="w-5 h-5 text-white" />
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-gray-800">
@@ -73,9 +71,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
                         }}
                         className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center text-xs font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
                     >
-                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
+                        <Plus className="w-3 h-3 mr-1" />
                         เพิ่มใหม่
                     </button>
                     {/* ปุ่ม จัดการหมวดหมู่ */}
@@ -88,10 +84,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
                               : 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-700 hover:from-gray-300 hover:to-gray-400'
                         }`}
                     >
-                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                        <Settings className="w-3 h-3 mr-1" />
                         {isManaging ? 'ยกเลิก' : 'จัดการ'}
                     </button>
                 </div>
@@ -127,9 +120,11 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
                           ? 'bg-gradient-to-br from-[#299D91] to-[#238A80] shadow-lg' 
                           : 'bg-gray-100 group-hover:bg-[#299D91]/10'
                       }`}>
-                        <span className={`text-2xl ${
-                          formData.category === cat._id && !isManaging ? 'text-white' : 'text-gray-600 group-hover:text-[#299D91]'
-                        }`}>{cat.icon}</span>
+                        <CategoryIcon 
+                          iconName={cat.icon} 
+                          size={24} 
+                          className={formData.category === cat._id && !isManaging ? 'text-white' : 'text-gray-600 group-hover:text-[#299D91]'} 
+                        />
                       </div>
                       <span className={`text-xs font-bold truncate ${
                         formData.category === cat._id && !isManaging ? 'text-[#299D91]' : 'text-gray-700 group-hover:text-[#299D91]'
@@ -147,9 +142,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
                           className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white p-1.5 rounded-lg hover:from-red-600 hover:to-red-700 transition-all duration-200 text-xs font-bold shadow-lg hover:shadow-xl transform hover:scale-105"
                         >
                           <div className="flex items-center justify-center space-x-1">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
+                            <Trash2 className="w-3 h-3" />
                             <span>ลบ</span>
                           </div>
                         </button>
@@ -159,9 +152,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
               ) : (
                 <div className="col-span-8 text-center mt-4 p-8 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50/50">
                   <div className="p-3 bg-gray-100 rounded-xl inline-block mb-3">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                    </svg>
+                    <FolderOpen className="w-8 h-8 text-gray-400" strokeWidth={1} />
                   </div>
                   <p className="text-gray-500 text-sm font-medium mb-1">ไม่พบหมวดหมู่สำหรับประเภทนี้</p>
                   <p className="text-gray-400 text-xs">โปรดคลิก <span className="font-semibold text-blue-600">"เพิ่มใหม่"</span> เพื่อสร้างหมวดหมู่ใหม่</p>
@@ -179,9 +170,7 @@ export default function CategoryPopup({ categories, formData, selectCategory, de
                 className="px-6 py-2 bg-gradient-to-r from-gray-200 to-gray-300 rounded-lg hover:from-gray-300 hover:to-gray-400 transition-all duration-200 font-semibold text-gray-800 shadow-lg hover:shadow-xl transform hover:scale-105"
               >
                 <div className="flex items-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <X className="w-4 h-4" />
                   <span>{isManaging ? 'เสร็จสิ้น' : 'ปิด'}</span>
                 </div>
               </button>

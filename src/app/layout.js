@@ -170,12 +170,11 @@ export default function RootLayout({ children }) {
   // --- Main Render ---
   return (
     
-   <html lang="th">
-        
-  
+   <html lang="th" suppressHydrationWarning={true}>
       <body
         className="min-h-screen flex flex-col bg-gray-50"
         style={{ fontFamily: "'Noto Sans Thai','Inter',sans-serif" }}
+        suppressHydrationWarning={true}
       >
         {/* Mobile Header (Always visible on mobile) */}
         <header className="md:hidden border-b sticky top-0 z-50 bg-white/95 backdrop-blur-xl shadow-md">

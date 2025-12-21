@@ -61,7 +61,7 @@ export default function Dashboard() {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
         const res = await fetch(`${API_BASE}/api/transactions`, {
           headers: { Authorization: `Bearer ${token}` },
         });
