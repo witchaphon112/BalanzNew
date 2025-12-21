@@ -19,7 +19,7 @@ export default function Notifications() {
   const fetchNotifications = async (token) => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:5000/api/notifications', {
+      const res = await fetch('http://localhost:5050/api/notifications', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,18 +179,7 @@ export default function Notifications() {
             </div>
           )}
 
-          {/* Back Button */}
-          <div className="mt-8 pt-6 border-t border-slate-200/50">
-            <Link
-              href="/"
-              className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl hover:from-primary-dark hover:to-primary transition-all duration-200 shadow-lg hover:shadow-xl"
-            >
-              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd"/>
-              </svg>
-              กลับหน้าหลัก
-            </Link>
-          </div>
+         
         </div>
       </div>
     </main>
