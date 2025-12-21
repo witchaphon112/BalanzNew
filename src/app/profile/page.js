@@ -21,7 +21,7 @@ export default function Profile() {
           return;
         }
 
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
         const res = await fetch(`${API_BASE}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -54,7 +54,7 @@ export default function Profile() {
     
     try {
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         method: 'PUT',
         headers: {
@@ -107,7 +107,7 @@ export default function Profile() {
       const token = localStorage.getItem('token');
       const fd = new FormData();
       fd.append('avatar', file);
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/auth/avatar`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -139,7 +139,7 @@ export default function Profile() {
     try {
       setUploading(true);
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       await fetch(`${API_BASE}/api/auth/avatar`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },

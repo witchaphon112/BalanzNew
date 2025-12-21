@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-export default function Budget() {
+export default function Budget({ onClose }) {
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets] = useState({});
   const [transactions, setTransactions] = useState([]);
@@ -47,7 +47,7 @@ export default function Budget() {
 
   const fetchCategories = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/categories', {
+      const res = await fetch('http://localhost:5050/api/categories', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -64,7 +64,7 @@ export default function Budget() {
 
   const fetchBudgets = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/budgets', {
+      const res = await fetch('http://localhost:5050/api/budgets', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -85,7 +85,7 @@ export default function Budget() {
 
   const fetchTransactions = async (token) => {
     try {
-      const res = await fetch('http://localhost:5000/api/transactions', {
+      const res = await fetch('http://localhost:5050/api/transactions', {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -114,7 +114,7 @@ export default function Budget() {
 
     const token = localStorage.getItem('token');
     try {
-      await fetch('http://localhost:5000/api/budgets', {
+      await fetch('http://localhost:5050/api/budgets', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -135,8 +135,14 @@ export default function Budget() {
   ];
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-start justify-center pt-8 p-4" style={{ fontFamily: 'Noto Sans Thai, sans-serif' }}>
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden flex flex-col h-[500px] border border-gray-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn" style={{ fontFamily: 'Noto Sans Thai, sans-serif' }}>
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden flex flex-col h-[500px] relative animate-slideUp">
+        {/* Close Button */}
+        {onClose && (
+          <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 z-10">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        )}
         {/* Header bar */}
         <div className="flex items-center justify-center px-6 py-5 bg-gradient-to-r from-[#299D91] to-[#238A80] text-white">
           <h2 className="text-xl font-bold">ตั้งเป้าหมายงบ</h2>
@@ -317,6 +323,6 @@ export default function Budget() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

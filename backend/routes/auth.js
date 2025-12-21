@@ -168,7 +168,7 @@ const mailOptions = {
       <!-- Header -->
       <div style="background-color: #6BE2E4; padding: 30px; text-align: center;">
         <img src="cid:savei_logo" alt="SAVEi Logo" width="100" style="margin-bottom: 10px;" />
-        <h2 style="color: #004E53; margin: 0;">ยินดีต้อนรับสู่ <b>Balanz.ia</b> 👋</h2>
+        <h2 style="color: #004E53; margin: 0;">ยินดีต้อนรับสู่ <b>Balanz.ia</b></h2>
         <p style="color: #004E53; margin: 5px 0 0;">จัดการการเงินของคุณได้อย่างง่ายดายและมีประสิทธิภาพ</p>
       </div>
 

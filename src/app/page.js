@@ -3,6 +3,22 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function Home() {
+  // Simple header component
+  function Header() {
+    return (
+      <header className="w-full bg-white/80 backdrop-blur sticky top-0 z-30 border-b border-gray-100 shadow-sm">
+        <div className="max-w-6xl mx-auto px-6 md:px-10 flex items-center justify-between h-16">
+          <Link href="/" className="flex items-center gap-2 select-none">
+            <span className="font-extrabold text-xl text-[#4db8a8] tracking-tight">Balanz<span className="text-[#191919]">.IA</span></span>
+          </Link>
+          <nav className="hidden md:flex gap-8 text-gray-700 font-medium">
+            <Link href="/login" className="hover:text-[#4db8a8] transition-colors">เข้าสู่ระบบ</Link>
+            <Link href="/register" className="hover:text-[#4db8a8] transition-colors">สมัครสมาชิก</Link>
+          </nav>
+        </div>
+      </header>
+    );
+  }
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -14,128 +30,210 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <>
+      <Header />
+      <main className="min-h-screen bg-white relative overflow-hidden">
       {/* Hero Section */}
-      <section className="bg-white min-h-screen">
+      <section className="relative min-h-[90vh] flex items-center justify-center bg-gradient-to-b from-[#f0fdfa] to-white">
+       <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-20 grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center">
+                 <div className="md:col-span-6">
+                   <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-[#191919] mb-4">
+                     ยินดีต้อนรับเข้าสู่{' '}
+                     <span className="text-[#4db8a8]">Balanz</span>
+                     <span className="text-[#191919]">.IA</span>
+                   </h1>
+                   
+                   <p className="text-[#191919] text-base md:text-lg mb-3">
+                     จัดการการเงินของคุณได้อย่างง่ายดายและมีประสิทธิภาพ
+                   </p>
+                   
+                   {!isLoggedIn && (
+                     <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
+                       {/* ปุ่มเริ่มต้นใช้งาน - Mobile Optimized */}
+                       <Link
+                         href="/register"
+                         className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-gradient-to-r from-[#4db8a8] to-[#3d9888] hover:from-[#3d9888] hover:to-[#2d7868] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
+                       >
+                         <span className="relative z-10 flex items-center justify-center gap-2">
+                           เริ่มต้นใช้งาน
+                           <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                           </svg>
+                         </span>
+                         {/* Shine effect */}
+                         <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+                       </Link>                       
+                     </div>
+                   )}
+                 </div>
+       
+                 {/* Hero Illustration - Hide on small mobile */}
+                 <div className="hidden sm:flex justify-center md:col-span-6 mt-8 md:mt-0">
+                   <img
+                     src="/Home.png"
+                     alt="Balanz.IA infographic"
+                     className="w-[300px] sm:w-[380px] md:w-[420px] lg:w-[520px] h-auto select-none drop-shadow-2xl animate-float"
+                     draggable="false"
+                   />
+                 </div>
+               </div>
+      </section>
 
-        <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-20 grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center">
-          <div className="md:col-span-6">
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-[#191919] mb-4">
-              ยินดีต้อนรับเข้าสู่{' '}
-              <span className="text-[#4db8a8]">Balanz</span>
-              <span className="text-[#191919]">.IA</span>
-            </h1>
-            
-            <p className="text-[#191919] text-base md:text-lg mb-3">
-              จัดการการเงินของคุณได้อย่างง่ายดายและมีประสิทธิภาพ
-            </p>
-            
-            {!isLoggedIn && (
-              <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
-                {/* ปุ่มเริ่มต้นใช้งาน - Mobile Optimized */}
-                <Link
-                  href="/register"
-                  className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-gradient-to-r from-[#4db8a8] to-[#3d9888] hover:from-[#3d9888] hover:to-[#2d7868] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
-                >
-                  <span className="relative z-10 flex items-center justify-center gap-2">
-                    เริ่มต้นใช้งาน
-                    <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                  </span>
-                  {/* Shine effect */}
-                  <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-                </Link>
-
-                {/* ปุ่มเข้าสู่ระบบ - Mobile Optimized */}
-                <Link
-                  href="/login"
-                  className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-[#4db8a8] border-2 border-[#4db8a8] bg-white hover:bg-[#4db8a8] hover:text-white shadow-md hover:shadow-xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
-                >
-                  <span className="relative z-10 flex items-center justify-center gap-2">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-                    </svg>
-                    เข้าสู่ระบบ
-                  </span>
-                  {/* Background fill effect */}
-                  <div className="absolute inset-0 bg-[#4db8a8] transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
-                </Link>
-              </div>
-            )}
-          </div>
-
-          {/* Hero Illustration - Hide on small mobile */}
-          <div className="hidden sm:flex justify-center md:col-span-6 mt-8 md:mt-0">
-            <img
-              src="/Home.png"
-              alt="Balanz.IA infographic"
-              className="w-[300px] sm:w-[380px] md:w-[420px] lg:w-[520px] h-auto select-none drop-shadow-2xl animate-float"
-              draggable="false"
-            />
-          </div>
-        </div>
-
-        {/* Feature Cards - Mobile Optimized */}
-        <div className="max-w-6xl mx-auto px-6 md:px-10 pb-12 md:pb-20 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+      {/* Features Section */}
+      <section className="relative bg-white">
+        <div className="max-w-6xl mx-auto px-6 md:px-10">
+          
           {/* Feature 1 */}
-          <div className="bg-white border-2 border-gray-100 rounded-xl md:rounded-2xl p-6 md:p-8 text-center hover:border-[#4db8a8] hover:shadow-xl active:scale-95 sm:transform sm:hover:-translate-y-2 transition-all duration-300 group cursor-pointer">
-            <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg md:rounded-xl bg-gradient-to-br from-[#4db8a8] to-[#3d9888] text-white flex items-center justify-center mx-auto mb-3 md:mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-              <svg className="w-7 h-7 md:w-9 md:h-9" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 7h12v2H6zM6 11h12v2H6zM6 15h12v2H6z"/>
-              </svg>
+          <div className="grid md:grid-cols-2 gap-12 items-center mb-32">
+            <div className="order-2 md:order-1">
+              <h2 className="text-3xl md:text-5xl font-black mb-6 text-gray-900">
+                บันทึกรายรับรายจ่าย<br />ด้วยข้อความง่ายๆ
+              </h2>
+              <p className="text-gray-600 text-lg md:text-xl leading-relaxed">
+                เพียงกรอกข้อมูลรายรับรายจ่ายของคุณ<br />
+                ระบบจะจัดหมวดหมู่และบันทึกให้คุณโดยอัตโนมัติ
+              </p>
             </div>
-            <p className="text-gray-700 font-bold text-base md:text-lg mb-2 group-hover:text-[#4db8a8] transition-colors">ติดตามธุรกรรม</p>
-            <p className="text-gray-500 text-sm">บันทึกรายรับรายจ่ายอย่างละเอียด</p>
+            <div className="order-1 md:order-2 flex justify-center">
+              <div className="w-full max-w-sm bg-gradient-to-br from-[#f0fdfa] to-white p-8 rounded-3xl shadow-xl">
+                <div className="bg-white rounded-2xl p-6 shadow-lg">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 rounded-full bg-[#4db8a8] flex items-center justify-center text-white font-bold text-xl">B</div>
+                    <div className="flex-1">
+                      <div className="text-sm text-gray-500">9:41</div>
+                    </div>
+                  </div>
+                  <div className="bg-[#e8f5e9] rounded-2xl rounded-tl-none p-4 mb-4">
+                    <p className="text-gray-800">อาหารเที่ยง 120 บาท</p>
+                  </div>
+                  <div className="bg-[#f0fdfa] rounded-2xl rounded-tr-none p-4">
+                    <p className="text-gray-800 font-medium mb-2">บันทึกค่าอาหารเที่ยง ✓</p>
+                    <p className="text-gray-600 text-sm">จำนวน: <span className="font-semibold">120 บาท</span></p>
+                    <p className="text-gray-600 text-sm">หมวดหมู่: <span className="font-semibold text-[#4db8a8]">อาหาร</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Feature 2 */}
-          <div className="bg-white border-2 border-gray-100 rounded-xl md:rounded-2xl p-6 md:p-8 text-center hover:border-[#4db8a8] hover:shadow-xl active:scale-95 sm:transform sm:hover:-translate-y-2 transition-all duration-300 group cursor-pointer">
-            <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg md:rounded-xl bg-gradient-to-br from-[#4db8a8] to-[#3d9888] text-white flex items-center justify-center mx-auto mb-3 md:mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-              <svg className="w-7 h-7 md:w-9 md:h-9" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M4 19h16v2H4z"/>
-                <path d="M6 10h3v7H6zM11 6h3v11h-3zM16 12h3v5h-3z"/>
-              </svg>
+          <div className="grid md:grid-cols-2 gap-12 items-center mb-32">
+            <div className="flex justify-center">
+              <div className="w-full max-w-sm bg-gradient-to-br from-[#f0fdfa] to-white p-8 rounded-3xl shadow-xl">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow hover:shadow-lg transition-shadow cursor-pointer">
+                    <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8.1 13.34l2.83-2.83L3.91 3.5c-1.56 1.56-1.56 4.09 0 5.66l4.19 4.18zm6.78-1.81c1.53.71 3.68.21 5.27-1.38 1.91-1.91 2.28-4.65.81-6.12-1.46-1.46-4.2-1.1-6.12.81-1.59 1.59-2.09 3.74-1.38 5.27L3.7 19.87l1.41 1.41L12 14.41l6.88 6.88 1.41-1.41L13.41 13l1.47-1.47z"/>
+                      </svg>
+                    </div>
+                    <span className="font-semibold text-gray-800">อาหาร</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow hover:shadow-lg transition-shadow cursor-pointer">
+                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                      </svg>
+                    </div>
+                    <span className="font-semibold text-gray-800">รถยนต์</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow hover:shadow-lg transition-shadow cursor-pointer">
+                    <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                      </svg>
+                    </div>
+                    <span className="font-semibold text-gray-800">บ้าน</span>
+                  </div>
+                  <div className="flex items-center gap-3 p-4 bg-white rounded-xl shadow hover:shadow-lg transition-shadow cursor-pointer border-2 border-dashed border-[#4db8a8]">
+                    <div className="w-10 h-10 rounded-lg bg-[#4db8a8]/10 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-[#4db8a8]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                      </svg>
+                    </div>
+                    <span className="font-semibold text-[#4db8a8]">เพิ่มหมวดหมู่</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <p className="text-gray-700 font-bold text-base md:text-lg mb-2 group-hover:text-[#4db8a8] transition-colors">วิเคราะห์การเงิน</p>
-            <p className="text-gray-500 text-sm">ดูสถิติและแนวโน้มการใช้จ่าย</p>
+            <div>
+              <h2 className="text-3xl md:text-5xl font-black mb-6 text-gray-900">
+                ปรับแต่งหมวดหมู่<br />ได้ตามต้องการ
+              </h2>
+              <p className="text-gray-600 text-lg md:text-xl leading-relaxed">
+                สร้างและจัดการหมวดหมู่ค่าใช้จ่ายที่เข้ากับไลฟ์สไตล์<br />
+                และพฤติกรรมการใช้จ่ายของคุณ
+              </p>
+            </div>
           </div>
 
           {/* Feature 3 */}
-          <div className="bg-white border-2 border-gray-100 rounded-xl md:rounded-2xl p-6 md:p-8 text-center hover:border-[#4db8a8] hover:shadow-xl active:scale-95 sm:transform sm:hover:-translate-y-2 transition-all duration-300 group cursor-pointer sm:col-span-2 lg:col-span-1">
-            <div className="w-14 h-14 md:w-16 md:h-16 rounded-lg md:rounded-xl bg-gradient-to-br from-[#4db8a8] to-[#3d9888] text-white flex items-center justify-center mx-auto mb-3 md:mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-6 transition-all duration-300">
-              <svg className="w-7 h-7 md:w-9 md:h-9" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 22a2 2 0 002-2H10a2 2 0 002 2z"/>
-                <path d="M18 16V11a6 6 0 10-12 0v5l-2 2h16l-2-2z"/>
-              </svg>
+          <div className="grid md:grid-cols-2 mb-30 gap-12 items-center">
+            <div className="order-2 md:order-1">
+              <h2 className="text-3xl md:text-5xl font-black mb-6 text-gray-900">
+                ตั้งค่าและติดตาม<br />งบประมาณ
+              </h2>
+              <p className="text-gray-600 text-lg md:text-xl leading-relaxed">
+                กำหนดงบประมาณรายเดือนสำหรับแต่ละหมวดหมู่<br />
+                และติดตามความคืบหน้าการใช้จ่ายแบบเรียลไทม์
+              </p>
             </div>
-            <p className="text-gray-700 font-bold text-base md:text-lg mb-2 group-hover:text-[#4db8a8] transition-colors">การแจ้งเตือน</p>
-            <p className="text-gray-500 text-sm">รับการแจ้งเตือนสำคัญทันที</p>
+            <div className="order-1 md:order-2 flex justify-center">
+              <div className="w-full max-w-sm bg-gradient-to-br from-[#f0fdfa] to-white p-8 rounded-3xl shadow-xl">
+                <div className="bg-white rounded-2xl p-6 shadow-lg">
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8.1 13.34l2.83-2.83L3.91 3.5c-1.56 1.56-1.56 4.09 0 5.66l4.19 4.18zm6.78-1.81c1.53.71 3.68.21 5.27-1.38 1.91-1.91 2.28-4.65.81-6.12-1.46-1.46-4.2-1.1-6.12.81-1.59 1.59-2.09 3.74-1.38 5.27L3.7 19.87l1.41 1.41L12 14.41l6.88 6.88 1.41-1.41L13.41 13l1.47-1.47z"/>
+                        </svg>
+                        <span className="text-gray-700 font-semibold">อาหาร</span>
+                      </div>
+                      <span className="text-sm text-gray-500">3,200 / 5,000 บาท</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="bg-[#4db8a8] h-3 rounded-full" style={{width: '64%'}}></div>
+                    </div>
+                  </div>
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+                        </svg>
+                        <span className="text-gray-700 font-semibold">รถยนต์</span>
+                      </div>
+                      <span className="text-sm text-gray-500">2,800 / 3,000 บาท</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="bg-yellow-400 h-3 rounded-full" style={{width: '93%'}}></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                        </svg>
+                        <span className="text-gray-700 font-semibold">บ้าน</span>
+                      </div>
+                      <span className="text-sm text-gray-500">8,500 / 8,000 บาท</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="bg-red-500 h-3 rounded-full" style={{width: '100%'}}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
+
         </div>
       </section>
 
-      {/* CSS สำหรับ animation */}
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-20px);
-          }
-        }
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
-        }
 
-        /* ปิด animation บนโมบาย */
-        @media (max-width: 640px) {
-          .animate-float {
-            animation: none;
-          }
-        }
-      `}</style>
-    </main>
+
+      </main>
+    </>
   );
 }
