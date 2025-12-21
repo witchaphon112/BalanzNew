@@ -100,38 +100,48 @@ export default function RootLayout({ children }) {
 
   // --- Reusable Link Components ---
 
-  // NavLink for Desktop Sidebar
+  // NavLink for Desktop Sidebar with Enhanced Effects
   const NavLink = ({ href, icon, children, badge, onClick = () => {} }) => (
     <Link
       href={href}
-      onClick={() => onClick()} // Execute onClick if provided
-      title={isSidebarCollapsed ? children : ''} // Tooltip when collapsed
-      className={`group flex items-center ${isSidebarCollapsed ? 'justify-center space-x-0 px-2' : 'space-x-4 px-3'} py-3 rounded-xl transition-all duration-300 transform ${
+      onClick={() => onClick()}
+      title={isSidebarCollapsed ? children : ''}
+      className={`group relative flex items-center ${isSidebarCollapsed ? 'justify-center space-x-0 px-2' : 'space-x-4 px-4'} py-3.5 rounded-xl transition-all duration-300 transform overflow-hidden ${
         isActive(href)
-          ? `${PRIMARY_BG_CLASS} text-white shadow-lg shadow-primary/30 scale-[1.02]`
-          : 'text-slate-400 hover:bg-slate-800/50 hover:text-white hover:scale-[1.01]'
+          ? 'bg-gradient-to-r from-[#4db8a8] to-[#3d9888] text-white shadow-lg shadow-[#4db8a8]/30 scale-[1.02]'
+          : 'text-slate-400 hover:bg-slate-800/50 hover:text-white hover:scale-[1.02] hover:translate-x-1'
       }`}
     >
-      <div className={`relative p-2.5 rounded-lg transition-all duration-300 ${
+      {/* Active Background Glow */}
+      {isActive(href) && (
+        <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent animate-pulse"></div>
+      )}
+      
+      <div className={`relative z-10 p-2.5 rounded-xl transition-all duration-300 ${
         isActive(href) 
-          ? 'bg-white/20 shadow-inner' 
-          : 'bg-slate-700/50 group-hover:bg-slate-700/80'
+          ? 'bg-white/20 shadow-lg backdrop-blur-sm' 
+          : 'bg-slate-700/50 group-hover:bg-slate-700/80 group-hover:scale-110 group-hover:rotate-3'
       }`}>
         {icon}
         {badge > 0 && (
           <span className="absolute -top-1 -right-1 flex h-5 w-5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-5 w-5 bg-red-600 items-center justify-center text-[10px] font-bold text-white border-2 border-slate-900">
-              {badge > 9 ? '9+' : badge} {/* Limit badge display */}
+            <span className="relative inline-flex rounded-full h-5 w-5 bg-gradient-to-br from-red-500 to-red-600 items-center justify-center text-[10px] font-bold text-white border-2 border-slate-900 shadow-lg">
+              {badge > 9 ? '9+' : badge}
             </span>
           </span>
         )}
       </div>
-      <span className={`font-medium flex-1 whitespace-nowrap transition-opacity duration-300 ${isSidebarCollapsed ? 'opacity-0 hidden absolute' : 'opacity-100'}`}>
+      
+      <span className={`relative z-10 font-semibold flex-1 whitespace-nowrap transition-all duration-300 ${isSidebarCollapsed ? 'opacity-0 hidden absolute' : 'opacity-100 group-hover:translate-x-1'}`}>
         {children}
       </span>
+      
       {isActive(href) && !isSidebarCollapsed && (
-        <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse ml-auto"></div>
+        <div className="relative z-10 flex items-center gap-1 ml-auto">
+          <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></div>
+          <div className="w-1 h-1 rounded-full bg-white/60 animate-pulse" style={{animationDelay: '0.3s'}}></div>
+        </div>
       )}
     </Link>
   );
@@ -207,23 +217,26 @@ export default function RootLayout({ children }) {
           {/* Desktop Sidebar (Only if logged in and not landing page) */}
           {isLoggedIn && !isLanding && (
             <aside 
-              className={`hidden md:flex fixed h-screen top-0 left-0 flex-col bg-slate-900 text-white border-r border-slate-700/50 shadow-2xl transition-all duration-300 z-30 ${isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_FULL}`}
-              // style={{ minWidth: isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_FULL }} // Tailwind handles width
+              className={`hidden md:flex fixed h-screen top-0 left-0 flex-col bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-r border-slate-700/50 shadow-2xl transition-all duration-300 z-30 ${isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_FULL}`}
             >
-              {/* Decorative Background */}
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none opacity-50"></div>
-              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl pointer-events-none opacity-30"></div>
+              {/* Decorative Background with Multiple Layers */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[#4db8a8]/10 via-transparent to-[#3d9888]/5 pointer-events-none opacity-50"></div>
+              <div className="absolute top-0 right-0 w-96 h-96 bg-[#4db8a8]/10 rounded-full blur-3xl pointer-events-none opacity-40 animate-pulse"></div>
+              <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#3d9888]/10 rounded-full blur-3xl pointer-events-none opacity-30"></div>
+              <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5 pointer-events-none"></div>
               
-              {/* Logo Section */}
-              <div className="relative px-6 py-8 border-b border-slate-700/50">
-                <Link href="/dashboard" className={`flex items-center space-x-3 group transition-opacity duration-300 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-                  <div className={`flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center group-hover:scale-110 transition-all duration-300 shadow-xl shadow-primary/30 ${isSidebarCollapsed ? 'w-14 h-14' : ''}`}>
-                    <span className="text-white font-bold text-xl">B</span>
+              {/* Logo Section with Enhanced Design */}
+              <div className="relative px-6 py-8 border-b border-slate-700/50 bg-gradient-to-r from-slate-800/50 to-transparent">
+                <Link href="/dashboard" className={`flex items-center space-x-3 group transition-all duration-300 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+                  <div className={`relative flex-shrink-0 w-12 h-12 rounded-2xl bg-gradient-to-br from-[#4db8a8] to-[#3d9888] flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-xl shadow-[#4db8a8]/30 ${isSidebarCollapsed ? 'w-14 h-14' : ''}`}>
+                    <div className="absolute inset-0 bg-white/20 rounded-2xl group-hover:animate-pulse"></div>
+                    <span className="relative text-white font-bold text-xl">B</span>
                   </div>
                   <div className={`flex flex-col overflow-hidden transition-all duration-300 ${isSidebarCollapsed ? 'hidden' : 'visible'}`}>
-                    <span className="font-extrabold text-2xl text-white group-hover:text-primary-light transition-colors whitespace-nowrap">
-                      Balanz<span className="text-slate-300">.IA</span>
+                    <span className="font-extrabold text-2xl text-white group-hover:text-[#4db8a8] transition-colors whitespace-nowrap">
+                      Balanz<span className="text-slate-400 group-hover:text-slate-300">.IA</span>
                     </span>
+                    <span className="text-xs text-slate-500 group-hover:text-slate-400 transition-colors">Financial Intelligence</span>
                   </div>
                 </Link>
               </div>
@@ -232,7 +245,6 @@ export default function RootLayout({ children }) {
               <nav className="relative flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
                   {/* --- Add Navigation Links Here --- */}
                   <NavLink href="/dashboard" icon={<IconHome />}>หน้าหลัก</NavLink>
-                  <NavLink href="/transactions/add" icon={<IconAddTransaction />}>เพิ่มรายการ</NavLink> 
                   <NavLink href="/budget" icon={<IconBudget />}>งบประมาณ</NavLink>
                   <NavLink href="/currency" icon={<IconExchange />}>อัตราแลกเปลี่ยน</NavLink>
                   <NavLink href="/analytics" icon={<IconAnalytics />}>สรุปผล</NavLink>
@@ -247,44 +259,52 @@ export default function RootLayout({ children }) {
                   {/* --- End Navigation Links --- */}
               </nav>
 
-              {/* Sidebar Footer Section */}
-              <div className="relative p-4 border-t border-slate-700/50 space-y-4 mt-auto">
-                {/* Profile Card */}
+              {/* Sidebar Footer Section with Enhanced Design */}
+              <div className="relative p-4 border-t border-slate-700/50 space-y-3 mt-auto bg-gradient-to-t from-slate-900 to-transparent">
+                {/* Profile Card with Hover Effects */}
                 <Link 
                   href="/profile" 
-                  className={`flex items-center p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 transition-all duration-300 group border border-slate-600/30 backdrop-blur-sm ${isSidebarCollapsed ? 'justify-center mx-auto' : 'w-full'}`}
+                  className={`group relative flex items-center p-3 rounded-xl bg-gradient-to-br from-slate-800/80 to-slate-800/50 hover:from-slate-700/80 hover:to-slate-700/50 transition-all duration-300 border border-slate-600/30 hover:border-[#4db8a8]/30 backdrop-blur-sm hover:shadow-lg hover:shadow-[#4db8a8]/10 ${isSidebarCollapsed ? 'justify-center mx-auto' : 'w-full'} overflow-hidden`}
                   title={isSidebarCollapsed ? "Profile" : ""}
                 >
-                  <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/80 overflow-hidden flex items-center justify-center text-white font-bold mr-3 flex-shrink-0 shadow-lg shadow-primary/20">
+                  {/* Hover Background Effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#4db8a8]/0 to-[#4db8a8]/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  
+                  <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-[#4db8a8] to-[#3d9888] overflow-hidden flex items-center justify-center text-white font-bold mr-3 flex-shrink-0 shadow-lg shadow-[#4db8a8]/20 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                     {avatarUrl ? (
-                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} /> // Basic error handle
+                      <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" onError={(e) => e.target.style.display='none'} />
                     ) : (
-                      <span className="text-lg">{displayName?.charAt(0)?.toUpperCase()}</span>
+                      <span className="text-lg relative z-10">{displayName?.charAt(0)?.toUpperCase()}</span>
                     )}
-                    {/* Online status indicator */}
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-slate-800 rounded-full"></div> 
+                    {/* Animated Online Status */}
+                    <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-400 border-2 border-slate-800 rounded-full">
+                      <div className="absolute inset-0 bg-green-400 rounded-full animate-ping opacity-75"></div>
+                    </div>
                   </div>
                   
-                  <div className={`flex-1 min-w-0 transition-opacity duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>
-                    <p className="text-sm text-white font-semibold truncate">{displayName || 'User'}</p>
-                    <p className="text-xs text-slate-400">ดูโปรไฟล์</p>
+                  <div className={`relative z-10 flex-1 min-w-0 transition-all duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>
+                    <p className="text-sm text-white font-semibold truncate group-hover:text-[#4db8a8] transition-colors">{displayName || 'User'}</p>
+                    <p className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">ดูโปรไฟล์</p>
                   </div>
                   {!isSidebarCollapsed && (
-                     <IconChevronRight className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors ml-auto flex-shrink-0" />
+                     <IconChevronRight className="relative z-10 w-5 h-5 text-slate-400 group-hover:text-[#4db8a8] group-hover:translate-x-1 transition-all duration-300 ml-auto flex-shrink-0" />
                   )}
                 </Link>
 
-                {/* Logout Button */}
+                {/* Logout Button with Enhanced Design */}
                 <button 
                   onClick={handleLogout} 
-                  className={`flex items-center space-x-3 px-3 py-3 rounded-xl bg-red-600/70 hover:bg-red-700/90 text-white transition-all duration-300 shadow-lg shadow-red-500/20 w-full ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                  className={`relative group flex items-center space-x-3 px-3 py-3 rounded-xl bg-gradient-to-r from-red-600/80 to-red-700/80 hover:from-red-600 hover:to-red-700 text-white transition-all duration-300 shadow-lg shadow-red-500/20 hover:shadow-red-500/40 w-full hover:scale-[1.02] active:scale-95 ${isSidebarCollapsed ? 'justify-center' : ''} overflow-hidden`}
                   title={isSidebarCollapsed ? "Logout" : ""}
                 >
-                  <IconLogout />
-                  <span className={`font-semibold transition-opacity duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>ออกจากระบบ</span>
+                  {/* Animated Background */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
+                  
+                  <IconLogout className="relative z-10 group-hover:rotate-12 transition-transform duration-300" />
+                  <span className={`relative z-10 font-semibold transition-opacity duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>ออกจากระบบ</span>
                 </button>
                 
-                <p className={`text-xs text-slate-600 text-center mt-2 transition-opacity duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>
+                <p className={`text-xs text-slate-600 text-center mt-3 transition-opacity duration-300 ${isSidebarCollapsed ? 'hidden absolute' : 'visible'}`}>
                   © 2025 Balanz.IA
                 </p>
               </div>
@@ -294,48 +314,53 @@ export default function RootLayout({ children }) {
           {/* Main Content & Footer Wrapper */}
           <div className={`flex flex-col flex-1 ${isLoggedIn && !isLanding ? `w-full transition-all duration-300 ${isSidebarCollapsed ? 'md:ml-24' : 'md:ml-80'}` : 'w-full'}`}>
             
-            {/* Desktop Top Bar (Only if logged in and not landing page) */}
+            {/* Desktop Top Bar with Enhanced Design */}
             {isLoggedIn && !isLanding && (
-              <div className="hidden md:block sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-sm">
+              <div className="hidden md:block sticky top-0 z-40 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-md">
                 <div className="max-w-7xl mx-auto px-6 py-4">
                   <div className="flex items-center justify-between">
                     
-                    {/* Left: Greeting & Toggle Button */}
+                    {/* Left: Greeting & Toggle Button with Enhanced Design */}
                     <div className="flex items-center gap-4">
                        <button 
                          onClick={toggleSidebar} 
-                         className="p-2 text-slate-500 hover:text-primary transition-colors hover:bg-slate-100 rounded-lg"
+                         className="group p-3 text-slate-500 hover:text-[#4db8a8] transition-all duration-300 hover:bg-gradient-to-br from-[#4db8a8]/10 to-[#3d9888]/10 rounded-xl hover:scale-110 active:scale-95 hover:shadow-md"
                          aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                        >
-                          {isSidebarCollapsed ? <IconSidebarToggleExpand /> : <IconSidebarToggleCollapse />}
+                          <div className="group-hover:rotate-180 transition-transform duration-300">
+                            {isSidebarCollapsed ? <IconSidebarToggleExpand /> : <IconSidebarToggleCollapse />}
+                          </div>
                        </button>
 
-                       <div>
-                         <h1 className="text-xl font-bold text-slate-800">Hello {displayName || 'User'}</h1>
-                         <p className="text-sm text-slate-500">
+                       <div className="flex flex-col">
+                         <h1 className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">Hello, {displayName || 'User'}! 👋</h1>
+                         <p className="text-sm text-slate-500 flex items-center gap-2">
+                           <svg className="w-4 h-4 text-[#4db8a8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                           </svg>
                            {new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
                          </p>
                        </div>
                     </div>
                     
-                    {/* Right: Notifications (Desktop) */}
+                    {/* Right: Notifications with Enhanced Design */}
                     <div className="flex items-center gap-3">
                       <Link 
                         href="/notifications" 
                         onClick={() => resetAndFetchNotifications(localStorage.getItem('token'))}
-                        className="relative inline-flex items-center justify-center w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 transition-all duration-300 shadow-sm group"
+                        className="relative group inline-flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 hover:from-[#4db8a8]/10 hover:to-[#3d9888]/10 transition-all duration-300 shadow-sm hover:shadow-md hover:scale-110 active:scale-95 border border-transparent hover:border-[#4db8a8]/20"
                         aria-label={`Notifications ${notificationCount > 0 ? `(${notificationCount})` : ''}`}
                       >
-                        <IconNotifications className="w-5 h-5 text-slate-600 group-hover:text-primary transition-colors" />
+                        <IconNotifications className="w-5 h-5 text-slate-600 group-hover:text-[#4db8a8] transition-colors group-hover:animate-bounce" />
                         {notificationCount > 0 && (
-                          <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                             <span className="relative inline-flex h-4 w-4 bg-red-600 text-white text-[10px] rounded-full border-2 border-white items-center justify-center font-bold">
+                          <span className="absolute -top-1 -right-1 flex h-5 w-5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                            <span className="relative inline-flex h-5 w-5 bg-gradient-to-br from-red-500 to-red-600 text-white text-[10px] rounded-full border-2 border-white items-center justify-center font-bold shadow-lg">
                               {notificationCount > 9 ? '9+' : notificationCount}
                             </span>
                           </span>
                         )}
                       </Link>
-                      {/* Add other top bar items here if needed */}
                     </div>
                   </div>
                 </div>
