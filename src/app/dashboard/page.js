@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Water, Fire, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, TruckDelivery, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal } from 'lucide-react';
 
 // Import Budget modal component
 import Budget from '../budget/page';
@@ -30,14 +30,14 @@ const ICON_MAP = {
   'apple': Apple, 'banana': Banana, 'beer': Beer, 'cake': Cake, 'camera': Camera,
   'film': Film, 'globe': Globe, 'mappin': MapPin, 'sun': Sun, 'moon': Moon,
   'star': Star, 'tree': Tree, 'flower': Flower, 'leaf': Leaf, 'cloud': Cloud,
-  'snowflake': Snowflake, 'water': Water, 'fire': Fire, 'key': Key, 'lock': Lock,
+  'snowflake': Snowflake, 'water': Droplet, 'fire': Flame, 'key': Key, 'lock': Lock,
   'bell': Bell, 'alarmclock': AlarmClock, 'wallet': Wallet, 'piggybank': PiggyBank,
   'shoppingcart': ShoppingCart, 'shirt': Shirt, 'glasses': Glasses, 'watch': Watch,
   'tablet': Tablet, 'tv': Tv, 'speaker': Speaker, 'headphones': Headphones,
   'printer': Printer, 'cpu': Cpu, 'mousepointer': MousePointer, 'pen': Pen,
   'pencil': Pencil, 'paintbrush': Paintbrush, 'ruler': Ruler, 'calculator': Calculator,
   'clipboard': Clipboard, 'paperclip': Paperclip, 'archive': Archive, 'box': Box,
-  'package': Package, 'truckdelivery': TruckDelivery, 'rocket': Rocket, 'medal': Medal,
+  'package': Package, 'truckdelivery': Truck, 'rocket': Rocket, 'medal': Medal,
   'trophy': Trophy, 'award': Award, 'flag': Flag, 'target': Target, 'lightbulb': Lightbulb,
   'battery': Battery, 'plug': Plug, 'wifi': Wifi, 'bluetooth': Bluetooth, 'signal': Signal,
 };
@@ -49,6 +49,19 @@ function renderIcon(iconKey) {
 }
 
 export default function Dashboard() {
+  // Store JWT token from query string to localStorage (for LINE login)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const token = url.searchParams.get('token');
+      if (token) {
+        localStorage.setItem('token', token);
+        // Remove token from URL for security
+        url.searchParams.delete('token');
+        window.history.replaceState({}, document.title, url.pathname + url.search);
+      }
+    }
+  }, []);
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [stats, setStats] = useState({

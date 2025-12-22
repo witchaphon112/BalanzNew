@@ -94,7 +94,11 @@ router.get('/me', authMiddleware, async (req, res) => {
       console.log('User not found for ID:', req.user.userId);
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json(user);
+    res.json({
+      name: user.name,
+      email: user.email,
+      profilePic: user.profilePic || ''
+    });
   } catch (error) {
     console.error('Profile fetch error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -111,7 +115,7 @@ router.put('/me', authMiddleware, async (req, res) => {
     if (name !== undefined) user.name = name;
 
     await user.save();
-    res.json({ name: user.name, email: user.email });
+    res.json({ name: user.name, email: user.email, profilePic: user.profilePic || '' });
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ message: 'Server error' });

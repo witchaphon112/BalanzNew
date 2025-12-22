@@ -49,7 +49,7 @@ export default function Home() {
                    
                    {!isLoggedIn && (
                      <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
-                       {/* ปุ่มเริ่มต้นใช้งาน - Mobile Optimized */}
+                       {/* ปุ่มเริ่มต้นใช้งาน */}
                        <Link
                          href="/register"
                          className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-gradient-to-r from-[#4db8a8] to-[#3d9888] hover:from-[#3d9888] hover:to-[#2d7868] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
@@ -60,9 +60,23 @@ export default function Home() {
                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                            </svg>
                          </span>
-                         {/* Shine effect */}
                          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-                       </Link>                       
+                       </Link>
+                       {/* ปุ่ม Login ด้วย LINE */}
+                       <a
+                         href="http://localhost:5050/auth/line"
+                         className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-[#06C755] hover:bg-[#05b94d] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
+                         style={{ minWidth: 180 }}
+                       >
+                         <span className="relative z-10 flex items-center justify-center gap-2">
+                           <svg width="24" height="24" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                             <rect width="36" height="36" rx="8" fill="#06C755"/>
+                             <path d="M18 8C11.373 8 6 12.477 6 18C6 21.09 7.98 23.82 11.01 25.44C10.79 26.23 10.19 28.27 10.09 28.66C9.97 29.13 10.23 29.21 10.47 29.18C10.7 29.15 13.13 28.81 14.23 28.66C15.23 28.87 16.1 29 18 29C24.627 29 30 24.523 30 19C30 13.477 24.627 8 18 8Z" fill="white"/>
+                             <path d="M13.5 17.5H15V22H13.5V17.5ZM16.5 17.5H18V22H16.5V17.5ZM19.5 17.5H21V22H19.5V17.5Z" fill="#06C755"/>
+                           </svg>
+                           Login ด้วย LINE
+                         </span>
+                       </a>
                      </div>
                    )}
                  </div>

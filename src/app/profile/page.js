@@ -28,7 +28,10 @@ export default function Profile() {
         const data = await res.json();
         if (res.ok) {
           setUser({ name: data.name, email: data.email });
-          if (data.avatarUrl) {
+          if (data.profilePic) {
+            setAvatarUrl(data.profilePic);
+            try { localStorage.setItem('avatarUrl', data.profilePic); } catch {}
+          } else if (data.avatarUrl) {
             setAvatarUrl(data.avatarUrl);
             try { localStorage.setItem('avatarUrl', data.avatarUrl); } catch {}
           } else {
@@ -165,6 +168,11 @@ export default function Profile() {
     );
   }
 
+  // ถ้า email เป็น @line.local ให้แสดง LINE ID แทน
+  const displayEmail = user.email && user.email.endsWith('@line.local')
+    ? `LINE ID: ${user.email.replace('@line.local', '')}`
+    : user.email;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -232,7 +240,7 @@ export default function Profile() {
                 <h2 className="text-2xl md:text-3xl font-bold text-white mb-1">
                   {user.name || 'ชื่อของคุณ'}
                 </h2>
-                <p className="text-white/80 mb-4">{user.email}</p>
+                <p className="text-white/80 mb-4">{displayEmail}</p>
                 
                 {/* Avatar Actions */}
                 <div className="flex flex-wrap gap-3 justify-center sm:justify-start">
@@ -317,8 +325,8 @@ export default function Profile() {
                   <div className="relative">
                     <input
                       id="email"
-                      type="email"
-                      value={user.email}
+                      type="text"
+                      value={displayEmail}
                       readOnly
                       className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
                       placeholder="อีเมลของคุณ"

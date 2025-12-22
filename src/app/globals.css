@@ -71,7 +71,7 @@
 /* dark mode removed */
 
 body {
-  background: linear-gradient(135deg, var(--background) 0%, #f1f5f9 100%);
+  background: #fff;
   color: var(--text);
   font-family: var(--font-sans), sans-serif;
   transition: all 0.3s ease;
