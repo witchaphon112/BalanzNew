@@ -350,14 +350,7 @@ export default function Dashboard() {
 
         {/* Quick Action Buttons - move to top for better visibility */}
         <div className="flex flex-row gap-3 mb-6 justify-end">
-          <button
-            type="button"
-            onClick={() => setShowBudgetModal(true)}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white shadow-md border border-gray-100 hover:bg-teal-50 hover:text-teal-700 transition-all font-semibold text-base"
-          >
-            <svg className="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>
-            งบประมาณ
-          </button>
+
           <button
             type="button"
             onClick={() => setShowCurrencyModal(true)}

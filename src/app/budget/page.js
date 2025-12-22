@@ -1,328 +1,381 @@
 "use client";
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect, useMemo } from 'react';
 
-export default function Budget({ onClose }) {
+// Utility for formatting currency
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(amount);
+};
+
+export default function BudgetManager({ onClose }) {
+  // --- State ---
   const [categories, setCategories] = useState([]);
-  const [budgets, setBudgets] = useState({});
+  const [budgets, setBudgets] = useState({}); // Map: { "Month Year": { categoryId: amount } }
+  const [monthlyBudget, setMonthlyBudget] = useState({}); // Map: { "Month Year": totalAmount }
+  const [editingMonthly, setEditingMonthly] = useState(false);
+  const [editMonthlyAmount, setEditMonthlyAmount] = useState('');
   const [transactions, setTransactions] = useState([]);
   const [currentMonthIndex, setCurrentMonthIndex] = useState(12);
-  const [error, setError] = useState('');
-  const [showAddBudgetModal, setShowAddBudgetModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Modal State for Editing
+  const [editingCategory, setEditingCategory] = useState(null); // The category object being edited
+  const [editAmount, setEditAmount] = useState('');
 
-
-  const getMonths = () => {
-    const months = [];
+  // --- Date Logic ---
+  const months = useMemo(() => {
+    const m = [];
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear() + 543;
     const currentMonth = currentDate.getMonth();
     
-    // สร้างรายการเดือน 12 เดือนย้อนหลัง + เดือนปัจจุบัน + 12 เดือนข้างหน้า
     for (let i = -12; i <= 12; i++) {
-      const monthIndex = (currentMonth + i + 12) % 12; // ป้องกันลบเกิน
+      const monthIndex = (currentMonth + i + 12) % 12;
       const yearOffset = Math.floor((currentMonth + i) / 12);
       const year = currentYear + yearOffset;
-      const monthNames = [
-        'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-        'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-      ];
-      months.push(`${monthNames[monthIndex]} ${year}`);
+      const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+      m.push(`${monthNames[monthIndex]} ${year}`);
     }
-    return months;
-  };
+    return m;
+  }, []);
 
-  const months = getMonths();
   const selectedMonth = months[currentMonthIndex];
 
+  // --- Data Fetching ---
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
       window.location.href = '/login';
-    } else {
-      fetchCategories(token);
-      fetchBudgets(token);
-      fetchTransactions(token);
-    }
-  }, [currentMonthIndex]);
-
-  const fetchCategories = async (token) => {
-    try {
-      const res = await fetch('http://localhost:5050/api/categories', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const expenseCategories = data.filter(cat => cat.type === 'expense');
-        setCategories(expenseCategories);
-      } else {
-        setError(data.message || 'เกิดข้อผิดพลาดในการดึงหมวดหมู่');
-      }
-    } catch (error) {
-      setError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' + error.message);
-    }
-  };
-
-  const fetchBudgets = async (token) => {
-    try {
-      const res = await fetch('http://localhost:5050/api/budgets', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        const budgetMap = {};
-        data.forEach(b => {
-          if (!budgetMap[b.month]) budgetMap[b.month] = [];
-          budgetMap[b.month].push({ ...b.category, total: b.total });
-        });
-        setBudgets(budgetMap);
-      } else {
-        setError(data.message || 'เกิดข้อผิดพลาดในการดึงงบประมาณ');
-      }
-    } catch (error) {
-      setError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' + error.message);
-    }
-  };
-
-  const fetchTransactions = async (token) => {
-    try {
-      const res = await fetch('http://localhost:5050/api/transactions', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setTransactions(data.filter(t => t.type === 'expense'));
-      } else {
-        setError(data.message || 'เกิดข้อผิดพลาดในการดึงธุรกรรม');
-      }
-    } catch (error) {
-      setError('เกิดข้อผิดพลาดในการเชื่อมต่อ: ' + error.message);
-    }
-  };
-
-
-  const handleAddBudget = async (e) => {
-    e.preventDefault();
-    const form = e.target;
-    const categoryId = form.category.value;
-    const month = form.month.value;
-    const total = parseFloat(form.total.value) || 0;
-
-    if (total < 0) {
-      setError('ยอดรวมต้องมากกว่าหรือเท่ากับ 0');
       return;
     }
 
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        
+        // Parallel Fetching for speed
+
+
+        const [catRes, budgetRes, transRes, totalRes] = await Promise.all([
+          fetch('http://localhost:5050/api/categories', { headers }),
+          fetch('http://localhost:5050/api/budgets', { headers }),
+          fetch('http://localhost:5050/api/transactions', { headers }),
+          fetch('http://localhost:5050/api/budgets/total', { headers })
+        ]);
+
+        // Helper: parse JSON safely
+        const safeJson = async (res) => {
+          try {
+            const text = await res.text();
+            return JSON.parse(text);
+          } catch {
+            return [];
+          }
+        };
+
+        const cats = await safeJson(catRes);
+        const buds = await safeJson(budgetRes);
+        const trans = await safeJson(transRes);
+        const totalBudgets = await safeJson(totalRes);
+
+        if (catRes.ok) setCategories(cats.filter(c => c.type === 'expense'));
+
+        if (budgetRes.ok) {
+          const budgetMap = {};
+          buds.forEach(b => {
+             if (!budgetMap[b.month]) budgetMap[b.month] = {};
+             const catId = typeof b.category === 'object' ? b.category._id : b.category;
+             budgetMap[b.month][catId] = b.total;
+          });
+          setBudgets(budgetMap);
+        }
+
+        if (transRes.ok) setTransactions(trans.filter(t => t.type === 'expense'));
+
+        // สมมติ totalBudgets เป็น [{ month: '...', total: 10000 }, ...]
+        if (Array.isArray(totalBudgets)) {
+          const map = {};
+          totalBudgets.forEach(tb => { map[tb.month] = tb.total; });
+          setMonthlyBudget(map);
+        }
+
+      } catch (err) {
+        console.error("Failed to load data", err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+    // --- Process Data for Display ---
+    // Combine Categories + Budgets + Transactions for the selected month
+    const processedData = useMemo(() => {
+    const currentMonthTrans = transactions.filter(t => true); // ...existing logic...
+    let totalBudget = 0;
+    let totalSpent = 0;
+    const list = categories.map(cat => {
+      const budgetAmount = budgets[selectedMonth]?.[cat._id] || 0;
+      const spentAmount = currentMonthTrans
+        .filter(t => (typeof t.category === 'object' ? t.category._id : t.category) === cat._id)
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
+      totalBudget += budgetAmount;
+      totalSpent += spentAmount;
+      const percent = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100 : 0;
+      return {
+        ...cat,
+        budget: budgetAmount,
+        spent: spentAmount,
+        remaining: budgetAmount - spentAmount,
+        percent: Math.min(percent, 100),
+        isOverBudget: spentAmount > budgetAmount
+      };
+    });
+    // งบรวมต่อเดือน (monthlyBudget) จะถูกใช้ใน summary card
+    return {
+      items: list.sort((a, b) => b.budget - a.budget),
+      summary: {
+        totalBudget,
+        totalSpent,
+        remaining: (monthlyBudget[selectedMonth] ?? totalBudget) - totalSpent,
+        monthly: monthlyBudget[selectedMonth] ?? 0
+      }
+    };
+    }, [categories, budgets, transactions, selectedMonth, monthlyBudget]);
+
+
+  // --- Handlers ---
+  const openEditModal = (category) => {
+    setEditingCategory(category);
+    setEditAmount(category.budget === 0 ? '' : category.budget.toString());
+  };
+
+  const handleSaveBudget = async (e) => {
+    e.preventDefault();
     const token = localStorage.getItem('token');
+    const total = parseFloat(editAmount) || 0;
+
     try {
       await fetch('http://localhost:5050/api/budgets', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ category: categoryId, month, total }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ category: editingCategory._id, month: selectedMonth, total }),
       });
-      setShowAddBudgetModal(false);
-      fetchBudgets(token);
+
+      // Update local state immediately for UI responsiveness
+      setBudgets(prev => ({
+        ...prev,
+        [selectedMonth]: {
+            ...prev[selectedMonth],
+            [editingCategory._id]: total
+        }
+      }));
+      setEditingCategory(null);
     } catch (error) {
-      setError('เกิดข้อผิดพลาดในการบันทึกงบประมาณ: ' + error.message);
+      alert('Error saving budget');
     }
   };
 
-  const monthNames = [
-    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn" style={{ fontFamily: 'Noto Sans Thai, sans-serif' }}>
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden flex flex-col h-[500px] relative animate-slideUp">
-        {/* Close Button */}
-        {onClose && (
-          <button onClick={onClose} className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 z-10">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+    <div className="fixed inset-0 z-50 bg-[#F8FAFC] flex flex-col animate-fadeIn font-sans">
+      
+      {/* 1. Header & Month Navigator */}
+      <div className="bg-white shadow-sm px-2 pt-4 pb-2 rounded-b-2xl z-10 max-w-lg mx-auto w-full">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-bold text-slate-800">วางแผนงบประมาณ</h2>
+          <button onClick={onClose} className="p-1.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
-        )}
-        {/* Header bar */}
-        <div className="flex items-center justify-center px-6 py-5 bg-gradient-to-r from-[#299D91] to-[#238A80] text-white">
-          <h2 className="text-xl font-bold">ตั้งเป้าหมายงบ</h2>
         </div>
-        
-        {/* Main content area - positioned at top */}
-        <div className="flex-1 flex items-start justify-center px-6 py-6">
-          <div className="w-full space-y-8">
-            {/* Month Navigation */}
-            <div className="text-center">
-              <div className="flex items-center justify-center space-x-6 mb-2">
-                <button
-                  onClick={() => setCurrentMonthIndex((prev) => (prev > 0 ? prev - 1 : 0))}
-                  className="p-2 text-gray-500 hover:text-[#299D91] transition-colors rounded-full hover:bg-gray-100"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" />
-                  </svg>
-                </button>
-                <h2 className="text-2xl font-bold text-[#299D91]">{selectedMonth.split(' ')[0]}</h2>
-                <button
-                  onClick={() => setCurrentMonthIndex((prev) => (prev < months.length - 1 ? prev + 1 : months.length - 1))}
-                  className="p-2 text-gray-500 hover:text-[#299D91] transition-colors rounded-full hover:bg-gray-100"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" />
-                  </svg>
-                </button>
-              </div>
-              <p className="text-sm text-gray-500">{selectedMonth}</p>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={() => setShowAddBudgetModal(true)}
-                className="w-full bg-gradient-to-r from-[#299D91] to-[#238A80] text-white py-4 rounded-xl hover:from-[#238A80] hover:to-[#1f6b63] transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>เพิ่มเป้าหมาย</span>
-              </button>
-              <Link
-                href="/dashboard"
-                className="w-full bg-white text-gray-700 py-4 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 text-center transition-all duration-300 font-semibold block flex items-center justify-center space-x-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                <span>กลับ</span>
-              </Link>
+        {/* Month Selector */}
+        <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1 mb-4">
+            <button onClick={() => setCurrentMonthIndex(p => Math.max(0, p - 1))} className="p-2 hover:bg-white rounded-xl shadow-sm transition-all text-slate-400 hover:text-[#299D91]">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="font-bold text-slate-700">{selectedMonth}</span>
+            <button onClick={() => setCurrentMonthIndex(p => Math.min(months.length - 1, p + 1))} className="p-2 hover:bg-white rounded-xl shadow-sm transition-all text-slate-400 hover:text-[#299D91]">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+            </button>
+        </div>
+
+        {/* 2. Total Summary Card */}
+        <div className="bg-gradient-to-br from-[#299D91] to-[#1F7A70] rounded-xl p-3 text-white shadow-md shadow-[#299D91]/20">
+          <div className="flex justify-between items-center mb-1">
+            <p className="text-teal-100 text-xs">งบประมาณคงเหลือสุทธิ</p>
+            <button onClick={() => {
+              setEditMonthlyAmount((monthlyBudget[selectedMonth] ?? '').toString());
+              setEditingMonthly(true);
+            }} className="text-xs text-white/80 hover:text-white underline underline-offset-2">ตั้งงบรวมเดือนนี้</button>
+          </div>
+          <h1 className="text-2xl font-bold mb-2">{formatCurrency(processedData.summary.remaining)}</h1>
+          <div className="flex gap-2 border-t border-white/20 pt-2">
+            <div>
+              <p className="text-xs text-teal-100">งบรวมเดือนนี้</p>
+              <p className="font-semibold text-sm">{formatCurrency(processedData.summary.monthly)}</p>
+            </div>
+            <div className="w-px bg-white/20"></div>
+            <div>
+              <p className="text-xs text-teal-100">ใช้จ่ายจริง</p>
+              <p className="font-semibold text-sm">{formatCurrency(processedData.summary.totalSpent)}</p>
             </div>
           </div>
         </div>
+            {/* Modal ตั้งงบรวมต่อเดือน */}
+            {editingMonthly && (
+              <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingMonthly(false)}>
+                <div className="bg-white w-full max-w-xs p-4 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slideUp" onClick={e => e.stopPropagation()}>
+                  <div className="mb-4">
+                    <p className="text-slate-500 text-xs mb-1">ตั้งงบประมาณรวมสำหรับ</p>
+                    <h3 className="text-lg font-bold text-slate-800">{selectedMonth}</h3>
+                  </div>
+                  <form onSubmit={async e => {
+                    e.preventDefault();
+                    const token = localStorage.getItem('token');
+                    const total = parseFloat(editMonthlyAmount) || 0;
+                    try {
+                      await fetch('http://localhost:5050/api/budgets/total', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ month: selectedMonth, total }),
+                      });
+                      setMonthlyBudget(prev => ({ ...prev, [selectedMonth]: total }));
+                      setEditingMonthly(false);
+                    } catch {
+                      alert('Error saving monthly budget');
+                    }
+                  }}>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">งบรวมเดือนนี้ (บาท)</label>
+                    <div className="relative mb-6">
+                      <input
+                        type="number"
+                        className="w-full text-2xl font-bold text-slate-800 border-b-2 border-slate-200 py-1.5 focus:border-[#299D91] outline-none bg-transparent placeholder-slate-300"
+                        placeholder="0"
+                        value={editMonthlyAmount}
+                        onChange={e => setEditMonthlyAmount(e.target.value)}
+                        autoFocus
+                      />
+                      <span className="absolute right-0 bottom-2 text-slate-400">THB</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setEditingMonthly(false)} className="flex-1 py-2.5 rounded-lg border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50">ยกเลิก</button>
+                      <button type="submit" className="flex-1 py-2.5 rounded-lg bg-[#299D91] text-white font-bold shadow-md shadow-teal-500/20 hover:bg-[#238A80]">บันทึก</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
       </div>
 
-      {showAddBudgetModal && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-sm bg-black/40"
-          onClick={() => setShowAddBudgetModal(false)}
-        >
-          <div
-            className="bg-white rounded-3xl p-8 max-w-md mx-auto shadow-2xl w-full transform transition-all duration-300 scale-95 border border-gray-200"
+      {/* 3. Category List (Scrollable) */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-3 max-w-lg mx-auto w-full">
+        {isLoading ? (
+            <div className="text-center py-10 text-slate-400">กำลังโหลดข้อมูล...</div>
+        ) : (
+            processedData.items.map((cat) => (
+                <div 
+                  key={cat._id} 
+                  onClick={() => openEditModal(cat)}
+                  className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform cursor-pointer"
+                >
+                    <div className="flex items-center gap-4 mb-3">
+                        {/* Icon Container */}
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg 
+                          ${cat.budget > 0 ? 'bg-teal-50 text-[#299D91]' : 'bg-slate-50 text-slate-400'}`}>
+                            {cat.icon || '🏷️'}
+                        </div>
+                        
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                              <h3 className="font-bold text-slate-700 text-sm">{cat.name}</h3>
+                              {cat.budget > 0 ? (
+                                <span className={`text-xs font-semibold ${cat.isOverBudget ? 'text-rose-500' : 'text-[#299D91]'}`}>
+                                  {cat.isOverBudget ? 'เกินงบ' : 'เหลือ'} {formatCurrency(Math.abs(cat.remaining))}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded">ยังไม่ตั้งงบ</span>
+                              )}
+                            </div>
+
+                            {/* Progress Bar */}
+                            {cat.budget > 0 && (
+                                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                      cat.isOverBudget ? 'bg-rose-500' : cat.percent > 80 ? 'bg-amber-400' : 'bg-[#299D91]'
+                                    }`} 
+                                    style={{ width: `${cat.percent}%` }}
+                                  />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* Small stats under bar */}
+                    {cat.budget > 0 && (
+                        <div className="flex justify-between text-[11px] text-slate-400 pl-12">
+                          <span>ใช้ไป {formatCurrency(cat.spent)}</span>
+                          <span>เป้าหมาย {formatCurrency(cat.budget)}</span>
+                        </div>
+                    )}
+                </div>
+            ))
+        )}
+        <div className="h-6"></div> {/* Bottom Spacer */}
+      </div>
+
+      {/* 4. Edit Budget Bottom Sheet / Modal */}
+        {editingCategory && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingCategory(null)}>
+          <div 
+            className="bg-white w-full max-w-xs p-4 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slideUp" 
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#299D91] to-[#238A80] shadow-xl shadow-[#299D91]/30 mb-4">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center text-xl">
+                {editingCategory.icon || '🏷️'}
               </div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-2">เพิ่มเป้าหมาย</h3>
-              <p className="text-gray-500 text-sm">ตั้งงบประมาณสำหรับหมวดหมู่ที่ต้องการ</p>
+              <div>
+                <p className="text-slate-500 text-xs">ตั้งงบประมาณสำหรับ</p>
+                <h3 className="text-lg font-bold text-slate-800">{editingCategory.name}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{selectedMonth}</p>
+              </div>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleAddBudget} className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                  <svg className="w-4 h-4 text-[#299D91] mr-2" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd"/>
-                  </svg>
-                  หมวดหมู่
-                </label>
-                <div className="relative">
-                  <select
-                    name="category"
-                    className="w-full px-4 py-4 rounded-xl border-2 border-gray-200 bg-white focus:border-[#299D91] focus:ring-4 focus:ring-[#299D91]/10 transition-all duration-200 text-gray-700 font-medium appearance-none cursor-pointer"
-                  >
-                    {categories.map((cat) => (
-                      <option key={cat._id} value={cat._id}>
-                        {cat.icon} {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
+            <form onSubmit={handleSaveBudget}>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">วงเงินที่ต้องการ (บาท)</label>
+              <div className="relative mb-6">
+                <input 
+                  type="number" 
+                  className="w-full text-2xl font-bold text-slate-800 border-b-2 border-slate-200 py-1.5 focus:border-[#299D91] outline-none bg-transparent placeholder-slate-300"
+                  placeholder="0"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  autoFocus
+                />
+                <span className="absolute right-0 bottom-2 text-slate-400">THB</span>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                  <svg className="w-4 h-4 text-[#299D91] mr-2" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
-                  </svg>
-                  เดือน
-                </label>
-                <div className="relative">
-                  <select
-                    name="month"
-                    value={selectedMonth}
-                    onChange={(e) => {
-                      setCurrentMonthIndex(months.indexOf(e.target.value));
-                    }}
-                    className="w-full px-4 py-4 rounded-xl border-2 border-gray-200 bg-white focus:border-[#299D91] focus:ring-4 focus:ring-[#299D91]/10 transition-all duration-200 text-gray-700 font-medium appearance-none cursor-pointer"
-                  >
-                    {months.map((month, index) => (
-                      <option key={index} value={month}>
-                        {month}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center">
-                  <svg className="w-4 h-4 text-[#299D91] mr-2" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/>
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd"/>
-                  </svg>
-                  ยอดรวม (บาท)
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <span className="text-gray-500 font-medium">฿</span>
-                  </div>
-                  <input
-                    type="number"
-                    name="total"
-                    step="1"
-                    min="0"
-                    className="w-full pl-8 pr-4 py-4 rounded-xl border-2 border-gray-200 bg-white focus:border-[#299D91] focus:ring-4 focus:ring-[#299D91]/10 transition-all duration-200 text-gray-700 font-medium"
-                    placeholder="เช่น 5000"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex space-x-4 mt-8">
-                <button
-                  type="submit"
-                  className="flex-1 bg-gradient-to-r from-[#299D91] to-[#238A80] text-white py-4 rounded-xl hover:from-[#238A80] hover:to-[#1f6b63] transition-all duration-300 font-bold text-lg shadow-xl shadow-[#299D91]/30 hover:shadow-2xl hover:shadow-[#299D91]/40 transform hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  บันทึกเป้าหมาย
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddBudgetModal(false)}
-                  className="flex-1 bg-gray-100 text-gray-700 py-4 rounded-xl hover:bg-gray-200 transition-all duration-300 font-bold text-lg border-2 border-gray-200 hover:border-gray-300"
+              <div className="flex gap-2">
+                <button 
+                  type="button" 
+                  onClick={() => setEditingCategory(null)}
+                  className="flex-1 py-2.5 rounded-lg border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50"
                 >
                   ยกเลิก
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2.5 rounded-lg bg-[#299D91] text-white font-bold shadow-md shadow-teal-500/20 hover:bg-[#238A80]"
+                >
+                  บันทึก
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+        )}
     </div>
   );
 }

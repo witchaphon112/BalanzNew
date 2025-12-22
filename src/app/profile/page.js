@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Camera, User, Mail, Save, Key, LogOut, ChevronLeft, Trash2, UploadCloud } from 'lucide-react';
 
 export default function Profile() {
   const [user, setUser] = useState({ name: '', email: '' });
@@ -11,6 +12,7 @@ export default function Profile() {
   const [uploading, setUploading] = useState(false);
   const fileInputId = 'avatar-file-input';
 
+  // --- Logic เดิม (Fetch, Upload, Update) ---
   useEffect(() => {
     const fetchUser = async () => {
       try {
@@ -89,7 +91,6 @@ export default function Profile() {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
       return;
@@ -99,14 +100,12 @@ export default function Profile() {
       setUploading(true);
       setError('');
       
-      // Preview immediately
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') setAvatarUrl(reader.result);
       };
       reader.readAsDataURL(file);
 
-      // Upload to backend
       const token = localStorage.getItem('token');
       const fd = new FormData();
       fd.append('avatar', file);
@@ -157,235 +156,181 @@ export default function Profile() {
     }
   };
 
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('avatarUrl');
+      localStorage.removeItem('name');
+    } catch {}
+    window.location.href = '/login';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#4db8a8] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">กำลังโหลด...</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-medium">กำลังโหลดข้อมูล...</p>
         </div>
       </div>
     );
   }
 
-  // ถ้า email เป็น @line.local ให้แสดง LINE ID แทน
   const displayEmail = user.email && user.email.endsWith('@line.local')
     ? `LINE ID: ${user.email.replace('@line.local', '')}`
     : user.email;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-extrabold text-gray-800 mb-2">
-            โปรไฟล์ของฉัน
-          </h1>
-          <p className="text-gray-500">จัดการข้อมูลส่วนตัวและการตั้งค่าบัญชีของคุณ</p>
+    <div className="min-h-screen bg-gray-50/50 py-6 px-4 md:py-10">
+      
+      {/* Navigation Back */}
+      <div className="max-w-2xl mx-auto mb-6">
+        <Link href="/dashboard" className="inline-flex items-center text-gray-500 hover:text-teal-600 transition-colors font-medium text-sm">
+          <ChevronLeft className="w-4 h-4 mr-1" />
+          กลับสู่หน้าหลัก
+        </Link>
+      </div>
+
+      <div className="max-w-2xl mx-auto bg-white rounded-3xl shadow-xl shadow-gray-200/50 overflow-hidden border border-gray-100">
+        
+        {/* Header Background */}
+        <div className="h-32 bg-gradient-to-r from-teal-400 to-teal-600 relative">
+           {/* Decorative circles */}
+           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-10 -mt-10 blur-xl"></div>
+           <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-8 -mb-8 blur-xl"></div>
         </div>
 
-        {/* Success Alert */}
-        {success && (
-          <div className="mb-6 bg-green-50 border-2 border-green-200 text-green-700 p-4 rounded-xl flex items-center animate-slideDown">
-            <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-            </svg>
-            <span className="font-medium">{success}</span>
-          </div>
-        )}
-
-        {/* Error Alert */}
-        {error && (
-          <div className="mb-6 bg-red-50 border-2 border-red-200 text-red-600 p-4 rounded-xl flex items-center animate-slideDown">
-            <svg className="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/>
-            </svg>
-            <span className="font-medium">{error}</span>
-          </div>
-        )}
-
-        {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          {/* Avatar Section */}
-          <div className="bg-gradient-to-r from-[#4db8a8] to-[#3d9888] p-8">
-            <div className="flex flex-col sm:flex-row items-center gap-6">
-              {/* Avatar */}
-              <div className="relative group">
-                <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-white overflow-hidden flex items-center justify-center shadow-xl ring-4 ring-white/50">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <svg className="w-16 h-16 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
-                    </svg>
-                  )}
+        {/* Profile Avatar Container */}
+        <div className="relative px-8 -mt-16 text-center">
+          <div className="inline-block relative group">
+            <div className="w-32 h-32 rounded-full border-4 border-white shadow-lg bg-white overflow-hidden mx-auto relative z-10">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-400">
+                  <User className="w-16 h-16" />
                 </div>
-                
-                {/* Upload overlay */}
-                <button
-                  type="button"
-                  onClick={onPickFile}
-                  disabled={uploading}
-                  className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                >
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* User Info */}
-              <div className="flex-1 text-center sm:text-left">
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-1">
-                  {user.name || 'ชื่อของคุณ'}
-                </h2>
-                <p className="text-white/80 mb-4">{displayEmail}</p>
-                
-                {/* Avatar Actions */}
-                <div className="flex flex-wrap gap-3 justify-center sm:justify-start">
-                  <input 
-                    id={fileInputId} 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={handleFileChange} 
-                  />
-                  <button
-                    type="button"
-                    onClick={onPickFile}
-                    disabled={uploading}
-                    className="px-5 py-2.5 rounded-xl bg-white text-[#4db8a8] font-semibold hover:bg-gray-50 disabled:opacity-60 transition-all shadow-md text-sm"
-                  >
-                    {uploading ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        กำลังอัปโหลด...
-                      </span>
-                    ) : (
-                      'เปลี่ยนรูปภาพ'
-                    )}
-                  </button>
-                  {avatarUrl && (
-                    <button
-                      type="button"
-                      onClick={handleDeleteAvatar}
-                      className="px-5 py-2.5 rounded-xl bg-white/10 text-white font-semibold hover:bg-white/20 transition-all border border-white/30 text-sm"
-                    >
-                      ลบรูปภาพ
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Form Section */}
-          <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6">
-            {/* Personal Information */}
-            <div>
-              <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <svg className="w-5 h-5 text-[#4db8a8]" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
-                </svg>
-                ข้อมูลส่วนตัว
-              </h3>
+              )}
               
-              <div className="space-y-4">
-                {/* Name */}
-                <div>
-                  <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
-                    ชื่อ - นามสกุล
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="name"
-                      type="text"
-                      value={user.name}
-                      onChange={(e) => setUser({ ...user, name: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-[#4db8a8] focus:ring-4 focus:ring-[#4db8a8]/10 outline-none transition-all"
-                      placeholder="กรอกชื่อของคุณ"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Email (Read-only) */}
-                <div>
-                  <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">
-                    อีเมล
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="email"
-                      type="text"
-                      value={displayEmail}
-                      readOnly
-                      className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 bg-gray-50 text-gray-600 cursor-not-allowed"
-                      placeholder="อีเมลของคุณ"
-                    />
-                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/>
-                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/>
-                      </svg>
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">ไม่สามารถเปลี่ยนแปลงอีเมลได้</p>
-                </div>
+              {/* Overlay on Hover */}
+              <div 
+                onClick={onPickFile}
+                className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white"
+              >
+                <Camera className="w-8 h-8 mb-1" />
+                <span className="text-xs font-medium">เปลี่ยนรูป</span>
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="pt-6 border-t border-gray-200">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  type="submit"
-                  className="flex-1 px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#4db8a8] to-[#3d9888] text-white font-bold hover:from-[#3d9888] hover:to-[#2d7868] shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200"
-                >
-                  บันทึกการเปลี่ยนแปลง
-                </button>
-                <Link
-                  href="/change-password"
-                  className="px-6 py-3.5 rounded-xl border-2 border-[#4db8a8] text-[#4db8a8] font-bold hover:bg-[#4db8a8] hover:text-white transition-all duration-200 text-center"
-                >
-                  เปลี่ยนรหัสผ่าน
-                </Link>
+            {/* Quick Edit Button (Mobile Friendly) */}
+            <button 
+              onClick={onPickFile}
+              className="absolute bottom-1 right-1 z-20 bg-white text-teal-600 p-2 rounded-full shadow-md border border-gray-100 hover:bg-gray-50 md:hidden"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
+            <input id={fileInputId} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+          </div>
+
+          <h1 className="mt-4 text-2xl font-bold text-gray-800">{user.name || 'ผู้ใช้งาน'}</h1>
+          <p className="text-gray-500 text-sm">{displayEmail}</p>
+
+         
+        </div>
+
+        {/* Form Content */}
+        <div className="p-8">
+          
+          {/* Alerts */}
+          {success && (
+            <div className="mb-6 p-4 bg-emerald-50 text-emerald-700 rounded-xl flex items-center gap-3 border border-emerald-100 animate-in slide-in-from-top-2">
+              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Save className="w-4 h-4" />
               </div>
+              <div>
+                <p className="font-semibold text-sm">สำเร็จ!</p>
+                <p className="text-xs">{success}</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-xl flex items-center gap-3 border border-red-100 animate-in slide-in-from-top-2">
+              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="font-bold">!</span>
+              </div>
+              <p className="text-sm font-medium">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            
+            {/* Input Groups */}
+            <div className="grid gap-6">
+              {/* Name Field */}
+              <div className="space-y-2">
+                <label htmlFor="name" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <User className="w-4 h-4 text-teal-500" /> ชื่อของคุณ
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={user.name}
+                  onChange={(e) => setUser({ ...user, name: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 focus:bg-white focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 outline-none transition-all duration-200"
+                  placeholder="ระบุชื่อของคุณ"
+                />
+              </div>
+
+              {/* Email Field */}
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-gray-400" /> อีเมล / บัญชีผู้ใช้
+                </label>
+                <input
+                  id="email"
+                  type="text"
+                  value={displayEmail}
+                  readOnly
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-gray-100 flex flex-col md:flex-row gap-4">
+              <button
+                type="submit"
+                className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-semibold py-3.5 px-6 rounded-xl shadow-lg shadow-teal-500/20 transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2"
+              >
+                <Save className="w-5 h-5" /> บันทึกข้อมูล
+              </button>
+              
+              <Link
+                href="/change-password"
+                className="flex-1 bg-white border-2 border-gray-200 hover:border-teal-500 hover:text-teal-600 text-gray-700 font-semibold py-3.5 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <Key className="w-5 h-5" /> เปลี่ยนรหัสผ่าน
+              </Link>
             </div>
           </form>
         </div>
 
-        {/* Info Card */}
-        <div className="mt-6 bg-blue-50 border-2 border-blue-100 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-          </div>
+        {/* Footer / Logout */}
+        <div className="bg-gray-50 p-6 text-center border-t border-gray-100">
+           <button
+             onClick={handleLogout}
+             className="text-red-500 hover:text-red-700 font-medium text-sm inline-flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors"
+           >
+             <LogOut className="w-4 h-4" /> ออกจากระบบ
+           </button>
         </div>
-      </div>
 
-      {/* Animation */}
-      <style jsx>{`
-        @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
-      `}</style>
+      </div>
+      
+      {/* Footer Credit (Optional) */}
+      <p className="text-center text-gray-400 text-xs mt-8">
+        © 2025 Financial Planner. All rights reserved.
+      </p>
     </div>
   );
 }
