@@ -644,15 +644,30 @@ export default function AddTransaction() {
           if (line.length < 2) continue;
           if (skipKeywords.some(word => lowerLine.includes(word))) continue;
           
-          // Pattern 1: "ItemName 99.99" or "ItemName 1,999.99"
-          const pattern1 = line.match(/^(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})$/);
+          // Clean item name helper function
+          const cleanItemName = (name) => {
+            // Remove common OCR artifacts and unwanted text
+            let cleaned = name
+              .replace(/\(ราคา\s*\)/gi, '')        // Remove "(ราคา )"
+              .replace(/\(ราคา$/gi, '')            // Remove "(ราคา" at end
+              .replace(/\(price\s*\)/gi, '')       // Remove "(price )"
+              .replace(/\s{2,}/g, ' ')             // Replace multiple spaces with single space
+              .trim();
+            
+            // Remove trailing punctuation except Thai vowels
+            cleaned = cleaned.replace(/[\s\)\(]+$/, '').trim();
+            
+            return cleaned;
+          };
+          
+          // Pattern 1: "ItemName(optional text)     99.99" - with multiple spaces before price
+          const pattern1 = line.match(/^(.+?)\s{2,}(\d{1,3}(?:,\d{3})*\.\d{2})$/);
           if (pattern1) {
-            const itemName = pattern1[1].trim();
+            let itemName = cleanItemName(pattern1[1]);
             const price = pattern1[2];
             
             // Verify it's a valid item name (has letters)
-            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 40) {
-              // Skip if price is 0.00
+            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 50) {
               if (parseFloat(price.replace(/,/g, '')) > 0) {
                 foodItems.push(`• ${itemName} - ${price} บาท`);
                 continue;
@@ -660,14 +675,61 @@ export default function AddTransaction() {
             }
           }
           
-          // Pattern 2: "2 ItemName 99.99" (quantity + item + price)
-          const pattern2 = line.match(/^(\d{1,2})\s+(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})$/);
+          // Pattern 2: "ItemName(optional text) 99.99" - with single space before price
+          const pattern2 = line.match(/^(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})$/);
           if (pattern2) {
-            const qty = pattern2[1];
-            const itemName = pattern2[2].trim();
-            const price = pattern2[3];
+            let itemName = cleanItemName(pattern2[1]);
+            const price = pattern2[2];
             
-            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 40) {
+            // Verify it's a valid item name (has letters)
+            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 50) {
+              if (parseFloat(price.replace(/,/g, '')) > 0) {
+                foodItems.push(`• ${itemName} - ${price} บาท`);
+                continue;
+              }
+            }
+          }
+          
+          // Pattern 3: "ItemName(size)     qty   price" or "ItemName(size)     qty"
+          const pattern3 = line.match(/^(.+?)\s{2,}(\d{1,2})\s*(\d{1,3}(?:,\d{3})*\.\d{2})?$/);
+          if (pattern3) {
+            let itemName = cleanItemName(pattern3[1]);
+            const qty = pattern3[2];
+            const price = pattern3[3];
+            
+            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 50) {
+              // Check if qty looks like a price (has 2 decimals)
+              if (qty.length <= 2 && parseInt(qty) < 20) {
+                if (price && parseFloat(price.replace(/,/g, '')) > 0) {
+                  foodItems.push(`• ${itemName} (×${qty}) - ${price} บาท`);
+                  continue;
+                } else {
+                  // Qty without price - check next line for price
+                  if (i + 1 < lines.length) {
+                    const nextLine = lines[i + 1].trim();
+                    const priceMatch = nextLine.match(/^\s*(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
+                    if (priceMatch) {
+                      const nextPrice = priceMatch[1];
+                      if (parseFloat(nextPrice.replace(/,/g, '')) > 0) {
+                        foodItems.push(`• ${itemName} (×${qty}) - ${nextPrice} บาท`);
+                        i++; // Skip next line
+                        continue;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
+          // Pattern 4: "qty ItemName price" (quantity at start)
+          const pattern4 = line.match(/^(\d{1,2})\s+(.+?)\s+(\d{1,3}(?:,\d{3})*\.\d{2})$/);
+          if (pattern4) {
+            const qty = pattern4[1];
+            let itemName = cleanItemName(pattern4[2]);
+            const price = pattern4[3];
+            
+            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2 && itemName.length <= 50) {
               if (parseFloat(price.replace(/,/g, '')) > 0) {
                 foodItems.push(`• ${itemName} (×${qty}) - ${price} บาท`);
                 continue;
@@ -675,18 +737,24 @@ export default function AddTransaction() {
             }
           }
           
-          // Pattern 3: Item name on one line, price on next line
-          if (/[ก-๙a-zA-Z]/.test(line) && !/\d/.test(line) && line.length >= 3 && line.length <= 40) {
-            // Check if next line is a price
-            if (i + 1 < lines.length) {
-              const nextLine = lines[i + 1].trim();
-              const priceMatch = nextLine.match(/^(\d{1,3}(?:,\d{3})*\.\d{2})$/);
-              if (priceMatch) {
-                const price = priceMatch[1];
-                if (parseFloat(price.replace(/,/g, '')) > 0) {
-                  foodItems.push(`• ${line} - ${price} บาท`);
-                  i++; // Skip next line as we've already processed it
-                  continue;
+          // Pattern 5: Item name only, price on next line
+          if (/[ก-๙a-zA-Z]/.test(line) && line.length >= 3 && line.length <= 50) {
+            // Clean the item name
+            let itemName = cleanItemName(line);
+            
+            // Check if it still has letters after cleaning
+            if (/[ก-๙a-zA-Z]/.test(itemName) && itemName.length >= 2) {
+              // Check if next line is a price
+              if (i + 1 < lines.length) {
+                const nextLine = lines[i + 1].trim();
+                const priceMatch = nextLine.match(/^\s*(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
+                if (priceMatch) {
+                  const price = priceMatch[1];
+                  if (parseFloat(price.replace(/,/g, '')) > 0) {
+                    foodItems.push(`• ${itemName} - ${price} บาท`);
+                    i++; // Skip next line
+                    continue;
+                  }
                 }
               }
             }
