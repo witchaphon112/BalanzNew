@@ -12,6 +12,7 @@ const transactionRoutes = require('./routes/transactions');
 const categoryRoutes = require('./routes/categories'); // เปลี่ยนจาก Categories
 const budgetRoutes = require('./routes/budget'); // แก้ไขการพิมพ์ผิด
 const notificationsRouter = require('./routes/notifications');
+const ocrRoutes = require('./routes/ocr'); // OCR routes
 dotenv.config();
 const app = express();
 // LINE Login configuration
@@ -105,6 +106,8 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/categories', categoryRoutes); // เปลี่ยนจาก Categories
 app.use('/api/budgets', budgetRoutes); // แก้ไขการพิมพ์ผิด
 app.use('/api', notificationsRouter); // ใช้ /api/notifications
+app.use('/api/ocr', ocrRoutes); // OCR routes
+app.use('/uploads', express.static('uploads')); // Serve uploaded files
 
 // Start server
 const PORT = process.env.PORT || 5050;
