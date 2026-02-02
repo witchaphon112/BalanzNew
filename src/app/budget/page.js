@@ -118,7 +118,10 @@ export default function BudgetManager({ onClose }) {
     const list = categories.map(cat => {
       const budgetAmount = budgets[selectedMonth]?.[cat._id] || 0;
       const spentAmount = currentMonthTrans
-        .filter(t => (typeof t.category === 'object' ? t.category._id : t.category) === cat._id)
+        .filter(t => {
+          const catVal = t.category && typeof t.category === 'object' ? t.category._id : t.category;
+          return catVal === cat._id;
+        })
         .reduce((sum, t) => sum + (t.amount || 0), 0);
       totalBudget += budgetAmount;
       totalSpent += spentAmount;

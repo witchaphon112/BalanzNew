@@ -162,7 +162,7 @@ export default function Profile() {
       localStorage.removeItem('avatarUrl');
       localStorage.removeItem('name');
     } catch {}
-    window.location.href = '/login';
+    window.location.href = '/';
   };
 
   if (loading) {
