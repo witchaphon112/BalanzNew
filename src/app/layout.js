@@ -25,6 +25,24 @@ export default function RootLayout({ children }) {
     
   // --- Effects ---
   useEffect(() => {
+    // If token present in URL (from LINE callback), persist it to localStorage
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tokenFromUrl = params.get('token');
+      const profilePic = params.get('profilePic');
+      if (tokenFromUrl) {
+        localStorage.setItem('token', tokenFromUrl);
+        if (profilePic) localStorage.setItem('profilePic', decodeURIComponent(profilePic));
+        // remove token/profilePic from URL to keep it clean
+        params.delete('token');
+        params.delete('profilePic');
+        const newSearch = params.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    } catch (e) {
+      // ignore
+    }
     const token = localStorage.getItem('token');
     setIsLoggedIn(!!token);
   }, []);
@@ -37,10 +55,10 @@ export default function RootLayout({ children }) {
     return (
       <Link href={href} className="flex-1 group">
         <div className={`flex flex-col items-center justify-center py-2 transition-colors duration-200 ${
-          active ? 'text-teal-600' : 'text-slate-400 hover:text-slate-600'
+          active ? 'text-blue-400' : 'text-slate-400 hover:text-slate-600'
         }`}>
           {icon}
-          <span className={`text-[10px] mt-1 font-medium ${active ? 'text-teal-600' : 'text-slate-400'}`}>
+          <span className={`text-[10px] mt-1 font-medium ${active ? 'text-blue-400' : 'text-slate-400'}`}>
             {label}
           </span>
         </div>

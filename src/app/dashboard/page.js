@@ -170,6 +170,7 @@ export default function Dashboard() {
         totalExpenses,
         netSavings: totalIncome - totalExpenses,
         recentTransactions: sortedTransactions.slice(0, 5),
+        transactionsAll: filteredTransactions,
       });
       setError('');
       
@@ -616,6 +617,57 @@ export default function Dashboard() {
                 </Link>
               </div>
             )}
+            {/* Expense summary card (matches design) */}
+            <div className="mt-6 max-w-2xl mx-auto">
+              <div className="bg-white rounded-xl border-2 border-gray-100 p-5">
+                <div className="text-center mb-4">
+                  <h3 className="text-xl font-bold text-pink-600">สรุปรายจ่าย</h3>
+                </div>
+
+                <div className="space-y-5">
+                  {(() => {
+                    const src = (stats.transactionsAll && stats.transactionsAll.length) ? stats.transactionsAll : (stats.recentTransactions || []);
+                    const map = {};
+                    src.forEach(t => {
+                      if (!t) return;
+                      if (t.type !== 'expense') return;
+                      const id = t.category?._id || '_none';
+                      const name = t.category?.name || 'อื่นๆ';
+                      const amt = Number(t.amount) || 0;
+                      if (!map[id]) map[id] = { id, name, amount: 0, budget: (t.category && t.category.budget) || 0 };
+                      map[id].amount += amt;
+                    });
+                    const cats = Object.values(map).sort((a,b) => b.amount - a.amount).slice(0,3);
+                    if (!cats.length) return <div className="text-center py-8 text-sm text-gray-500">ไม่มีรายการรายจ่ายในเดือนนี้</div>;
+                    return cats.map(c => {
+                      const spent = c.amount || 0;
+                      const budget = c.budget || 0;
+                      const pct = budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
+                      return (
+                        <div key={c.id}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-sm font-medium text-gray-700">{c.name}</div>
+                            <div className="text-sm font-semibold text-gray-700">{spent.toLocaleString ? spent.toLocaleString() : spent} ฿ / {budget > 0 ? budget.toLocaleString() : '-'}</div>
+                          </div>
+                          <div className="w-full h-3 bg-pink-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-pink-300" style={{ width: budget > 0 ? `${pct}%` : '100%' }} />
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <div className="mt-5">
+                  <Link href="/budget" className="w-full inline-flex items-center justify-center gap-2 p-3 border-2 border-gray-100 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
+                    <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    จัดการหมวดและงบ
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

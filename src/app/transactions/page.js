@@ -2,9 +2,9 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-const PRIMARY_COLOR = '#4db8a8';
-const INCOME_COLOR = '#10b981';
-const EXPENSE_COLOR = '#ef4444';
+const PRIMARY_COLOR = '#2563EB'; // blue-600
+const INCOME_COLOR = '#1E40AF'; // indigo-800
+const EXPENSE_COLOR = '#1E3A8A'; // blue-900
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
@@ -13,9 +13,13 @@ export default function TransactionsPage() {
   const [error, setError] = useState('');
   const [filterType, setFilterType] = useState('all'); // all, income, expense
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(''); // format: `${year}-${monthIndex}`
+  const [monthMenuOpen, setMonthMenuOpen] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [editFormData, setEditFormData] = useState({
     amount: '',
     type: 'expense',
@@ -43,6 +47,14 @@ export default function TransactionsPage() {
       filtered = filtered.filter(txn => txn.type === filterType);
     }
 
+    // Filter by selected month (year-month key)
+    if (selectedMonth) {
+      filtered = filtered.filter(txn => {
+        const d = new Date(txn.date);
+        return `${d.getFullYear()}-${d.getMonth()}` === selectedMonth;
+      });
+    }
+
     // Filter by search query
     if (searchQuery) {
       filtered = filtered.filter(txn => 
@@ -52,7 +64,39 @@ export default function TransactionsPage() {
     }
 
     setFilteredTransactions(filtered);
-  }, [transactions, filterType, searchQuery]);
+  }, [transactions, filterType, searchQuery, selectedMonth]);
+
+  // Export filtered transactions to CSV (Excel-compatible)
+  const exportToCSV = () => {
+    try {
+      if (!filteredTransactions || filteredTransactions.length === 0) {
+        alert('ไม่มีรายการให้ส่งออก');
+        return;
+      }
+      const headers = ['วันที่', 'ประเภท', 'หมวดหมู่', 'จำนวนเงิน', 'หมายเหตุ'];
+      const rows = filteredTransactions.map(t => [
+        new Date(t.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }),
+        t.type,
+        t.category?.name || '',
+        t.amount,
+        (t.notes || '').replace(/\n/g, ' ')
+      ]);
+
+      const csv = [headers, ...rows].map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transactions_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export CSV error', err);
+      alert('เกิดข้อผิดพลาดในการส่งออก');
+    }
+  };
 
   const fetchTransactions = async (token) => {
     setLoading(true);
@@ -161,110 +205,139 @@ export default function TransactionsPage() {
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
 
+  // Build month options as ranges (e.g. "1 ก.พ. - 28 ก.พ. 2569")
+  const monthOptions = (() => {
+    const map = new Map();
+    transactions.forEach(t => {
+      const d = new Date(t.date);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      if (!map.has(key)) map.set(key, { year: d.getFullYear(), month: d.getMonth() });
+    });
+
+    return Array.from(map.keys())
+      .map(key => {
+        const [y, m] = key.split('-').map(Number);
+        const d = new Date(y, m, 1);
+        const monthShort = d.toLocaleDateString('th-TH', { month: 'short' });
+        const yearThai = d.toLocaleDateString('th-TH', { year: 'numeric' });
+        const endDay = new Date(y, m + 1, 0).getDate();
+        const label = `1 ${monthShort} - ${endDay} ${monthShort} ${yearThai}`;
+        return { key, label, y, m };
+      })
+      .sort((a, b) => (b.y * 12 + b.m) - (a.y * 12 + a.m));
+  })();
+
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">ธุรกรรมทั้งหมด</h1>
-          <p className="text-gray-600">จัดการและตรวจสอบรายการเงินเข้า-ออกของคุณ</p>
+        {/* Header + Date range pill (matches screenshot) */}
+        <div className="mb-6 text-center">
+                      <h1 className="text-2xl mb-4 font-semibold text-gray-900">รายการ</h1>
+
+          <div className="w-full max-w-xs mx-auto bg-white rounded-2xl px-6 py-3 shadow-md border border-gray-100 flex items-center justify-between">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMonthMenuOpen(prev => !prev)}
+                onBlur={() => setTimeout(() => setMonthMenuOpen(false), 120)}
+                className="flex items-center gap-3 text-base font-semibold text-gray-900 bg-white outline-none"
+              >
+                <span>{selectedMonth ? (monthOptions.find(m => m.key === selectedMonth)?.label || 'ทุกเดือน') : 'ทุกเดือน'}</span>
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+
+              {monthMenuOpen && (
+                <div className="absolute left-1/2 top-full mt-2 transform -translate-x-1/2 w-[36rem] max-w-[90vw] bg-white rounded-none shadow-md border border-gray-100 overflow-hidden z-50">
+                  <div className="py-1">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setSelectedMonth(''); setMonthMenuOpen(false); }}
+                      className={`block w-full text-left px-4 py-3 text-sm ${selectedMonth === '' ? 'bg-sky-50 text-sky-700 font-semibold' : 'hover:bg-gray-50'}`}
+                    >
+                      ทุกเดือน
+                    </button>
+                    {monthOptions.map(opt => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); setSelectedMonth(opt.key); setMonthMenuOpen(false); }}
+                        className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between ${selectedMonth === opt.key ? 'bg-sky-50 text-sky-700 font-semibold' : 'hover:bg-gray-50'}`}
+                      >
+                        <span className="truncate">{opt.label}</span>
+                        {selectedMonth === opt.key && (
+                          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" style={{ color: PRIMARY_COLOR }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="mt-4">
+          </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-2 border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-600">รายรับรวม</p>
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11l5-5m0 0l5 5m-5-5v12"/>
-                </svg>
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-emerald-600">{totalIncome.toLocaleString()} ฿</p>
-          </div>
+        {/* Summary cards removed */}
 
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-2 border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-600">รายจ่ายรวม</p>
-              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 13l-5 5m0 0l-5-5m5 5V6"/>
-                </svg>
-              </div>
-            </div>
-            <p className="text-3xl font-bold text-red-600">{totalExpenses.toLocaleString()} ฿</p>
-          </div>
-
-          <div className="bg-white rounded-2xl p-6 shadow-sm border-2 border-gray-100">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-gray-600">คงเหลือ</p>
-              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                </svg>
-              </div>
-            </div>
-            <p className={`text-3xl font-bold ${totalIncome - totalExpenses >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {(totalIncome - totalExpenses).toLocaleString()} ฿
-            </p>
-          </div>
-        </div>
-
-        {/* Filters & Search */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border-2 border-gray-100 mb-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search */}
+        {/* Filters & Search (styled like screenshot) */}
+        <div className="mb-6 flex flex-col items-center">
+          <div className="w-full max-w-7xl bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-start gap-4">
             <div className="flex-1">
-              <div className="relative">
-                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                </svg>
-                <input
-                  type="text"
-                  placeholder="ค้นหาธุรกรรม..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#4db8a8] focus:ring-4 focus:ring-[#4db8a8]/20 outline-none transition-all"
-                />
+              <div className="text-sm font-semibold text-gray-800 mb-3">คัดกรองประเภทรายการ</div>
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex items-center gap-3">
+                <button
+                  onClick={() => setFilterType('all')}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold ${filterType === 'all' ? 'bg-sky-500 text-white' : 'bg-white text-gray-600 border border-gray-100'}`}
+                >
+                  ทั้งหมด
+                </button>
+                <button
+                  onClick={() => setFilterType('expense')}
+                  className={`px-3 py-2 rounded-full text-sm font-semibold ${filterType === 'expense' ? 'bg-sky-500 text-white' : 'bg-white text-gray-600 border border-gray-100'}`}
+                >
+                  รายจ่าย
+                </button>
+                <button
+                  onClick={() => setFilterType('income')}
+                  className={`px-3 py-2 rounded-full text-sm font-semibold ${filterType === 'income' ? 'bg-sky-500 text-white' : 'bg-white text-gray-600 border border-gray-100'}`}
+                >
+                  รายรับ
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <div className="relative">
+                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="เลือกหลายรายการ หรือ ค้นหา..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-full border border-gray-100 bg-white text-sm placeholder-gray-400 focus:outline-none"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Filter Buttons */}
-            <div className="flex gap-2">
+            <div className="flex-shrink-0 flex flex-col items-center gap-3">
               <button
-                onClick={() => setFilterType('all')}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                  filterType === 'all'
-                    ? 'bg-[#4db8a8] text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
+                onClick={exportToCSV}
+                className="w-12 h-12 rounded-xl bg-white border border-gray-100 flex items-center justify-center shadow-sm"
+                title="ส่งออก"
               >
-                ทั้งหมด
-              </button>
-              <button
-                onClick={() => setFilterType('income')}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                  filterType === 'income'
-                    ? 'bg-emerald-500 text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                รายรับ
-              </button>
-              <button
-                onClick={() => setFilterType('expense')}
-                className={`px-6 py-3 rounded-xl font-semibold transition-all ${
-                  filterType === 'expense'
-                    ? 'bg-red-500 text-white shadow-lg'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                รายจ่าย
+                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v12m0 0l-4-4m4 4l4-4M21 21H3"/></svg>
               </button>
             </div>
           </div>
+
         </div>
 
         {/* Error Message */}
@@ -281,7 +354,7 @@ export default function TransactionsPage() {
         <div className="bg-white rounded-2xl shadow-sm border-2 border-gray-100 overflow-hidden">
           {loading ? (
             <div className="text-center py-16">
-              <div className="inline-block w-10 h-10 border-4 border-gray-200 border-t-[#4db8a8] rounded-full animate-spin"></div>
+              <div className="inline-block w-10 h-10 border-4 border-gray-200 rounded-full animate-spin" style={{ borderTopColor: PRIMARY_COLOR }}></div>
               <p className="text-gray-500 mt-4">กำลังโหลด...</p>
             </div>
           ) : filteredTransactions.length === 0 ? (
@@ -340,10 +413,7 @@ export default function TransactionsPage() {
 
                   {/* Right */}
                   <div className="flex items-center gap-4">
-                    <div
-                      className="text-xl font-bold"
-                      style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}
-                    >
+                    <div className="text-xl font-bold text-gray-900">
                       {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
                     </div>
 
@@ -375,19 +445,6 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* FAB */}
-      <Link
-        href="/transactions/add"
-        className="fixed right-6 md:right-8 bottom-6 md:bottom-8 w-14 h-14 md:w-16 md:h-16 rounded-2xl shadow-2xl text-white flex items-center justify-center transition-all duration-300 hover:scale-110 active:scale-95 z-50 group"
-        style={{
-          background: 'linear-gradient(135deg, #4db8a8 0%, #3d9888 100%)',
-          boxShadow: `0 10px 25px rgba(77, 184, 168, 0.4)`
-        }}
-      >
-        <svg className="w-7 h-7 md:w-8 md:h-8 group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
-        </svg>
-      </Link>
 
       {/* Edit Modal */}
       {showEditModal && editingTransaction && (

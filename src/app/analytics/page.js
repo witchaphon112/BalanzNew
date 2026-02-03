@@ -67,6 +67,7 @@ export default function Analytics() {
   // Filter State
   const [filterText, setFilterText] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all', 'income', 'expense'
+  const [overviewMode, setOverviewMode] = useState('monthly'); // 'daily' | 'monthly'
 
   // --- LOGIC: Date Management ---
   const getMonths = () => {
@@ -213,16 +214,13 @@ export default function Analytics() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-12">
+    <div className="">
       
       {/* HEADER SECTION */}
-      <header className="bg-white shadow-sm sticky top-0 z-20">
+      <header className="">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600">
-                <BarChart3 className="w-6 h-6" />
-              </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-800">ภาพรวมการเงิน</h1>
                 <p className="text-xs text-slate-500">วิเคราะห์รายรับ-รายจ่ายของคุณ</p>
@@ -291,32 +289,56 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* CHARTS SECTION */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center gap-2 mb-6">
-              <PieChart className="w-5 h-5 text-slate-400" />
-              <h3 className="font-bold text-slate-700">สัดส่วนค่าใช้จ่าย</h3>
-            </div>
-            <div className="h-64 flex justify-center">
-              {Object.keys(expenseByCategory).length > 0 ? (
-                <Pie data={pieData} options={chartOptions} />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-slate-300">
-                  <Layers className="w-12 h-12 mb-2 opacity-50" />
-                  <p>ไม่มีข้อมูลรายจ่าย</p>
-                </div>
-              )}
+        {/* CHARTS / OVERVIEW CARD (styled like screenshot) */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-slate-800">ประวัติรายรับรายจ่าย</h3>
+            <div className="inline-flex items-center bg-slate-50 rounded-full p-1">
+              <button
+                type="button"
+                onClick={() => setOverviewMode('daily')}
+                className={`px-3 py-2 text-sm rounded-full ${overviewMode === 'daily' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}
+              >รายวัน</button>
+              <button
+                type="button"
+                onClick={() => setOverviewMode('monthly')}
+                className={`px-3 py-2 text-sm rounded-full ${overviewMode === 'monthly' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}
+              >รายเดือน</button>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex items-center gap-2 mb-6">
-              <BarChart3 className="w-5 h-5 text-slate-400" />
-              <h3 className="font-bold text-slate-700">เปรียบเทียบ รับ-จ่าย</h3>
+          <div >
+            <div className="h-64 flex items-end justify-center relative">
+              {/* Main bar chart centered */}
+              <div className="w-full max-w-2xl">
+                <Bar data={barData} options={chartOptions} />
+              </div>
+              {/* dashed baseline indicator */}
+              <div className="absolute left-0 right-0 bottom-16 border-t-2 border-dashed border-slate-200 pointer-events-none"></div>
             </div>
-            <div className="h-64">
-               <Bar data={barData} options={chartOptions} />
+
+            <div className="mt-4 flex items-center justify-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-rose-500 inline-block"></span>
+                <span className="text-sm text-slate-600">รายจ่าย</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-teal-400 inline-block"></span>
+                <span className="text-sm text-slate-600">รายรับ</span>
+              </div>
+            </div>
+
+            <p className="text-center text-slate-400 text-sm mt-6">เอานิ้วจับบนกราฟเพื่อดูค่าได้เลย</p>
+
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-center">
+                <div className="text-xs text-slate-500 mb-1">รายจ่ายเฉลี่ยต่อเดือน</div>
+                <div className="text-2xl font-bold text-rose-500">฿{(summary.expense || 0).toLocaleString()}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-slate-500 mb-1">รายรับเฉลี่ยต่อเดือน</div>
+                <div className="text-2xl font-bold text-teal-500">฿{(summary.income || 0).toLocaleString()}</div>
+              </div>
             </div>
           </div>
         </div>

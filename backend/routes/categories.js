@@ -20,35 +20,7 @@ const authMiddleware = (req, res, next) => {
 // Get categories for user
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const defaultCategories = [
-      { name: 'เงินเดือน', icon: '💰', type: 'income' },
-      { name: 'ยอดขาย', icon: '📈', type: 'income' },
-      { name: 'โบนัส', icon: '🎁', type: 'income' },
-      { name: 'เงินดอกเบี้ย', icon: '🏦', type: 'income' },
-      { name: 'ของขวัญ', icon: '🎁', type: 'income' },
-      { name: 'เงินฝาก', icon: '🏦', type: 'income' },
-      { name: 'อาหาร', icon: '🍽️', type: 'expense' },
-      { name: 'ขนม', icon: '🍩', type: 'expense' },
-      { name: 'ของใช้จำเป็น', icon: '🧴', type: 'expense' },
-      { name: 'ค่าเดินทาง', icon: '🚗', type: 'expense' },
-      { name: 'ที่อยู่อาศัย', icon: '🏠', type: 'expense' },
-      { name: 'บันเทิง', icon: '🎬', type: 'expense' },
-      { name: 'ช้อปปิ้ง', icon: '🛒', type: 'expense' },
-      { name: 'สุขภาพ', icon: '🏥', type: 'expense' },
-      { name: 'การศึกษา', icon: '📚', type: 'expense' },
-    ];
-
     const existingCategories = await Category.find({ userId: req.user.userId });
-    if (existingCategories.length === 0) {
-      for (const cat of defaultCategories) {
-        await Category.findOneAndUpdate(
-          { name: cat.name, userId: req.user.userId, type: cat.type },
-          { name: cat.name, icon: cat.icon, type: cat.type, userId: req.user.userId },
-          { upsert: true, new: true, setDefaultsOnInsert: true }
-        );
-      }
-    }
-
     const categories = await Category.find({ userId: req.user.userId });
     res.json(categories);
   } catch (error) {
