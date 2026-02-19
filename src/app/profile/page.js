@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Camera, User, Mail, Save, Key, LogOut, ChevronLeft, Trash2, UploadCloud } from 'lucide-react';
+import { Camera, User, Mail, Save, Key, LogOut, ChevronLeft, Trash2, UploadCloud, Trophy } from 'lucide-react';
 
 export default function Profile() {
   const router = useRouter();
@@ -12,7 +12,15 @@ export default function Profile() {
   const [success, setSuccess] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [rankingOpen, setRankingOpen] = useState(false);
   const fileInputId = 'avatar-file-input';
+
+  const rankingData = [
+    { name: 'Witchaphon y.', days: 42 },
+    { name: 'Somchai', days: 28 },
+    { name: 'Nipa', days: 15 },
+  ];
 
   // Local feature settings (stored in localStorage)
   const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'autocat' | 'payments' | 'categories'
@@ -178,7 +186,7 @@ export default function Profile() {
 
   const handleDeleteAvatar = async () => {
     if (!confirm('คุณต้องการลบรูปโปรไฟล์ใช่หรือไม่?')) return;
-    
+
     try {
       setUploading(true);
       const token = localStorage.getItem('token');
@@ -187,7 +195,7 @@ export default function Profile() {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => {});
-      
+
       setSuccess('ลบรูปโปรไฟล์สำเร็จ');
       setTimeout(() => setSuccess(''), 3000);
     } finally {
@@ -197,7 +205,7 @@ export default function Profile() {
     }
   };
 
-  const handleLogout = () => {
+  const performLogout = () => {
     try {
       localStorage.removeItem('token');
       localStorage.removeItem('avatarUrl');
@@ -205,6 +213,9 @@ export default function Profile() {
     } catch {}
     window.location.href = '/';
   };
+
+  const handleLogout = () => setConfirmLogoutOpen(true);
+  const cancelLogout = () => setConfirmLogoutOpen(false);
 
   if (loading) {
     return (
@@ -227,18 +238,17 @@ export default function Profile() {
       <div className="max-w-2xl mx-auto mb-4">
         <div className="flex items-center justify-between">
           <div />
-          <h2 className="text-2xl text-gray-500">ตั้งค่า</h2>
           <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-700">
           </button>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+        <div className="bg-transparent sm:bg-white rounded-3xl shadow-none sm:shadow-xl sm:border border-gray-100 overflow-hidden">
           <div className="p-6">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md bg-gray-100">
+                <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md bg-gray-100 relative">
                   {avatarUrl ? (
                     <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
                   ) : (
@@ -249,11 +259,6 @@ export default function Profile() {
                 </div>
 
                 <input id={fileInputId} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-
-                <div className="absolute -bottom-1 -right-1 flex items-center gap-2">
-                  
-                  
-                </div>
               </div>
 
               <div className="flex-1">
@@ -265,20 +270,31 @@ export default function Profile() {
           </div>
 
           <div className="p-6">
-            <div className="bg-white rounded-xl border p-4 shadow-sm flex gap-4 items-center">
-              <div className="w-28">
-                <img src="/Jiw.png" alt="Jiw" className="w-full h-auto" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-800">จดต่อเนื่องมา</h3>
-                <p className="text-4xl font-extrabold text-gray-900 mt-1">0 วัน</p>
-                <p className="text-sm text-gray-500 mt-1">เลเวลต่อไปใน 1 วัน</p>
-                <div className="mt-3 bg-gray-100 rounded-full h-4 overflow-hidden">
-                  <div className="h-4 bg-sky-500 rounded-full w-1/3"></div>
+            <div className="bg-white rounded-xl border p-4 shadow-sm flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="w-28">
+                  <img src="/Jiw.png" alt="Jiw" className="w-full h-auto" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-gray-800">จดต่อเนื่องมา</h3>
+                  <p className="text-4xl font-extrabold text-gray-900 mt-1">0 วัน</p>
+                  <p className="text-sm text-gray-500 mt-1">เลเวลต่อไปใน 1 วัน</p>
+                  <div className="mt-3 bg-gray-100 rounded-full h-4 overflow-hidden">
+                    <div className="h-4 bg-sky-500 rounded-full w-1/3"></div>
+                  </div>
                 </div>
               </div>
-            </div>
 
+              <div className="flex-shrink-0">
+                <button
+                  onClick={() => setRankingOpen(true)}
+                  aria-label="ดูอันดับการจดต่อเนื่อง"
+                  className="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-yellow-50 text-yellow-700 hover:bg-yellow-100 shadow-sm transition"
+                >
+                  <Trophy className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
 
             <div className="mt-4 space-y-3">
               {[
@@ -294,14 +310,14 @@ export default function Profile() {
                   className="cursor-pointer flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-white hover:shadow-sm transition"
                 >
                   <div className="flex items-center gap-3">
-                      <div className="text-sm font-medium text-gray-700">{label}</div>
-                      {key === 'reminder' && (
-                        <div className="ml-3 text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">{reminderEnabled ? `เปิด ${reminderTime}` : 'ปิด'}</div>
-                      )}
-                      {key === 'autocat' && (
-                        <div className="ml-3 text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">{autoCategorize ? 'เปิด' : 'ปิด'}</div>
-                      )}
-                    </div>
+                    <div className="text-sm font-medium text-gray-700">{label}</div>
+                    {key === 'reminder' && (
+                      <div className="ml-3 text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">{reminderEnabled ? `เปิด ${reminderTime}` : 'ปิด'}</div>
+                    )}
+                    {key === 'autocat' && (
+                      <div className="ml-3 text-xs px-2 py-1 bg-gray-100 rounded-full text-gray-600">{autoCategorize ? 'เปิด' : 'ปิด'}</div>
+                    )}
+                  </div>
                   <div className="text-gray-400">
                     <ChevronLeft className="w-4 h-4 rotate-180" />
                   </div>
@@ -314,7 +330,7 @@ export default function Profile() {
           {activeModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/40" onClick={closeModal}></div>
-              <div className="bg-white rounded-2xl shadow-2xl z-10 max-w-md w-full p-6">
+              <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl z-10 w-full max-w-lg sm:max-w-md mx-4 sm:mx-auto p-4 sm:p-6 max-h-[90vh] overflow-auto transform -translate-y-6 sm:-translate-y-12">
                 <div className="flex items-start justify-between">
                   <h3 className="text-lg font-bold text-gray-800">{activeModal === 'reminder' ? 'เตือนจดประจำวัน' : activeModal === 'autocat' ? 'จัดหมวดด้วยความจำ' : activeModal === 'payments' ? 'ประวัติการชำระเงิน' : 'ตั้งค่าหมวด'}</h3>
                   <button onClick={closeModal} className="text-gray-400 hover:text-gray-700">✕</button>
@@ -375,9 +391,150 @@ export default function Profile() {
             </div>
           )}
 
+          {rankingOpen && (
+            <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-12 sm:pt-0 pb-24 sm:pb-8">
+              <div className="absolute inset-0 bg-black/40" onClick={() => setRankingOpen(false)}></div>
+              <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl z-10 w-full max-w-lg sm:max-w-md mx-4 sm:mx-auto p-4 sm:p-6 max-h-[90vh] overflow-auto">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold">อันดับการจดต่อเนื่อง</h3>
+                  <button onClick={() => setRankingOpen(false)} className="text-gray-400 hover:text-gray-700">✕</button>
+                </div>
+
+                <div className="mt-4">
+                  <div className="flex items-center justify-center">
+                    <svg viewBox="0 -10 220 150" className="w-full h-40">
+                      <defs>
+                        <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#86EFAC" />
+                          <stop offset="100%" stopColor="#4ADE80" />
+                        </linearGradient>
+                        <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#FB7185" />
+                          <stop offset="100%" stopColor="#F97316" />
+                        </linearGradient>
+                        <linearGradient id="g3" x1="0" x2="0" y1="0" y2="1">
+                          <stop offset="0%" stopColor="#93C5FD" />
+                          <stop offset="100%" stopColor="#60A5FA" />
+                        </linearGradient>
+                      </defs>
+
+
+                      {(() => {
+                        // positions left, center, right
+                        const positions = [40, 96, 162];
+                        const widths = [28, 40, 28];
+                        const maxBarHeight = 92; // matches available SVG height
+                        const maxDays = Math.max(...rankingData.map(r => r.days));
+                        const grads = ['g1', 'g2', 'g3'];
+
+                        // sort descending so sorted[0] is rank 1 (highest)
+                        const sorted = [...rankingData].sort((a, b) => b.days - a.days);
+                        // we want center=top (rank1), right=rank2, left=rank3
+                        const orderForPositions = [sorted[2], sorted[0], sorted[1]];
+
+                        return orderForPositions.map((r, i) => {
+                          const h = Math.round((r.days / maxDays) * maxBarHeight);
+                          const x = positions[i];
+                          const w = widths[i];
+                          const y = 118 - h;
+                          const cx = x + w / 2;
+                          const badgeY = y - 18; // position badge above bar
+                          const rankIndex = sorted.findIndex(s => s.name === r.name);
+                          return (
+                            <g key={i}>
+                              <rect x={x} y={y} width={w} height={h} rx="8" fill={`url(#${grads[i]})`} />
+                                  {(() => {
+                                    const badgeFill = rankIndex === 0 ? '#FFF1F2' : rankIndex === 1 ? '#EFF6FF' : '#ECFDF5';
+                                    const badgeStroke = rankIndex === 0 ? '#FECACA' : rankIndex === 1 ? '#BFDBFE' : '#BBF7D0';
+                                    const badgeTextColor = rankIndex === 0 ? '#BE123C' : rankIndex === 1 ? '#1E40AF' : '#065F46';
+                                    return (
+                                      <>
+                                        <circle cx={cx} cy={badgeY} r="12" fill={badgeFill} stroke={badgeStroke} strokeWidth="0.6" />
+                                        <text x={cx} y={badgeY + 4} fontSize="10" textAnchor="middle" fill={badgeTextColor} fontWeight="600">{rankIndex + 1}</text>
+                                      </>
+                                    );
+                                  })()}
+                              <text x={cx} y="134" fontSize="11" textAnchor="middle" fill="#374151">{r.name.split(' ')[0]}</text>
+                            </g>
+                          );
+                        });
+                      })()}
+                    </svg>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {(() => {
+                      const sorted = [...rankingData].sort((a, b) => b.days - a.days);
+                      return sorted.map((u, i) => (
+                          <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 bg-white mt-0">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${i===0? 'bg-rose-50 text-rose-600 ring-1 ring-white shadow-sm' : i===1? 'bg-sky-50 text-sky-700 ring-1 ring-white shadow-sm' : 'bg-emerald-50 text-emerald-700 ring-1 ring-white shadow-sm'} font-medium`}>{i+1}</div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium text-gray-800">{u.name}</div>
+                            <div className="text-xs text-gray-500 mt-1">{u.days} วัน</div>
+                          </div>
+                          <div className="text-sm font-semibold text-gray-700">#{i+1}</div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+
+                  <div className="mt-6 flex justify-end">
+                    <button onClick={() => setRankingOpen(false)} className="px-4 py-2 bg-sky-100 text-sky-700 rounded-lg">ปิด</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="p-6 border-t border-gray-100">
-            <button onClick={handleLogout} className="w-full text-left text-red-500 font-medium">ออกจากระบบ</button>
+            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4">
+              <div className="w-full sm:w-auto">
+                <div className="text-sm text-gray-500">เข้าสู่ระบบด้วย</div>
+                <div className="text-sm font-medium text-gray-800">{displayEmail || 'ไม่ระบุอีเมล'}</div>
+              </div>
+
+              <div className="w-full sm:w-auto">
+                <button
+                  onClick={handleLogout}
+                  className="relative w-full sm:inline-flex items-center pl-12 px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white font-semibold rounded-lg shadow-md hover:brightness-95 transition"
+                >
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/20 text-white p-2 rounded-full flex items-center justify-center">
+                    <LogOut className="w-4 h-4" />
+                  </span>
+                  <span className="w-full flex justify-center">ออกจากระบบ</span>
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-gray-400">ออกจากระบบจะล้างข้อมูลการเข้าสู่ระบบบนเครื่องนี้</div>
           </div>
+
+          {confirmLogoutOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/40" onClick={cancelLogout}></div>
+              <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl z-10 w-full max-w-sm sm:max-w-md mx-4 sm:mx-auto p-4 sm:p-6 max-h-[80vh] overflow-auto">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-full bg-red-50 text-red-600">
+                    <LogOut className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-gray-900">ออกจากระบบ</h3>
+                    <p className="text-sm text-gray-500 mt-1">คุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <button onClick={cancelLogout} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button>
+                  <button
+                    onClick={() => { setConfirmLogoutOpen(false); performLogout(); }}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-lg flex items-center justify-center gap-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    ออกจากระบบ
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

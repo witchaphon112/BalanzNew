@@ -1,11 +1,12 @@
 "use client";
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 export default function ResetPassword() {
-  const searchParams = useSearchParams();
-  const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
+  const token = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("token") || "";
+  }, []);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

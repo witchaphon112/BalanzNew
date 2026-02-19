@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon } from 'lucide-react';
 
 // Import Budget modal component
 import Budget from '../budget/page';
@@ -10,12 +10,13 @@ const CurrencyModalContent = ({ onClose }) => (
   <Currency onClose={onClose} />
 );
 
-// Define the primary color constants (Teal theme - ใช้สีเดียวกับ Landing)
-const PRIMARY_COLOR = '#4db8a8';
-const PRIMARY_COLOR_DARK = '#3d9888';
-const INCOME_COLOR = '#10b981'; // Emerald green
-const EXPENSE_COLOR = '#ef4444'; // Red
-const NET_SAVING_COLOR = '#f59e0b'; // Amber
+// Brand tone (Blue product theme)
+const PRIMARY_COLOR = '#2563EB'; // blue-600
+const PRIMARY_COLOR_DARK = '#1D4ED8'; // blue-700
+const INCOME_COLOR = '#2563EB'; // blue
+const EXPENSE_COLOR = '#F43F5E'; // rose-500
+const NET_SAVING_COLOR = '#0F172A'; // slate-900
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
 
 const ICON_MAP = {
   'food': Utensils, 'drink': Coffee, 'restaurant': Utensils,
@@ -54,15 +55,39 @@ export default function Dashboard() {
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       const token = url.searchParams.get('token');
+      const profilePic = url.searchParams.get('profilePic');
       if (token) {
         localStorage.setItem('token', token);
-        // Remove token from URL for security
+      }
+      if (profilePic) {
+        try {
+          localStorage.setItem('profilePic', profilePic);
+        } catch {
+          // ignore
+        }
+      }
+      if (token || profilePic) {
+        // Remove token/profilePic from URL for security
         url.searchParams.delete('token');
+        url.searchParams.delete('profilePic');
         window.history.replaceState({}, document.title, url.pathname + url.search);
       }
     }
   }, []);
+
+  const [userProfile, setUserProfile] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return { name: '', profilePic: '' };
+      return {
+        name: localStorage.getItem('user_name') || '',
+        profilePic: localStorage.getItem('profilePic') || '',
+      };
+    } catch {
+      return { name: '', profilePic: '' };
+    }
+  });
   const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const [budgetInitialType, setBudgetInitialType] = useState('expense');
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [stats, setStats] = useState({
     totalIncome: 0,
@@ -135,7 +160,6 @@ export default function Dashboard() {
 
     setLoading(true);
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/transactions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -187,7 +211,6 @@ export default function Dashboard() {
 
     const fetchCategories = async () => {
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
         const res = await fetch(`${API_BASE}/api/categories`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -210,6 +233,47 @@ export default function Dashboard() {
     
     return () => {};
   }, [selectedMonth]);
+
+  // Fetch profile from backend (LINE user is linked to our User model)
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+    if (!token) return;
+
+    let cancelled = false;
+    const loadMe = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          // token expired/invalid
+          if (res.status === 401) {
+            try { localStorage.removeItem('token'); } catch {}
+            if (!cancelled) window.location.href = '/login';
+          }
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const next = {
+          name: data?.name || '',
+          profilePic: data?.profilePic || (typeof window !== 'undefined' ? (localStorage.getItem('profilePic') || '') : ''),
+        };
+        setUserProfile(next);
+        try {
+          localStorage.setItem('user_name', next.name || '');
+          if (next.profilePic) localStorage.setItem('profilePic', next.profilePic);
+        } catch {
+          // ignore
+        }
+      } catch (err) {
+        // ignore profile load errors (dashboard can still work)
+      }
+    };
+
+    loadMe();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleView = (transaction) => {
     setViewingTransaction(transaction);
@@ -342,332 +406,391 @@ export default function Dashboard() {
     return `${m} ${day}, ${year}`;
   };
 
+  const formatTHB = (value) => {
+    const n = Number(value) || 0;
+    return `฿${n.toLocaleString('th-TH')}`;
+  };
+
+  const expenseBreakdown = useMemo(() => {
+    const src = (stats.transactionsAll && stats.transactionsAll.length)
+      ? stats.transactionsAll
+      : (stats.recentTransactions || []);
+
+    const map = new Map();
+    let total = 0;
+    for (const t of src) {
+      if (!t) continue;
+      if (t.type !== 'expense') continue;
+      const amt = Number(t.amount) || 0;
+      if (amt <= 0) continue;
+      total += amt;
+      const id = t.category?._id || '_none';
+      const name = t.category?.name || 'อื่นๆ';
+      const prev = map.get(id) || { id, name, amount: 0 };
+      prev.amount += amt;
+      map.set(id, prev);
+    }
+
+    const sorted = Array.from(map.values()).sort((a, b) => b.amount - a.amount);
+    const colors = ['#3B82F6', '#EF4444', '#10B981']; // blue, red, green
+    const top = sorted.slice(0, 3).map((item, idx) => ({
+      ...item,
+      color: colors[idx],
+      pct: total > 0 ? item.amount / total : 0,
+    }));
+
+    return { total, top };
+  }, [stats.transactionsAll, stats.recentTransactions]);
+
   /* --- JSX Rendering --- */
 
   return (
-    <main className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-12">
-        
-
-        {/* Quick Action Buttons - move to top for better visibility */}
-        <div className="flex flex-row gap-3 mb-6 justify-end">
-
-          <button
-            type="button"
-            onClick={() => setShowCurrencyModal(true)}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white shadow-md border border-gray-100 hover:bg-blue-50 hover:text-blue-700 transition-all font-semibold text-base"
-          >
-            <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m-5 3H4m0 0l4 4m-4-4l4-4" /></svg>
-            อัตราแลกเปลี่ยน
-          </button>
-        </div>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          {/* Month Navigation Panel */}
-          <div className="flex-1 bg-gradient-to-br from-[#4db8a8] to-[#3d9888] rounded-xl shadow-lg p-5">
-            <p className="text-xs text-white/80 mb-3 uppercase tracking-wide font-semibold flex items-center gap-2">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-              </svg>
-              ช่วงเดือน
-            </p>
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setCurrentMonthIndex((prev) => (prev > 0 ? prev - 1 : 0))}
-                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all disabled:opacity-30"
-                disabled={currentMonthIndex === 0}
-                aria-label="เดือนก่อนหน้า"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-              </button>
-              <div className="text-center">
-                <span className="text-xl md:text-2xl font-bold text-white">
-                  {selectedMonth}
-                </span>
-              </div>
-              <button
-                onClick={() => setCurrentMonthIndex((prev) => (prev < months.length - 1 ? prev + 1 : months.length - 1))}
-                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-all disabled:opacity-30"
-                disabled={currentMonthIndex === months.length - 1}
-                aria-label="เดือนถัดไป"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/>
-                </svg>
-              </button>
+    <main className="min-h-screen bg-slate-50">
+      <div className="mx-auto w-full max-w-lg px-4 py-5 space-y-4">
+        {/* Top bar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-11 w-11 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center shrink-0">
+              {userProfile.profilePic ? (
+                <img
+                  src={userProfile.profilePic}
+                  alt={userProfile.name || 'Profile'}
+                  className="h-10 w-10 rounded-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-extrabold">
+                  {(userProfile.name || 'B').trim().slice(0, 1).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-[12px] font-semibold text-slate-500 truncate">Welcome back</div>
+              <div className="text-lg font-extrabold text-slate-900 truncate">{userProfile.name || 'Balanz'}</div>
+              <div className="text-[11px] font-semibold text-slate-400">{formatCurrentDate()}</div>
             </div>
           </div>
-          {/* (Buttons moved above) */}
-              {/* Budget Modal */}
-              {showBudgetModal && (
-                <Budget onClose={() => setShowBudgetModal(false)} />
-              )}
-              {/* Currency Modal */}
-              {showCurrencyModal && (
-                <CurrencyModalContent onClose={() => setShowCurrencyModal(false)} />
-              )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCurrencyModal(true)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-slate-50"
+              aria-label="อัตราแลกเปลี่ยน"
+              title="อัตราแลกเปลี่ยน"
+            >
+              <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m-5 3H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-slate-50"
+              aria-label="การแจ้งเตือน"
+              title="การแจ้งเตือน"
+            >
+              <Bell className="h-5 w-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Budget Modal */}
+        {showBudgetModal && (
+          <Budget initialType={budgetInitialType} onClose={() => setShowBudgetModal(false)} />
+        )}
+        {/* Currency Modal */}
+        {showCurrencyModal && (
+          <CurrencyModalContent onClose={() => setShowCurrencyModal(false)} />
+        )}
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800 shadow-sm">
             <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
             </svg>
             <p className="text-red-700 font-medium text-sm">{error}</p>
           </div>
         )}
-        
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10">
-          
-          {/* Income Card */}
-          <div className="bg-white rounded-xl border-2 border-gray-100 p-6 hover:border-emerald-200 hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 group">
-            <div className="flex items-center justify-between mb-4">
-               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                   {/* Trending Up Icon */}
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-                   </svg>
-               </div>
-               <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Income</p>
+
+        {/* Total balance card */}
+        <div className="rounded-[28px] bg-gradient-to-br from-blue-500 to-blue-700 p-5 text-white shadow-xl shadow-blue-600/20">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white/80">Total Balance</div>
+              <div className="mt-1 text-3xl font-extrabold tracking-tight">
+                {loading ? '—' : formatTHB(stats.netSavings)}
+              </div>
             </div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">รายรับรวม</p>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl md:text-4xl font-bold text-emerald-600">
-                {loading ? '---' : stats.totalIncome.toLocaleString()}
-              </span>
-              <span className="text-lg font-bold text-gray-400">฿</span>
+
+            <div className="shrink-0">
+              <select
+                value={currentMonthIndex}
+                onChange={(e) => setCurrentMonthIndex(parseInt(e.target.value, 10))}
+                className="rounded-full bg-white/15 px-3 py-2 text-sm font-extrabold text-white outline-none ring-1 ring-white/20 backdrop-blur"
+                aria-label="เลือกเดือน"
+              >
+                {months.map((m, idx) => (
+                  <option key={m} value={idx} className="text-slate-900">
+                    {m}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Expense Card */}
-          <div className="bg-white rounded-xl border-2 border-gray-100 p-6 hover:border-red-200 hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 group">
-            <div className="flex items-center justify-between mb-4">
-               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-400 to-red-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                   {/* Trending Down Icon */}
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/>
-                   </svg>
-               </div>
-               <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Expense</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+              <div className="flex items-center gap-2 text-white/85 text-sm font-semibold">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/20">
+                  <TrendingUpIcon className="h-4 w-4 text-emerald-200" />
+                </span>
+                Income
+              </div>
+              <div className="mt-2 text-xl font-extrabold">{loading ? '—' : formatTHB(stats.totalIncome)}</div>
             </div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">รายจ่ายรวม</p>
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl md:text-4xl font-bold text-red-600">
-                {loading ? '---' : stats.totalExpenses.toLocaleString()}
-              </span>
-              <span className="text-lg font-bold text-gray-400">฿</span>
+
+            <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
+              <div className="flex items-center gap-2 text-white/85 text-sm font-semibold">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-400/20">
+                  <TrendingDownIcon className="h-4 w-4 text-rose-100" />
+                </span>
+                Expenses
+              </div>
+              <div className="mt-2 text-xl font-extrabold">{loading ? '—' : formatTHB(stats.totalExpenses)}</div>
             </div>
           </div>
 
-          {/* Net Balance Card */}
-          <div className="bg-white rounded-xl border-2 border-gray-100 p-6 hover:border-amber-200 hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 group">
-            <div className="flex items-center justify-between mb-4">
-               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
-                   {/* Wallet Icon */}
-                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-                   </svg>
-               </div>
-               <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Balance</p>
-            </div>
-            <p className="text-sm font-semibold text-gray-700 mb-2">ยอดคงเหลือสุทธิ</p>
-            <div className="flex items-baseline gap-2">
-              <span 
-                className={`text-3xl md:text-4xl font-bold`}
-                style={{ color: stats.netSavings >= 0 ? INCOME_COLOR : EXPENSE_COLOR }}
-               >
-                {loading ? '---' : Math.abs(stats.netSavings).toLocaleString()}
-              </span>
-              <span className="text-lg font-bold text-gray-400">฿</span>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setBudgetInitialType('expense');
+                setShowBudgetModal(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/15 px-4 py-2 text-sm font-extrabold text-white ring-1 ring-white/15 hover:bg-white/20"
+            >
+              <Plus className="h-4 w-4" />
+              จัดการงบรายจ่าย
+            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentMonthIndex((prev) => (prev > 0 ? prev - 1 : 0))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-40"
+                disabled={currentMonthIndex === 0}
+                aria-label="เดือนก่อนหน้า"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentMonthIndex((prev) => (prev < months.length - 1 ? prev + 1 : months.length - 1))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-40"
+                disabled={currentMonthIndex === months.length - 1}
+                aria-label="เดือนถัดไป"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
           </div>
+        </div>
 
+        {/* Spending */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-extrabold text-slate-900">Spending</h2>
+          <Link href="/analytics" className="text-sm font-extrabold text-blue-700 hover:text-blue-800">
+            See All
+          </Link>
+        </div>
+
+        <div className="rounded-[28px] bg-white p-5 shadow-sm border border-slate-200/60">
+          <div className="flex items-center justify-center">
+            {(() => {
+              const radius = 42;
+              const circ = 2 * Math.PI * radius;
+              const segments = expenseBreakdown.top;
+              const totalPct = segments.reduce((s, it) => s + (it.pct || 0), 0);
+              let offset = 0;
+              return (
+                <div className="relative h-56 w-56">
+                  <svg viewBox="0 0 100 100" className="h-full w-full">
+                    <g transform="rotate(-90 50 50)">
+                      <circle cx="50" cy="50" r={radius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
+                      {segments.map((seg) => {
+                        const len = circ * (seg.pct || 0);
+                        const dashArray = `${len} ${Math.max(0, circ - len)}`;
+                        const dashOffset = -offset;
+                        offset += len;
+                        return (
+                          <circle
+                            key={seg.id}
+                            cx="50"
+                            cy="50"
+                            r={radius}
+                            fill="none"
+                            stroke={seg.color}
+                            strokeWidth="10"
+                            strokeLinecap="round"
+                            strokeDasharray={dashArray}
+                            strokeDashoffset={dashOffset}
+                          />
+                        );
+                      })}
+                      {totalPct < 1 && (
+                        <circle
+                          cx="50"
+                          cy="50"
+                          r={radius}
+                          fill="none"
+                          stroke="#94A3B8"
+                          opacity="0.12"
+                          strokeWidth="10"
+                          strokeLinecap="round"
+                          strokeDasharray={`${circ * (1 - totalPct)} ${circ}`}
+                          strokeDashoffset={-offset}
+                        />
+                      )}
+                    </g>
+                  </svg>
+
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <div className="text-xs font-semibold text-slate-500">Total Spent</div>
+                    <div className="mt-1 text-2xl font-extrabold text-slate-900">
+                      {loading ? '—' : formatTHB(expenseBreakdown.total)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            {(expenseBreakdown.top.length ? expenseBreakdown.top : [
+              { id: 'none1', name: '—', pct: 0, color: '#3B82F6' },
+              { id: 'none2', name: '—', pct: 0, color: '#EF4444' },
+              { id: 'none3', name: '—', pct: 0, color: '#10B981' },
+            ]).map((it) => (
+              <div key={it.id} className="rounded-2xl bg-slate-50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: it.color }} />
+                  <div className="truncate text-[12px] font-semibold text-slate-600">{it.name}</div>
+                </div>
+                <div className="mt-1 text-base font-extrabold text-slate-900">
+                  {Math.round((it.pct || 0) * 100)}%
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Recent Transactions Section */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-5">
-            <div className="w-1 h-8 bg-[#4db8a8] rounded-full"></div>
-            <h2 className="text-xl md:text-2xl font-bold text-[#191919] flex items-center gap-2">
-              <svg className="w-6 h-6 text-[#4db8a8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-              ธุรกรรมล่าสุด
-            </h2>
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-1 rounded-full bg-blue-600" />
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">ธุรกรรมล่าสุด</h2>
+            </div>
+            <Link href="/transactions" className="text-sm font-extrabold text-blue-700 hover:text-blue-800">
+              ดูทั้งหมด
+            </Link>
           </div>
           
-          <div className="bg-white rounded-xl border-2 border-gray-100 p-5 md:p-6">
+          <div className="mt-3 rounded-3xl border border-slate-200/60 bg-white p-4 sm:p-5 shadow-sm">
             
             {loading ? (
-              <div className="text-center py-12">
-                <div className="inline-block w-8 h-8 border-4 border-gray-200 border-t-[#4db8a8] rounded-full animate-spin"></div>
-                <p className="text-gray-500 mt-3 text-sm">กำลังโหลด...</p>
+              <div className="text-center py-10">
+                <div className="inline-block w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+                <p className="text-slate-500 mt-3 text-sm font-semibold">กำลังโหลด...</p>
               </div>
             ) : stats.recentTransactions.length === 0 ? (
-              <div className="text-center py-12">
-                <svg className="w-16 h-16 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="text-center py-10">
+                <svg className="w-16 h-16 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                 </svg>
-                <p className="text-gray-500 text-sm font-medium">ไม่มีธุรกรรมในเดือนนี้</p>
-                <p className="text-gray-400 text-xs mt-1">เริ่มต้นเพิ่มรายการแรกของคุณ</p>
+                <p className="text-slate-700 text-sm font-extrabold">ไม่มีธุรกรรมในเดือนนี้</p>
+                <p className="text-slate-500 text-xs mt-1 font-semibold">ลองเพิ่มรายการ หรือเปลี่ยนช่วงเดือน</p>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-3">
                 {stats.recentTransactions.map((txn, index) => (
-                  <div 
-                    key={txn._id} 
+                  <button
+                    key={txn._id}
+                    type="button"
                     onClick={() => handleView(txn)}
-                    className={`flex items-center justify-between py-4 px-3 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer ${
-                      index !== stats.recentTransactions.length - 1 ? 'border-b border-gray-100' : ''
-                    }`}
+                    className="group w-full rounded-3xl border border-slate-200/60 bg-white p-4 text-left shadow-sm hover:shadow-md transition active:scale-[0.99]"
                   >
-                    {/* Left: Icon + Details */}
-                    <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
-                      {/* Icon Container */}
-                      <div 
-                        className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 text-white shadow-md"
-                        style={{ 
-                          background: txn.type === 'income' 
-                            ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' 
-                            : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
-                        }}
-                      >
-                        {txn.type === 'income' ? 
-                            // Money Receive Icon
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11l5-5m0 0l5 5m-5-5v12"/>
-                            </svg> :
-                            // Money Send Icon
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 13l-5 5m0 0l-5-5m5 5V6"/>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div
+                          className={[
+                            'h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0',
+                            txn.type === 'income'
+                              ? 'bg-gradient-to-br from-blue-600 to-blue-700'
+                              : 'bg-gradient-to-br from-rose-500 to-rose-600',
+                          ].join(' ')}
+                          aria-hidden="true"
+                        >
+                          {renderIcon(txn.category?.icon)}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-extrabold text-slate-900">
+                                {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
+                              </div>
+                              <div className="mt-1 truncate text-xs font-semibold text-slate-500">
+                                {txn.notes || '—'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-2 text-[11px] font-semibold text-slate-400">
+                            {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-extrabold" style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
+                          {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
+                        </div>
+                        <div className="mt-2 flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleEdit(txn); }}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+                            title="แก้ไข"
+                            aria-label="แก้ไข"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                             </svg>
-                        }
-                      </div>
-                      {/* Transaction Info */}
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-[#191919] text-sm md:text-base truncate">
-                          {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate flex items-center gap-1.5">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                          </svg>
-                          {new Date(txn.date).toLocaleDateString('th-TH', { 
-                            day: 'numeric',
-                            month: 'short',
-                          })}
-                          {txn.notes && (
-                            <>
-                              {' • '}
-                              <span className="hidden sm:inline">{txn.notes}</span>
-                            </>
-                          )}
-                        </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDelete(txn._id); }}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+                            title="ลบ"
+                            aria-label="ลบ"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                     </div>
-                    {/* Right: Amount and Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                      <div 
-                        className="text-base md:text-lg font-bold"
-                        style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}
-                      >
-                        {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
-                      </div>
-                      {/* Action Buttons */}
-                      <div className="flex gap-1 items-center">
-                        <button
-                          onClick={() => handleEdit(txn)}
-                          className="p-2 hover:bg-blue-50 rounded-lg transition-colors group"
-                          title="แก้ไข"
-                        >
-                          <svg className="w-5 h-5 text-gray-400 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => handleDelete(txn._id)}
-                          className="p-2 hover:bg-red-50 rounded-lg transition-colors group"
-                          title="ลบ"
-                        >
-                          <svg className="w-4 h-4 text-gray-400 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
-            
-            {/* View All Link */}
-            {stats.recentTransactions.length > 0 && (
-              <div className="pt-4 mt-4 border-t border-gray-100 text-center">
-                <Link 
-                  href="/transactions" 
-                  className="inline-flex items-center gap-2 text-sm font-semibold text-[#4db8a8] hover:text-[#3d9888] transition-colors group"
-                >
-                    ดูธุรกรรมทั้งหมด
-                    <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-                    </svg>
-                </Link>
-              </div>
-            )}
-            {/* Expense summary card (matches design) */}
-            <div className="mt-6 max-w-2xl mx-auto">
-              <div className="bg-white rounded-xl border-2 border-gray-100 p-5">
-                <div className="text-center mb-4">
-                  <h3 className="text-xl font-bold text-pink-600">สรุปรายจ่าย</h3>
-                </div>
-
-                <div className="space-y-5">
-                  {(() => {
-                    const src = (stats.transactionsAll && stats.transactionsAll.length) ? stats.transactionsAll : (stats.recentTransactions || []);
-                    const map = {};
-                    src.forEach(t => {
-                      if (!t) return;
-                      if (t.type !== 'expense') return;
-                      const id = t.category?._id || '_none';
-                      const name = t.category?.name || 'อื่นๆ';
-                      const amt = Number(t.amount) || 0;
-                      if (!map[id]) map[id] = { id, name, amount: 0, budget: (t.category && t.category.budget) || 0 };
-                      map[id].amount += amt;
-                    });
-                    const cats = Object.values(map).sort((a,b) => b.amount - a.amount).slice(0,3);
-                    if (!cats.length) return <div className="text-center py-8 text-sm text-gray-500">ไม่มีรายการรายจ่ายในเดือนนี้</div>;
-                    return cats.map(c => {
-                      const spent = c.amount || 0;
-                      const budget = c.budget || 0;
-                      const pct = budget > 0 ? Math.min(100, Math.round((spent / budget) * 100)) : 0;
-                      return (
-                        <div key={c.id}>
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="text-sm font-medium text-gray-700">{c.name}</div>
-                            <div className="text-sm font-semibold text-gray-700">{spent.toLocaleString ? spent.toLocaleString() : spent} ฿ / {budget > 0 ? budget.toLocaleString() : '-'}</div>
-                          </div>
-                          <div className="w-full h-3 bg-pink-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-pink-300" style={{ width: budget > 0 ? `${pct}%` : '100%' }} />
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-
-                <div className="mt-5">
-                  <Link href="/budget" className="w-full inline-flex items-center justify-center gap-2 p-3 border-2 border-gray-100 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors">
-                    <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    จัดการหมวดและงบ
-                  </Link>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 

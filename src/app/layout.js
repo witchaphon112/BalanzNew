@@ -68,27 +68,20 @@ export default function RootLayout({ children }) {
 
   return (
    <html lang="th" suppressHydrationWarning>
-      <body className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans selection:bg-teal-100 selection:text-teal-900 overflow-x-hidden pb-24">
+      <body className="min-h-screen bg-white text-slate-800 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden pb-24">
         {/* pb-24: เพิ่ม padding ด้านล่าง เพื่อไม่ให้เนื้อหาถูก Bottom Bar บัง */}
         
 
 
         {/* --- Main Content Area --- */}
-        <main
-          className={[
-            'relative z-10 min-h-screen flex flex-col',
-            'w-full',
-            'max-w-full mx-0', // make content full width
-            'md:max-w-full md:px-0', // remove side padding on larger screens
-            'lg:max-w-full', // keep full width on desktop
-            'xl:max-w-full',
-            'md:mx-0',
-            'pb-28 md:pb-10', // bottom nav padding only on mobile
-            'bg-white'
-          ].join(' ')}
-        >
-          {/* Responsive main: mobile center, desktop wide, bottom padding for nav */}
-          {children}
+        <main className="relative z-10 min-h-screen w-full bg-white pb-28 md:pb-10">
+          <div
+            className={[
+              isLanding ? 'w-full' : '',
+            ].join(' ')}
+          >
+            {children}
+          </div>
         </main>
 
         {/* --- Bottom Navigation Bar (แสดงเฉพาะตอน Login และไม่ใช่หน้า Landing) --- */}
@@ -96,8 +89,8 @@ export default function RootLayout({ children }) {
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <div
               className={[
-                'mx-auto px-2 h-[72px] flex items-center justify-between relative',
-                'max-w-full',
+                'mx-auto h-[72px] w-full max-w-[1550px] px-4 sm:px-6 lg:px-8',
+                'flex items-center justify-between relative',
               ].join(' ')}
             >
               <BottomNavItem href="/dashboard" icon={<IconHome />} label="สรุป" />

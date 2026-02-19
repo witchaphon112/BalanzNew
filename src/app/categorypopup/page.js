@@ -1,14 +1,18 @@
-// "use client"; // Not necessary here, but good practice if it uses client-side hooks
+"use client";
 import { useState } from "react";
 
-export default function CategoryPopup({ categories, formData, selectCategory, deleteCategory, setShowAddCategoryModal }) {
+export default function CategoryPopup({ categories = [], formData = {}, selectCategory, deleteCategory, setShowAddCategoryModal }) {
   const [showPopup, setShowPopup] = useState(false);
 
+  // Ensure we don't crash during prerender if props are missing
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeFormData = formData || {};
+
   // Filter categories to only show the ones matching the current type (income/expense)
-  const filteredCategories = categories.filter(cat => cat.type === formData.type);
+  const filteredCategories = safeCategories.filter(cat => cat.type === safeFormData.type);
 
   // Determine the name of the currently selected category for display
-  const selectedCategory = categories.find(cat => cat._id === formData.category);
+  const selectedCategory = safeCategories.find(cat => cat._id === safeFormData.category);
 
   return (
     <div>
