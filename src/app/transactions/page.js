@@ -342,7 +342,7 @@ export default function TransactionsPage() {
     <main className="h-[100dvh] bg-slate-50 overflow-hidden">
       <div className="mx-auto w-full max-w-lg h-full flex flex-col">
         {/* Sticky header */}
-        <div className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-lg">
+        <div className="">
           <div className="px-4 pt-4 pb-3">
             <div className="relative flex items-center justify-between gap-3">
               <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-center max-w-[70%]">
