@@ -19,6 +19,7 @@ const IconSettings = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 
 // --- Root Layout Component ---
 export default function RootLayout({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
   const pathname = usePathname();
 
   const isLanding = ['/', '/register', '/login', '/change-password', '/forgot-password', '/reset-password'].includes(pathname);
@@ -47,7 +48,33 @@ export default function RootLayout({ children }) {
     setIsLoggedIn(!!token);
   }, []);
 
+  useEffect(() => {
+    const readTheme = () => {
+      try {
+        const v = localStorage.getItem('balanz_theme');
+        setTheme(v === 'light' ? 'light' : 'dark');
+      } catch {
+        setTheme('dark');
+      }
+    };
+
+    readTheme();
+    const onCustom = () => readTheme();
+    const onStorage = (e) => {
+      if (e && e.key && e.key !== 'balanz_theme') return;
+      readTheme();
+    };
+
+    window.addEventListener('balanz_theme_change', onCustom);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('balanz_theme_change', onCustom);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
   const isActive = (path) => pathname === path;
+  const effectiveTheme = isLanding ? 'light' : (theme === 'light' ? 'light' : 'dark');
 
   // --- Bottom Nav Item Component ---
   const BottomNavItem = ({ href, icon, label }) => {
@@ -55,10 +82,10 @@ export default function RootLayout({ children }) {
     return (
       <Link href={href} className="flex-1 group">
         <div className={`flex flex-col items-center justify-center py-2 transition-colors duration-200 ${
-          active ? 'text-blue-400' : 'text-slate-400 hover:text-slate-600'
+          active ? 'text-emerald-300' : 'text-slate-400 hover:text-slate-200'
         }`}>
           {icon}
-          <span className={`text-[10px] mt-1 font-medium ${active ? 'text-blue-400' : 'text-slate-400'}`}>
+          <span className={`text-[10px] mt-1 font-medium ${active ? 'text-emerald-300' : 'text-slate-400'}`}>
             {label}
           </span>
         </div>
@@ -68,13 +95,25 @@ export default function RootLayout({ children }) {
 
   return (
    <html lang="th" suppressHydrationWarning>
-      <body className="min-h-screen bg-white text-slate-800 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-x-hidden pb-24">
+      <body
+        className={[
+          'app min-h-screen font-sans overflow-x-hidden pb-24',
+          effectiveTheme === 'dark'
+            ? 'app-dark bg-[var(--app-bg)] text-[var(--app-text)] selection:bg-emerald-500/20 selection:text-emerald-100'
+            : 'app-light bg-white text-slate-800 selection:bg-emerald-100 selection:text-emerald-900',
+        ].join(' ')}
+      >
         {/* pb-24: เพิ่ม padding ด้านล่าง เพื่อไม่ให้เนื้อหาถูก Bottom Bar บัง */}
         
 
 
         {/* --- Main Content Area --- */}
-        <main className="relative z-10 min-h-screen w-full bg-white pb-28 md:pb-10">
+        <main
+          className={[
+            'relative z-10 min-h-screen w-full pb-28 md:pb-10',
+            isLanding ? 'bg-white' : 'bg-transparent',
+          ].join(' ')}
+        >
           <div
             className={[
               isLanding ? 'w-full' : '',
@@ -86,7 +125,7 @@ export default function RootLayout({ children }) {
 
         {/* --- Bottom Navigation Bar (แสดงเฉพาะตอน Login และไม่ใช่หน้า Landing) --- */}
         {isLoggedIn && !isLanding && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#071f26]/95 backdrop-blur border-t border-white/10 shadow-[0_-10px_25px_-12px_rgba(0,0,0,0.55)]">
             <div
               className={[
                 'mx-auto h-[72px] w-full max-w-[1550px] px-4 sm:px-6 lg:px-8',

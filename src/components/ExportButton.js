@@ -22,7 +22,7 @@ export default function ExportButton({
         className,
       ].join(' ')}
     >
-      <svg className="h-5 w-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      <svg className="h-5 w-5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v12m0 0l-4-4m4 4l4-4M21 21H3"/>
       </svg>
       {!iconOnly && <span className="text-sm font-semibold">{label}</span>}

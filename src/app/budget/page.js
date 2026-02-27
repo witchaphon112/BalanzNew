@@ -25,6 +25,41 @@ const monthLabelFromDate = (dateInput) => {
 
 const clamp01 = (n) => Math.max(0, Math.min(1, n));
 
+const monthIndexFromThaiName = (thaiMonth) => {
+  if (!thaiMonth) return -1;
+  return monthNamesTH.findIndex((m) => m === thaiMonth);
+};
+
+const parseThaiMonthLabel = (label) => {
+  // Expected: "มกราคม 2569" (Buddhist year)
+  if (!label || typeof label !== 'string') return null;
+  const parts = label.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const monthIdx = monthIndexFromThaiName(parts[0]);
+  const buddhistYear = Number(parts[1]);
+  if (monthIdx < 0 || !Number.isFinite(buddhistYear)) return null;
+  return { monthIndex: monthIdx, year: buddhistYear - 543 };
+};
+
+const buildSmoothSvgPath = (points) => {
+  if (!Array.isArray(points) || points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 2; i++) {
+    const current = points[i];
+    const next = points[i + 1];
+    const midX = (current.x + next.x) / 2;
+    const midY = (current.y + next.y) / 2;
+    d += ` Q ${current.x} ${current.y} ${midX} ${midY}`;
+  }
+  const penultimate = points[points.length - 2];
+  const last = points[points.length - 1];
+  d += ` Q ${penultimate.x} ${penultimate.y} ${last.x} ${last.y}`;
+  return d;
+};
+
 const POPULAR_CATEGORY_PRESETS = {
   expense: [
     { name: 'อาหาร', icon: '🍽️' },
@@ -106,6 +141,54 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
   const selectedMonth = months[currentMonthIndex];
 
+  const budgetSparkline = useMemo(() => {
+    const parsed = parseThaiMonthLabel(selectedMonth);
+    if (!parsed) return null;
+    const { year, monthIndex } = parsed;
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    if (!Number.isFinite(daysInMonth) || daysInMonth <= 0) return null;
+
+    const daily = new Array(daysInMonth).fill(0);
+    for (const t of transactions || []) {
+      if (!t || t.type !== selectedType) continue;
+      const d = new Date(t.date);
+      if (Number.isNaN(d.getTime())) continue;
+      if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+      const day = d.getDate();
+      if (day < 1 || day > daysInMonth) continue;
+      const amt = Number(t.amount) || 0;
+      daily[day - 1] += Math.max(0, amt);
+    }
+
+    let running = 0;
+    const cumulative = daily.map((v) => (running += v));
+    const max = Math.max(0, ...cumulative);
+    if (max <= 0) return null;
+
+    const W = 100;
+    const H = 40;
+    const pad = 4;
+    const usableH = H - pad * 2;
+    const sampleCount = Math.min(14, cumulative.length);
+    const denom = Math.max(1, sampleCount - 1);
+
+    const points = [];
+    for (let i = 0; i < sampleCount; i++) {
+      const x = (i / denom) * W;
+      const idx = Math.round((i / denom) * (cumulative.length - 1));
+      const v = cumulative[idx] || 0;
+      const y = pad + (1 - v / max) * usableH;
+      points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) });
+    }
+
+    const dPath = buildSmoothSvgPath(points);
+    if (!dPath) return null;
+    const first = points[0];
+    const last = points[points.length - 1];
+    const areaPath = `${dPath} L ${last.x} ${H} L ${first.x} ${H} Z`;
+    return { dPath, areaPath };
+  }, [selectedMonth, transactions, selectedType]);
+
   // --- Data Fetching ---
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -153,15 +236,20 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
         if (catRes.ok) setCategories(cats);
 
-        if (budgetRes.ok) {
-          const budgetMap = {};
-          buds.forEach(b => {
-             if (!budgetMap[b.month]) budgetMap[b.month] = {};
-             const catId = typeof b.category === 'object' ? b.category._id : b.category;
-             budgetMap[b.month][catId] = b.total;
-          });
-          setBudgets(budgetMap);
-        }
+	        if (budgetRes.ok) {
+	          const budgetMap = {};
+	          buds.forEach(b => {
+	             const month = b?.month;
+	             if (!month) return;
+	             if (!budgetMap[month]) budgetMap[month] = {};
+	             const catId = (b?.category && typeof b.category === 'object')
+	               ? (b.category?._id || '')
+	               : (b?.category || '');
+	             if (!catId) return;
+	             budgetMap[month][catId] = b?.total ?? 0;
+	          });
+	          setBudgets(budgetMap);
+	        }
 
         if (transRes.ok) setTransactions(trans);
 
@@ -364,11 +452,11 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 font-sans">
-      {/* Top / Sticky header */}
-      <div className="sticky top-0 z-20 w-full bg-white/75 backdrop-blur-lg shadow-sm">
-        <div className="mx-auto w-full max-w-lg px-4 pt-4 pb-3">
+      {/* Top / Sticky header (removed sticky wrapper) */}
+      <>
+        <div className="mx-auto w-full max-w-lg px-4 pb-3">
           <div className="relative flex items-center justify-center">
-            <div className="text-center pt-8">
+            <div className="text-center pt-4">
               <div className="text-[11px] font-semibold tracking-wide text-slate-500">จัดการงบ{typeLabel}</div>
               <div className="text-lg font-extrabold text-slate-900">หมวดและงบประมาณ</div>
             </div>
@@ -377,25 +465,25 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
           {/* Month + Summary */}
           <div className="mt-3 space-y-3">
             <div className="flex items-center gap-3">
-              <div className="flex-1 rounded-full bg-white px-2 py-2 shadow-sm ring-1 ring-emerald-200/70">
+              <div className="flex-1 rounded-full bg-white px-2 py-2 shadow-sm ring-1 ring-blue-200/70">
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
                     disabled={currentMonthIndex <= 0}
                     onClick={() => setCurrentMonthIndex(v => Math.max(0, v - 1))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
                     aria-label="เดือนก่อนหน้า"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>
                   </button>
                   <div className="min-w-0 flex-1 text-center">
-                    <div className="truncate text-sm font-extrabold text-emerald-800">{selectedMonth}</div>
+                    <div className="truncate text-sm font-extrabold text-blue-800">{selectedMonth}</div>
                   </div>
                   <button
                     type="button"
                     disabled={currentMonthIndex >= months.length - 1}
                     onClick={() => setCurrentMonthIndex(v => Math.min(months.length - 1, v + 1))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
                     aria-label="เดือนถัดไป"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
@@ -418,7 +506,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               <button
                 type="button"
                 onClick={openQuickBudget}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 hover:bg-emerald-600"
+                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/30 hover:bg-blue-700"
                 aria-label="เพิ่มงบ"
                 title="เพิ่มงบ"
               >
@@ -428,50 +516,83 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               </button>
             </div>
 
-            <div className="rounded-3xl bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-slate-500">งบรวมทั้งหมด</div>
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <div className="text-3xl font-extrabold text-slate-900">{formatCurrency(processedData.summary.monthly)}</div>
-                    <div className="text-xs font-bold text-slate-400">THB</div>
+            <div className="relative overflow-hidden rounded-3xl bg-white p-4 shadow-sm">
+              <div className="relative z-10">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-500">งบรวมทั้งหมด</div>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      <div className="text-3xl font-extrabold text-slate-900">{formatCurrency(processedData.summary.monthly)}</div>
+                      <div className="text-xs font-bold text-slate-400">THB</div>
+                    </div>
                   </div>
+
+                  {processedData.summary.monthly > 0 && (
+                    <div
+                      className={[
+                        'shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold',
+                        processedData.summary.remaining < 0 ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'
+                      ].join(' ')}
+                    >
+                      {Math.max(0, Math.round((processedData.summary.totalSpent / processedData.summary.monthly) * 100))}% ใช้ไป
+                    </div>
+                  )}
                 </div>
 
-                {processedData.summary.monthly > 0 && (
-                  <div
-                    className={[
-                      'shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold',
-                      processedData.summary.remaining < 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'
-                    ].join(' ')}
-                  >
-                    {Math.max(0, Math.round((processedData.summary.totalSpent / processedData.summary.monthly) * 100))}% ใช้ไป
+                <div className="mt-4">
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${processedData.summary.remaining < 0 ? 'bg-rose-500' : 'bg-blue-600'}`}
+                      style={{
+                        width: `${Math.min(100, Math.max(0, processedData.summary.monthly > 0 ? (processedData.summary.totalSpent / processedData.summary.monthly) * 100 : 0))}%`
+                      }}
+                    />
                   </div>
-                )}
-              </div>
-
-              <div className="mt-4">
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className={`h-full rounded-full ${processedData.summary.remaining < 0 ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                    style={{
-                      width: `${Math.min(100, Math.max(0, processedData.summary.monthly > 0 ? (processedData.summary.totalSpent / processedData.summary.monthly) * 100 : 0))}%`
-                    }}
-                  />
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-2xl bg-slate-50 p-3">
-                    <div className="text-[11px] font-semibold text-slate-500">ใช้ไป</div>
-                    <div className="mt-0.5 font-extrabold text-slate-900">{formatCurrency(processedData.summary.totalSpent)}</div>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 p-3">
-                    <div className="text-[11px] font-semibold text-slate-500">คงเหลือ</div>
-                    <div className={`mt-0.5 font-extrabold ${processedData.summary.remaining < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                      {formatCurrency(processedData.summary.remaining)}
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl bg-slate-50 p-3">
+                      <div className="text-[11px] font-semibold text-slate-500">ใช้ไป</div>
+                      <div className="mt-0.5 font-extrabold text-slate-900">{formatCurrency(processedData.summary.totalSpent)}</div>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 p-3">
+                      <div className="text-[11px] font-semibold text-slate-500">คงเหลือ</div>
+                      <div className={`mt-0.5 font-extrabold ${processedData.summary.remaining < 0 ? 'text-rose-600' : 'text-blue-700'}`}>
+                        {formatCurrency(processedData.summary.remaining)}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {budgetSparkline && (
+                <svg
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full"
+                  viewBox="0 0 100 40"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <linearGradient id="budgetSparklineFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.18" />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+                    </linearGradient>
+                    <linearGradient id="budgetSparklineStroke" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.35" />
+                      <stop offset="60%" stopColor="#3b82f6" stopOpacity="0.55" />
+                      <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.55" />
+                    </linearGradient>
+                  </defs>
+
+                  <path d={budgetSparkline.areaPath} fill="url(#budgetSparklineFill)" />
+                  <path
+                    d={budgetSparkline.dPath}
+                    fill="none"
+                    stroke="url(#budgetSparklineStroke)"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
             </div>
 
             {/* Type toggle + sort */}
@@ -539,7 +660,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                         >
                           <span className="text-slate-700">{opt.label}</span>
                           {sortBy === opt.key && (
-                            <svg className="h-4 w-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                             </svg>
                           )}
@@ -558,7 +679,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             )}
           </div>
         </div>
-      </div>
+      </>
 
       {/* Settings Modal */}
       {isSettingsOpen && (
@@ -631,7 +752,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   setCurrentMonthIndex(tempMonthIndex);
                   setIsSettingsOpen(false);
                 }}
-                className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-extrabold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700"
+                className="flex-1 py-3 rounded-2xl bg-blue-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
               >
                 บันทึก
               </button>
@@ -661,7 +782,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         ) : (
           processedData.items.length === 0 ? (
             <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
-              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-50 text-2xl">
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-50 text-2xl">
                 🗂️
               </div>
               <div className="text-base font-extrabold text-slate-900">ยังไม่มีหมวด{typeLabel}</div>
@@ -678,18 +799,18 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     key={cat._id}
                     type="button"
                     onClick={() => openEditModal(cat)}
-                    className="w-full rounded-3xl bg-white p-4 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full rounded-3xl bg-white p-4 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-xl ${cat.budget > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                        <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-xl ${cat.budget > 0 ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>
                           {cat.icon || '🏷️'}
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-base font-extrabold text-slate-900">{cat.name}</div>
                           <div className="mt-0.5 text-xs font-semibold text-slate-500">
                             ใช้ไป {formatCurrency(cat.spent)} • คงเหลือ{' '}
-                            <span className={cat.remaining < 0 ? 'text-rose-600' : 'text-emerald-700'}>
+                            <span className={cat.remaining < 0 ? 'text-rose-600' : 'text-blue-700'}>
                               {formatCurrency(cat.remaining)}
                             </span>
                           </div>
@@ -699,7 +820,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                       <div className="shrink-0 text-right">
                         <div className="text-[11px] font-semibold text-slate-500">งบ</div>
                         <div className="text-base font-extrabold text-slate-900">{cat.budget > 0 ? formatCurrency(cat.budget) : '-'}</div>
-                        <div className={`mt-1 text-[11px] font-extrabold ${over ? 'text-rose-600' : 'text-emerald-700'}`}>
+                        <div className={`mt-1 text-[11px] font-extrabold ${over ? 'text-rose-600' : 'text-blue-700'}`}>
                           {cat.budget > 0 ? `${Math.max(0, pct)}%` : '—'}
                         </div>
                         {over && (
@@ -713,12 +834,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     <div className="mt-3">
                       <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className={`h-full rounded-full ${over ? 'bg-rose-500' : progress >= 0.85 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                          className={`h-full rounded-full ${over ? 'bg-rose-500' : progress >= 0.85 ? 'bg-amber-500' : 'bg-blue-600'}`}
                           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
                         />
                       </div>
                       <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                        <span className={over ? 'text-rose-600 font-extrabold' : 'text-emerald-700 font-extrabold'}>{cat.budget > 0 ? `${Math.max(0, pct)}%` : ''}</span>
+                        <span className={over ? 'text-rose-600 font-extrabold' : 'text-blue-700 font-extrabold'}>{cat.budget > 0 ? `${Math.max(0, pct)}%` : ''}</span>
                         <span className="inline-flex items-center gap-1 text-slate-400">
                           แก้ไข
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
@@ -826,7 +947,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <label className="block text-xs font-semibold text-slate-700 mb-2">ตั้งชื่อหมวด{typeLabel}</label>
                 <div className="relative">
                   <input
-                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-4 pr-11 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-4 pr-11 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     value={newCategoryName}
                     onChange={(e) => setNewCategoryName(e.target.value)}
                     required
@@ -860,7 +981,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                         }}
                         className={[
                           'flex items-center gap-3 rounded-2xl border bg-white px-3 py-3 text-left shadow-sm hover:bg-slate-50 transition',
-                          selected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-200'
+                          selected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200'
                         ].join(' ')}
                       >
                         <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-xl">
@@ -894,7 +1015,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                       onClick={() => setNewCategoryIcon(ic)}
                       className={[
                         'shrink-0 h-11 w-11 rounded-2xl border shadow-sm flex items-center justify-center text-xl transition',
-                        newCategoryIcon === ic ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                        newCategoryIcon === ic ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
                       ].join(' ')}
                       aria-label={`เลือกไอคอน ${ic}`}
                     >
@@ -906,7 +1027,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     onClick={() => setNewCategoryIcon('')}
                     className={[
                       'shrink-0 h-11 px-4 rounded-2xl border shadow-sm flex items-center justify-center text-sm font-extrabold transition',
-                      newCategoryIcon === '' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      newCategoryIcon === '' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                     ].join(' ')}
                   >
                     ล้าง
@@ -916,7 +1037,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <div className="mt-3">
                   <label className="block text-xs font-semibold text-slate-700 mb-2">ไอคอน (กำหนดเอง หากต้องการ)</label>
                   <input
-                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 px-4 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 px-4 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     value={newCategoryIcon}
                     onChange={(e) => setNewCategoryIcon(e.target.value)}
                     placeholder="พิมพ์ไอคอนเพื่อใช้แทน (เช่น 🍽️)"
@@ -928,7 +1049,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <button
                   type="submit"
                   disabled={addCategoryLoading || !newCategoryName.trim()}
-                  className="w-full rounded-2xl bg-gradient-to-r from-fuchsia-500 to-violet-600 py-3.5 text-white font-extrabold shadow-lg shadow-violet-600/20 disabled:opacity-50"
+                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-white font-extrabold shadow-lg shadow-blue-600/20 disabled:opacity-50"
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     {addCategoryLoading ? 'กำลังบันทึก...' : 'ต่อไป'}
@@ -1025,7 +1146,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               <div className="mt-3">
                 <label className="block text-xs font-semibold text-slate-700 mb-2">หมวด</label>
                 <select
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   value={quickBudgetCategoryId}
                   onChange={(e) => setQuickBudgetCategoryId(e.target.value)}
                 >
@@ -1046,9 +1167,9 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     setShowQuickBudgetModal(false);
                     setShowAddModal(true);
                   }}
-                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-extrabold text-emerald-700 shadow-sm hover:bg-emerald-100"
+                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-extrabold text-blue-700 shadow-sm hover:bg-blue-100"
                 >
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-white/70 border border-emerald-200">+</span>
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-white/70 border border-blue-200">+</span>
                   เพิ่มหมวดใหม่
                 </button>
               </div>
@@ -1080,7 +1201,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <button
                   type="submit"
                   disabled={quickBudgetLoading}
-                  className="py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-extrabold shadow-lg shadow-emerald-600/20 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50"
+                  className="py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50"
                 >
                   {quickBudgetLoading ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
@@ -1100,7 +1221,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             aria-modal="true"
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-xl">
+              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-xl">
                 {editingCategory.icon || '🏷️'}
               </div>
               <div>
@@ -1117,7 +1238,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               </div>
               <div className="rounded-2xl bg-slate-50 p-3">
                 <div className="text-[11px] font-semibold text-slate-500">คงเหลือ</div>
-                <div className={`mt-0.5 text-sm font-extrabold ${(editingCategory.remaining || 0) < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                <div className={`mt-0.5 text-sm font-extrabold ${(editingCategory.remaining || 0) < 0 ? 'text-rose-600' : 'text-blue-700'}`}>
                   {formatCurrency(editingCategory.remaining || 0)}
                 </div>
               </div>
@@ -1128,7 +1249,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               <div className="relative mb-6">
                 <input 
                   type="number" 
-                  className="w-full text-3xl font-extrabold text-slate-900 border-b-2 border-slate-200 py-2 focus:border-emerald-600 outline-none bg-transparent placeholder-slate-300"
+                  className="w-full text-3xl font-extrabold text-slate-900 border-b-2 border-slate-200 py-2 focus:border-blue-600 outline-none bg-transparent placeholder-slate-300"
                   placeholder="0"
                   value={editAmount}
                   onChange={(e) => setEditAmount(e.target.value)}
@@ -1147,7 +1268,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 </button>
                 <button 
                   type="submit" 
-                  className="flex-1 py-2.5 rounded-2xl bg-emerald-600 text-white font-extrabold shadow-lg shadow-emerald-600/20 hover:bg-emerald-700"
+                  className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
                 >
                   บันทึก
                 </button>
