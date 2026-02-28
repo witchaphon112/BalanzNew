@@ -168,43 +168,6 @@ export default function TransactionsPage() {
   }, [showFilters]);
 
   useEffect(() => {
-    if (openDropdown !== 'date') return;
-
-    const html = document.documentElement;
-    const body = document.body;
-    const prevHtmlOverflow = html.style.overflow;
-    const prevOverflow = body.style.overflow;
-    const prevPosition = body.style.position;
-    const prevTop = body.style.top;
-    const prevWidth = body.style.width;
-
-    const scrollY = window.scrollY || window.pageYOffset || 0;
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
-    body.style.width = '100%';
-
-    const preventScroll = (e) => {
-      e.preventDefault();
-    };
-    window.addEventListener('wheel', preventScroll, { passive: false });
-    window.addEventListener('touchmove', preventScroll, { passive: false });
-
-    return () => {
-      const y = Math.abs(parseInt(body.style.top || '0', 10)) || scrollY;
-      window.removeEventListener('wheel', preventScroll);
-      window.removeEventListener('touchmove', preventScroll);
-      html.style.overflow = prevHtmlOverflow;
-      body.style.overflow = prevOverflow;
-      body.style.position = prevPosition;
-      body.style.top = prevTop;
-      body.style.width = prevWidth;
-      window.scrollTo(0, y);
-    };
-  }, [openDropdown]);
-
-  useEffect(() => {
     let filtered = transactions;
 
     // Filter by explicit date range (takes precedence)
@@ -606,9 +569,9 @@ export default function TransactionsPage() {
     return 'ทั้งหมด';
   }, [filterType]);
 
-  const filterButtonBase = 'relative flex items-center gap-2 h-11 w-full rounded-2xl border px-4 pr-10 text-sm font-extrabold text-left bg-white/5 text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition motion-reduce:transition-none';
-  const dropdownPanelBase = 'absolute left-0 right-0 top-[calc(100%+8px)] z-[20] max-h-72 overflow-auto rounded-2xl border border-white/10 bg-[#0b2730] shadow-2xl';
-  const dropdownItemBase = 'w-full px-4 py-3 text-left text-sm font-semibold flex items-center justify-between gap-3 hover:bg-white/5';
+  const filterButtonBase = 'relative flex items-center gap-2 h-11 w-full rounded-2xl border px-4 pr-10 text-sm font-extrabold text-left border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition motion-reduce:transition-none';
+  const dropdownPanelBase = 'absolute left-0 right-0 top-[calc(100%+8px)] z-[20] max-h-72 overflow-auto rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20';
+  const dropdownItemBase = 'w-full px-4 py-3 text-left text-sm font-semibold flex items-center justify-between gap-3 text-[color:var(--app-text)] hover:bg-[var(--app-surface-2)]';
   const dropdownActive = 'bg-emerald-500/15 text-emerald-200';
 
   const weekdayLabels = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
@@ -723,7 +686,7 @@ export default function TransactionsPage() {
 
     return (
       <div className="min-w-0">
-        <div className="grid grid-cols-7 gap-1 px-1 pb-2 text-center text-[10px] font-semibold text-slate-500">
+        <div className="grid grid-cols-7 gap-1 px-1 pb-2 text-center text-[10px] font-semibold text-[color:var(--app-muted-2)]">
           {weekdayLabels.map((l, i) => (
             <div key={`${l}-${i}`} className={i >= 5 ? 'text-slate-400' : ''}>
               {l}
@@ -751,7 +714,7 @@ export default function TransactionsPage() {
                   'relative aspect-square w-full rounded-2xl text-[13px] font-extrabold transition motion-reduce:transition-none',
                   'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
                   'disabled:opacity-35 disabled:cursor-not-allowed',
-                  inRange ? 'bg-emerald-500/10 text-slate-50' : 'bg-white/0 text-slate-200 hover:bg-white/5',
+                  inRange ? 'bg-emerald-500/10 text-[color:var(--app-text)]' : 'bg-white/0 text-[color:var(--app-text)] hover:bg-white/5',
                   selected ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20 hover:bg-emerald-300' : '',
                   isToday && !selected ? 'ring-1 ring-sky-400/35 text-sky-100' : '',
                 ].join(' ')}
@@ -770,31 +733,31 @@ export default function TransactionsPage() {
   };
 
   return (
-    <main className="min-h-[100dvh] bg-[#04161c] text-slate-100">
+    <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
       <div className="mx-auto w-full max-w-lg">
         {/* Sticky header */}
-        <div className="sticky top-0 z-[40] bg-[#04161c]/95 backdrop-blur supports-[backdrop-filter]:bg-[#04161c]/80">
+        <div className="sticky top-0 z-[40] bg-[var(--app-bg)] backdrop-blur">
           <div className="px-4 pt-4 pb-3">
             <div className="relative flex items-center justify-between gap-3">
               <div className="w-11 shrink-0" aria-hidden="true" />
 
               <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-center max-w-[70%]">
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">ธุรกรรม</div>
-                <h1 className="truncate text-lg font-extrabold text-slate-50">รายการ</h1>
+                <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ธุรกรรม</div>
+                <h1 className="truncate text-lg font-extrabold text-[color:var(--app-text)]">รายการ</h1>
               </div>
 
               <div className="ml-auto shrink-0 flex items-center gap-2">
                 <ExportButton
                   onClick={exportToCSV}
-                  className="flex-row gap-2 rounded-2xl !border-emerald-400/15 !bg-emerald-500/10 !text-emerald-200 shadow-sm shadow-black/10 hover:!bg-emerald-500/15 hover:!border-emerald-400/25 hover:!text-emerald-100 focus-visible:ring-emerald-400/35"
+                  className="flex-row gap-2 rounded-2xl !border-emerald-500 !bg-emerald-500 !text-white shadow-sm shadow-black/10 hover:brightness-95 focus-visible:ring-emerald-400/35"
                 />
               </div>
             </div>
 
-            <div ref={filtersRef} className="mt-4 rounded-3xl border border-white/10 bg-[#0b2730] p-3 shadow-sm">
+            <div ref={filtersRef} className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="relative flex-1">
-                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                   </svg>
                   <input
@@ -802,7 +765,7 @@ export default function TransactionsPage() {
                     placeholder="ค้นหารายการ..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-12 w-full rounded-2xl border border-white/10 bg-white/5 py-3 pl-12 pr-4 text-sm font-semibold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                    className="h-12 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] py-3 pl-12 pr-4 text-sm font-semibold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                   />
                 </div>
 
@@ -813,7 +776,7 @@ export default function TransactionsPage() {
                     'inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
                     showFilters
                       ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100 shadow-black/10 hover:bg-emerald-500/20 focus:ring-emerald-400/35'
-                      : 'border-white/10 bg-white/5 text-slate-200 shadow-black/10 hover:bg-white/10 focus:ring-emerald-400/30',
+                      : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
                   ].join(' ')}
                   aria-label={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
                   title={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
@@ -826,7 +789,7 @@ export default function TransactionsPage() {
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {/* Category */}
                 <div className="relative">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-slate-400">
+                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
                     <Tag className="h-3.5 w-3.5" aria-hidden="true" />
                     หมวดหมู่
                   </div>
@@ -835,13 +798,13 @@ export default function TransactionsPage() {
                     onClick={() => setOpenDropdown(v => (v === 'category' ? null : 'category'))}
                     className={[
                       filterButtonBase,
-                      categoryApplied ? 'border-emerald-400/25' : 'border-white/10',
+                      categoryApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
                     ].join(' ')}
                     aria-haspopup="listbox"
                     aria-expanded={openDropdown === 'category'}
                   >
                     <span className="truncate flex-1">{selectedCategoryLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400">
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
                       <ChevronDown className="h-4 w-4" />
                     </span>
                   </button>
@@ -849,7 +812,7 @@ export default function TransactionsPage() {
                     <div className={dropdownPanelBase} role="listbox" aria-label="หมวดหมู่">
                       <button
                         type="button"
-                        className={[dropdownItemBase, filterCategory.length === 0 ? dropdownActive : 'text-slate-100'].join(' ')}
+                        className={[dropdownItemBase, filterCategory.length === 0 ? dropdownActive : ''].join(' ')}
                         onClick={() => setFilterCategory([])}
                       >
                         <span>ทั้งหมด</span>
@@ -859,17 +822,17 @@ export default function TransactionsPage() {
                       {filterType === 'all' ? (
                         <>
                           {sortedCategories.expense.length > 0 && (
-                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-slate-500">รายจ่าย</div>
+                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายจ่าย</div>
                           )}
                           {sortedCategories.expense.map((cat) => (
                             <button
                               key={cat._id}
                               type="button"
-                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : 'text-slate-100'].join(' ')}
+                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
                               onClick={() => toggleFilterCategory(cat._id)}
                             >
                               <span className="truncate inline-flex items-center gap-2">
-                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-slate-200" />
+                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
                                 {cat.name}
                               </span>
                               {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
@@ -877,17 +840,17 @@ export default function TransactionsPage() {
                           ))}
 
                           {sortedCategories.income.length > 0 && (
-                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-slate-500">รายรับ</div>
+                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายรับ</div>
                           )}
                           {sortedCategories.income.map((cat) => (
                             <button
                               key={cat._id}
                               type="button"
-                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : 'text-slate-100'].join(' ')}
+                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
                               onClick={() => toggleFilterCategory(cat._id)}
                             >
                               <span className="truncate inline-flex items-center gap-2">
-                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-slate-200" />
+                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
                                 {cat.name}
                               </span>
                               {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
@@ -899,11 +862,11 @@ export default function TransactionsPage() {
                           <button
                             key={cat._id}
                             type="button"
-                            className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : 'text-slate-100'].join(' ')}
+                            className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
                             onClick={() => toggleFilterCategory(cat._id)}
                           >
                             <span className="truncate inline-flex items-center gap-2">
-                              <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-slate-200" />
+                              <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
                               {cat.name}
                             </span>
                             {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
@@ -914,14 +877,14 @@ export default function TransactionsPage() {
                       <div className="my-1 h-px bg-white/10" aria-hidden="true" />
                       <button
                         type="button"
-                        className={[dropdownItemBase, filterCategory.includes('other') ? dropdownActive : 'text-slate-100'].join(' ')}
+                        className={[dropdownItemBase, filterCategory.includes('other') ? dropdownActive : ''].join(' ')}
                         onClick={() => toggleFilterCategory('other')}
                       >
                         <span>อื่นๆ / ไม่ระบุ</span>
                         {filterCategory.includes('other') && <span className="text-emerald-300">✓</span>}
                       </button>
 
-                      <div className="sticky bottom-0 border-t border-white/10 bg-[#0b2730] p-2">
+                      <div className="sticky bottom-0 border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-2">
                         <div className="flex gap-2">
                           <button
                             type="button"
@@ -945,7 +908,7 @@ export default function TransactionsPage() {
 
                 {/* Type */}
                 <div className="relative">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-slate-400">
+                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
                     <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
                     ประเภท
                   </div>
@@ -954,13 +917,13 @@ export default function TransactionsPage() {
                     onClick={() => setOpenDropdown(v => (v === 'type' ? null : 'type'))}
                     className={[
                       filterButtonBase,
-                      typeApplied ? 'border-emerald-400/25' : 'border-white/10',
+                      typeApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
                     ].join(' ')}
                     aria-haspopup="listbox"
                     aria-expanded={openDropdown === 'type'}
                   >
                     <span className="truncate flex-1">{selectedTypeLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400">
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
                       <ChevronDown className="h-4 w-4" />
                     </span>
                   </button>
@@ -968,7 +931,7 @@ export default function TransactionsPage() {
                     <div className={dropdownPanelBase} role="listbox" aria-label="ประเภท">
                       <button
                         type="button"
-                        className={[dropdownItemBase, filterType === 'all' ? dropdownActive : 'text-slate-100'].join(' ')}
+                        className={[dropdownItemBase, filterType === 'all' ? dropdownActive : ''].join(' ')}
                         onClick={() => { setFilterType('all'); setOpenDropdown(null); }}
                       >
                         <span>ทั้งหมด</span>
@@ -976,7 +939,7 @@ export default function TransactionsPage() {
                       </button>
                       <button
                         type="button"
-                        className={[dropdownItemBase, filterType === 'expense' ? dropdownActive : 'text-slate-100'].join(' ')}
+                        className={[dropdownItemBase, filterType === 'expense' ? dropdownActive : ''].join(' ')}
                         onClick={() => { setFilterType('expense'); setOpenDropdown(null); }}
                       >
                         <span>รายจ่าย</span>
@@ -984,7 +947,7 @@ export default function TransactionsPage() {
                       </button>
                       <button
                         type="button"
-                        className={[dropdownItemBase, filterType === 'income' ? dropdownActive : 'text-slate-100'].join(' ')}
+                        className={[dropdownItemBase, filterType === 'income' ? dropdownActive : ''].join(' ')}
                         onClick={() => { setFilterType('income'); setOpenDropdown(null); }}
                       >
                         <span>รายรับ</span>
@@ -996,7 +959,7 @@ export default function TransactionsPage() {
 
                 {/* Date */}
                 <div className="relative sm:col-span-2">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-slate-400">
+                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
                     <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
                     ช่วงเวลา
                   </div>
@@ -1005,19 +968,19 @@ export default function TransactionsPage() {
                     onClick={() => setOpenDropdown(v => (v === 'date' ? null : 'date'))}
                     className={[
                       filterButtonBase,
-                      dateApplied ? 'border-emerald-400/25' : 'border-white/10',
+                      dateApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
                     ].join(' ')}
                     aria-haspopup="listbox"
                     aria-expanded={openDropdown === 'date'}
                   >
                     <span className="truncate flex-1">{selectedDateLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400">
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
                       <ChevronDown className="h-4 w-4" />
                     </span>
                   </button>
                   {openDropdown === 'date' && (
                     <div
-                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-[30] overflow-hidden rounded-3xl border border-white/10 bg-[#071f26] shadow-[0_18px_40px_-20px_rgba(0,0,0,0.75)]"
+                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-[30] max-h-[72dvh] overflow-y-auto overflow-x-hidden overscroll-contain rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-[0_18px_40px_-20px_rgba(0,0,0,0.25)]"
                       role="dialog"
                       aria-label="เลือกช่วงเวลา"
                     >
@@ -1065,7 +1028,7 @@ export default function TransactionsPage() {
                           <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
                             {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
                           </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
                           <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
                             {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
                           </div>
@@ -1084,7 +1047,7 @@ export default function TransactionsPage() {
                             <ChevronLeft className="h-4 w-4" />
                           </button>
                           <div className="min-w-0 flex-1 text-center">
-                            <div className="truncate text-sm font-extrabold text-slate-50">
+                            <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
                               {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
                             </div>
                             <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
@@ -1169,7 +1132,7 @@ export default function TransactionsPage() {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-2xl">
                 🧾
               </div>
-              <p className="text-slate-50 text-lg font-extrabold">ไม่พบธุรกรรม</p>
+              <p className="text-[color:var(--app-text)] text-lg font-extrabold">ไม่พบธุรกรรม</p>
               <p className="text-slate-400 text-sm font-semibold mt-1">ลองเปลี่ยนตัวกรอง หรือเพิ่มรายการใหม่</p>
               <div className="mt-4 flex items-center justify-center gap-2">
                 <button
@@ -1195,7 +1158,7 @@ export default function TransactionsPage() {
               {groupedTransactions.map(group => (
                 <div key={group.key}>
                   <div className="flex items-center justify-between px-1">
-                    <div className="text-base font-extrabold text-slate-50">{group.dateLabel}</div>
+                    <div className="text-base font-extrabold text-[color:var(--app-text)]">{group.dateLabel}</div>
                     <div className={`text-sm font-extrabold ${group.net < 0 ? 'text-slate-400' : group.net > 0 ? 'text-emerald-300' : 'text-slate-400'}`}>
                       {group.net < 0 ? '-' : group.net > 0 ? '+' : ''}฿{formatMoney(Math.abs(group.net))}
                     </div>
@@ -1212,7 +1175,7 @@ export default function TransactionsPage() {
                       return (
                         <div
                           key={txn._id}
-                          className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-sm"
+                          className="relative overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-sm"
                         >
                           <div
                             className={[
@@ -1290,7 +1253,7 @@ export default function TransactionsPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="truncate text-base font-extrabold text-slate-50">{title}</div>
+                                    <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{title}</div>
                                     <div className="mt-1 truncate text-xs font-semibold text-slate-400">{subtitle}</div>
                                   </div>
 
@@ -1324,7 +1287,7 @@ export default function TransactionsPage() {
           onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
         >
           <div
-            className="bg-[#0b2730] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-white/10 text-slate-100 flex flex-col max-h-[92dvh] sm:max-h-[88dvh] sm:-translate-y-4"
+            className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)] flex flex-col max-h-[92dvh] sm:max-h-[88dvh] sm:-translate-y-4"
             role="dialog"
             aria-modal="true"
           >
@@ -1412,7 +1375,7 @@ export default function TransactionsPage() {
                     className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">฿</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)] font-semibold">฿</span>
                 </div>
               </div>
 

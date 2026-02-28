@@ -271,27 +271,27 @@ export default function Profile() {
   const nextLevelInDays = 1;
 
   return (
-    <div className="min-h-[100dvh] bg-[#06121f] text-slate-100">
+    <div className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
       <div className="mx-auto w-full max-w-sm px-4 pb-24 pt-8">
-        <div className="rounded-[28px] bg-gradient-to-r from-[#0a1b2c] via-[#0b2332] to-[#0c2a2b] p-5 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.85)] ring-1 ring-white/10">
+        <div className="rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.25)]">
           <div className="flex items-center gap-4">
             <div className="relative">
-              <div className="h-16 w-16 rounded-full bg-white/5 ring-2 ring-emerald-400/60 p-0.5">
-                <div className="h-full w-full overflow-hidden rounded-full bg-[#0b2730]">
+              <div className="h-16 w-16 rounded-full bg-[var(--app-surface-2)] ring-2 ring-emerald-400/50 p-0.5">
+                <div className="h-full w-full overflow-hidden rounded-full bg-[var(--app-surface)]">
                   {avatarUrl ? (
                     <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="h-full w-full flex items-center justify-center text-slate-400">
+                    <div className="h-full w-full flex items-center justify-center text-[color:var(--app-muted)]">
                       <User className="h-7 w-7" />
                     </div>
                   )}
                 </div>
               </div>
-                         </div>
+            </div>
 
             <div className="min-w-0 flex-1">
-              <div className="truncate text-lg font-extrabold">{user.name || 'ผู้ใช้งาน'}</div>              
-              <div className="mt-2 text-xs font-semibold text-slate-400 truncate">{displayEmail || ''}</div>            
+              <div className="truncate text-lg font-extrabold text-[color:var(--app-text)]">{user.name || 'ผู้ใช้งาน'}</div>
+              <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted)] truncate">{displayEmail || ''}</div>
             </div>
           </div>
         </div>
@@ -307,34 +307,34 @@ export default function Profile() {
           </div>
         )}
 
-        <div className="mt-4 rounded-[28px] bg-[#0b2332] p-5 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.85)] ring-1 ring-white/10">
+        <div className="mt-4 rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.18)]">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-400">สถิติการใช้งาน</div>
+            <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถิติการใช้งาน</div>
             <div className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-extrabold text-emerald-200 ring-1 ring-emerald-400/25">
               เลเวล {level}
             </div>
           </div>
-          <div className="mt-3 text-lg font-extrabold">เป้าหมายการออม</div>
+          <div className="mt-3 text-lg font-extrabold text-[color:var(--app-text)]">เป้าหมายการออม</div>
 
           <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20">
               <Flame className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-extrabold">{streakDays} วันต่อเนื่อง</div>
-              <div className="mt-0.5 text-xs font-semibold text-slate-400">เข้าใช้งานทุกวันเพื่อรับรางวัล</div>
+              <div className="text-sm font-extrabold text-[color:var(--app-text)]">{streakDays} วันต่อเนื่อง</div>
+              <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">เข้าใช้งานทุกวันเพื่อรับรางวัล</div>
             </div>
           </div>
 
           <div className="mt-4">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+            <div className="flex items-center justify-between text-xs font-semibold text-[color:var(--app-muted)]">
               <span>สถิติการจดรายวันถัดไป</span>
-              <span className="text-emerald-200">{progressPercent}%</span>
+              <span className="text-emerald-300">{progressPercent}%</span>
             </div>
-            <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+            <div className="mt-2 h-2.5 w-full rounded-full bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] overflow-hidden">
               <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
             </div>
-            <div className="mt-2 text-xs font-semibold text-slate-500">เลเวลต่อไปใน {nextLevelInDays} วัน</div>
+            <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted-2)]">เลเวลต่อไปใน {nextLevelInDays} วัน</div>
           </div>
 
           <div className="mt-4 flex justify-end">
@@ -352,7 +352,7 @@ export default function Profile() {
           <button
             type="button"
             onClick={toggleTheme}
-            className="w-full flex items-center justify-between rounded-2xl bg-[#0b2332] px-4 py-4 ring-1 ring-white/10 hover:bg-white/5 transition"
+            className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition"
           >
             <div className="flex items-center gap-3">
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
@@ -386,7 +386,7 @@ export default function Profile() {
               key={key}
               type="button"
               onClick={action}
-              className="w-full flex items-center justify-between rounded-2xl bg-[#0b2332] px-4 py-4 ring-1 ring-white/10 hover:bg-white/5 transition"
+              className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition"
             >
               <div className="flex items-center gap-3">
                 <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
@@ -395,8 +395,8 @@ export default function Profile() {
                 <div className="text-sm font-extrabold">{label}</div>
               </div>
               <div className="flex items-center gap-3">
-                {right ? <div className="text-xs font-semibold text-slate-400">{right}</div> : null}
-                <ChevronRight className="h-5 w-5 text-slate-400" />
+                {right ? <div className="text-xs font-semibold text-[color:var(--app-muted)]">{right}</div> : null}
+                <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" />
               </div>
             </button>
           ))}
@@ -411,7 +411,7 @@ export default function Profile() {
             <LogOut className="h-5 w-5" />
             ออกจากระบบ
           </button>
-          <div className="mt-5 text-center text-xs font-semibold text-slate-500">
+          <div className="mt-5 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
             เวอร์ชัน 2.4.0 (Build 2024)
           </div>
         </div>
@@ -421,7 +421,7 @@ export default function Profile() {
       {activeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
-          <div className="bg-[#0b2332] border border-white/10 rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-slate-100">
+          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
             <div className="flex items-start justify-between">
               <h3 className="text-lg font-extrabold">
                 {activeModal === 'reminder'
@@ -432,7 +432,7 @@ export default function Profile() {
                       ? 'ประวัติการชำระเงิน'
                       : 'ตั้งค่าหมวด'}
               </h3>
-              <button onClick={closeModal} className="text-slate-300 hover:text-slate-50">✕</button>
+              <button onClick={closeModal} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
             </div>
             <div className="mt-4">
               {activeModal === 'reminder' && (
@@ -442,11 +442,11 @@ export default function Profile() {
                     <span className="text-sm font-semibold">เปิดการเตือนรายวัน</span>
                   </label>
                   <div>
-                    <label className="text-xs text-slate-400 font-semibold">เวลาเตือน</label>
-                    <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="mt-1 w-full px-3 py-2 border border-white/10 bg-white/5 rounded-xl text-slate-100" />
+                    <label className="text-xs text-[color:var(--app-muted)] font-semibold">เวลาเตือน</label>
+                    <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="mt-1 w-full px-3 py-2 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)]" />
                   </div>
                   <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-slate-300 hover:text-slate-50 font-semibold">ยกเลิก</button>
+                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
                     <button onClick={saveReminder} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
                   </div>
                 </div>
@@ -460,7 +460,7 @@ export default function Profile() {
                   </label>
                   <p className="text-xs text-slate-400 font-semibold">เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน</p>
                   <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-slate-300 hover:text-slate-50 font-semibold">ยกเลิก</button>
+                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
                     <button onClick={saveAutoCategorize} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
                   </div>
                 </div>
@@ -468,9 +468,9 @@ export default function Profile() {
 
               {activeModal === 'payments' && (
                 <div className="space-y-3">
-                  <p className="text-sm font-semibold text-slate-200">คุณสามารถดูประวัติการชำระเงินทั้งหมดได้ที่หน้ารายการ</p>
+                  <p className="text-sm font-semibold text-[color:var(--app-text)]">คุณสามารถดูประวัติการชำระเงินทั้งหมดได้ที่หน้ารายการ</p>
                   <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-slate-300 hover:text-slate-50 font-semibold">ปิด</button>
+                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ปิด</button>
                     <button onClick={() => { closeModal(); router.push('/transactions'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">ไปที่รายการ</button>
                   </div>
                 </div>
@@ -480,7 +480,7 @@ export default function Profile() {
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-slate-200">จัดการหมวดหมู่ของคุณ (เพิ่ม/แก้ไข/ลบ)</p>
                   <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-slate-300 hover:text-slate-50 font-semibold">ปิด</button>
+                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ปิด</button>
                     <button onClick={() => { closeModal(); router.push('/categories'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">ไปที่หมวดหมู่</button>
                   </div>
                 </div>
@@ -493,10 +493,10 @@ export default function Profile() {
       {rankingOpen && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 pt-12 sm:pt-0 pb-24 sm:pb-8">
           <div className="absolute inset-0 bg-black/50" onClick={() => setRankingOpen(false)}></div>
-          <div className="bg-[#0b2332] border border-white/10 rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-slate-100">
+          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-extrabold">อันดับการจดต่อเนื่อง</h3>
-              <button onClick={() => setRankingOpen(false)} className="text-slate-300 hover:text-slate-50">✕</button>
+              <button onClick={() => setRankingOpen(false)} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
             </div>
 
             <div className="mt-4">
@@ -548,7 +548,7 @@ export default function Profile() {
                               </>
                             );
                           })()}
-                          <text x={cx} y="134" fontSize="11" textAnchor="middle" fill="#cbd5e1">{r.name.split(' ')[0]}</text>
+                          <text x={cx} y="134" fontSize="11" textAnchor="middle" fill="var(--app-muted)">{r.name.split(' ')[0]}</text>
                         </g>
                       );
                     });
@@ -560,20 +560,20 @@ export default function Profile() {
                 {(() => {
                   const sorted = [...rankingData].sort((a, b) => b.days - a.days);
                   return sorted.map((u, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-2xl border border-white/10 bg-white/5 mt-0">
+                    <div key={i} className="flex items-center gap-3 p-3 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] mt-0">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ring-1 ${i === 0 ? 'bg-rose-500/15 text-rose-200 ring-rose-400/20' : i === 1 ? 'bg-sky-500/15 text-sky-200 ring-sky-400/20' : 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20'} font-extrabold`}>{i + 1}</div>
                       <div className="flex-1">
-                        <div className="text-sm font-extrabold text-slate-50">{u.name}</div>
-                        <div className="text-xs text-slate-400 font-semibold mt-1">{u.days} วัน</div>
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{u.name}</div>
+                        <div className="text-xs text-[color:var(--app-muted)] font-semibold mt-1">{u.days} วัน</div>
                       </div>
-                      <div className="text-sm font-semibold text-slate-400">#{i + 1}</div>
+                      <div className="text-sm font-semibold text-[color:var(--app-muted)]">#{i + 1}</div>
                     </div>
                   ));
                 })()}
               </div>
 
               <div className="mt-6 flex justify-end">
-                <button onClick={() => setRankingOpen(false)} className="px-4 py-2 bg-white/5 border border-white/10 text-slate-100 rounded-xl hover:bg-white/10 font-extrabold">ปิด</button>
+                <button onClick={() => setRankingOpen(false)} className="px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] text-[color:var(--app-text)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">ปิด</button>
               </div>
             </div>
           </div>
@@ -583,19 +583,19 @@ export default function Profile() {
       {confirmLogoutOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={cancelLogout}></div>
-          <div className="bg-[#0b2332] border border-white/10 rounded-2xl shadow-2xl z-10 w-full max-w-sm mx-auto p-5 text-slate-100">
+          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-sm mx-auto p-5 text-[color:var(--app-text)]">
             <div className="flex items-start gap-4">
               <div className="p-3 rounded-full bg-rose-500/10 text-rose-200 border border-rose-400/20">
                 <LogOut className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-extrabold text-slate-50">ออกจากระบบ</h3>
-                <p className="text-sm text-slate-400 mt-1 font-semibold">คุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</p>
+                <h3 className="text-lg font-extrabold text-[color:var(--app-text)]">ออกจากระบบ</h3>
+                <p className="text-sm text-[color:var(--app-muted)] mt-1 font-semibold">คุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</p>
               </div>
             </div>
 
             <div className="mt-6 flex gap-3">
-              <button onClick={cancelLogout} className="flex-1 px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 font-extrabold">ยกเลิก</button>
+              <button onClick={cancelLogout} className="flex-1 px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">ยกเลิก</button>
               <button
                 onClick={() => { setConfirmLogoutOpen(false); performLogout(); }}
                 className="flex-1 px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-xl flex items-center justify-center gap-2 font-extrabold"

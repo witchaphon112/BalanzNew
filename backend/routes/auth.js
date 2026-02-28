@@ -15,9 +15,11 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || !decoded.exp) return res.status(401).json({ message: 'Token expired' });
     req.user = decoded;
     next();
   } catch (error) {
+    if (error && error.name === 'TokenExpiredError') return res.status(401).json({ message: 'Token expired' });
     res.status(401).json({ message: 'Invalid token' });
   }
 };
@@ -48,7 +50,11 @@ router.post('/register', async (req, res) => {
     const user = new User({ email, password: hashedPassword, name: name || '' });
     await user.save();
 
-    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET);
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
     res.status(201).json({ token, user: { email, name: user.name, role: user.role } });
   } catch (error) {
     console.error('Registration error:', error);
@@ -77,7 +83,11 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'ข้อมูลไม่ถูกต้อง' });
     }
 
-    const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET);
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
     res.json({ token, user: { email, name: user.name, role: user.role } });
   } catch (error) {
     console.error('Login error:', error);

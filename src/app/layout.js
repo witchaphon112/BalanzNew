@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import './globals.css';
 
 // --- Icons (ปรับให้ตรงกับรูปภาพ) ---
@@ -16,12 +16,46 @@ const IconList = () => (
 );
 const IconSettings = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
 
+const decodeJwtPayload = (token) => {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const base64Url = parts[1];
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  try {
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => `%${(`00${c.charCodeAt(0).toString(16)}`).slice(-2)}`)
+        .join('')
+    );
+    const payload = JSON.parse(json);
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    try {
+      const payload = JSON.parse(atob(base64));
+      return payload && typeof payload === 'object' ? payload : null;
+    } catch {
+      return null;
+    }
+  }
+};
+
+const isTokenValid = (token) => {
+  const payload = decodeJwtPayload(token);
+  const exp = payload?.exp;
+  if (!exp || !Number.isFinite(Number(exp))) return false; // require expiry for security
+  const expMs = Number(exp) * 1000;
+  return Date.now() < expMs;
+};
+
 // --- Root Layout Component ---
 export default function RootLayout({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
   const pathname = usePathname();
-
+  const router = useRouter();
+  
   const isLanding = ['/', '/register', '/login', '/change-password', '/forgot-password', '/reset-password'].includes(pathname);
     
   // --- Effects ---
@@ -45,8 +79,44 @@ export default function RootLayout({ children }) {
       // ignore
     }
     const token = localStorage.getItem('token');
-    setIsLoggedIn(!!token);
+    const ok = isTokenValid(token);
+    if (!ok) {
+      try { localStorage.removeItem('token'); } catch {}
+      setIsLoggedIn(false);
+    } else {
+      setIsLoggedIn(true);
+    }
   }, []);
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+    const ok = isTokenValid(token);
+    if (!ok) {
+      try { localStorage.removeItem('token'); } catch {}
+      setIsLoggedIn(false);
+      if (!isLanding && pathname) router.replace('/login');
+      return;
+    }
+    setIsLoggedIn(true);
+    // If already logged in, keep landing pages reachable (user may want logout/change-password)
+  }, [pathname, isLanding, router]);
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (!e || (e.key && e.key !== 'token')) return;
+      try {
+        const token = localStorage.getItem('token');
+        const ok = isTokenValid(token);
+        setIsLoggedIn(ok);
+        if (!ok && !isLanding) router.replace('/login');
+      } catch {
+        setIsLoggedIn(false);
+        if (!isLanding) router.replace('/login');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [isLanding, router]);
 
   useEffect(() => {
     const readTheme = () => {
@@ -81,11 +151,19 @@ export default function RootLayout({ children }) {
     const active = isActive(href);
     return (
       <Link href={href} className="flex-1 group">
-        <div className={`flex flex-col items-center justify-center py-2 transition-colors duration-200 ${
-          active ? 'text-emerald-300' : 'text-slate-400 hover:text-slate-200'
-        }`}>
+        <div
+          className={[
+            'flex flex-col items-center justify-center py-2 transition-colors duration-200',
+            active ? 'text-[color:var(--app-accent)]' : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]',
+          ].join(' ')}
+        >
           {icon}
-          <span className={`text-[10px] mt-1 font-medium ${active ? 'text-emerald-300' : 'text-slate-400'}`}>
+          <span
+            className={[
+              'text-[10px] mt-1 font-medium',
+              active ? 'text-[color:var(--app-accent)]' : 'text-[color:var(--app-muted)]',
+            ].join(' ')}
+          >
             {label}
           </span>
         </div>
@@ -100,7 +178,7 @@ export default function RootLayout({ children }) {
           'app min-h-screen font-sans overflow-x-hidden pb-24',
           effectiveTheme === 'dark'
             ? 'app-dark bg-[var(--app-bg)] text-[var(--app-text)] selection:bg-emerald-500/20 selection:text-emerald-100'
-            : 'app-light bg-white text-slate-800 selection:bg-emerald-100 selection:text-emerald-900',
+            : 'app-light bg-[var(--app-bg)] text-[color:var(--app-text)] selection:bg-emerald-200 selection:text-emerald-950',
         ].join(' ')}
       >
         {/* pb-24: เพิ่ม padding ด้านล่าง เพื่อไม่ให้เนื้อหาถูก Bottom Bar บัง */}
@@ -125,7 +203,10 @@ export default function RootLayout({ children }) {
 
         {/* --- Bottom Navigation Bar (แสดงเฉพาะตอน Login และไม่ใช่หน้า Landing) --- */}
         {isLoggedIn && !isLanding && (
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#071f26]/95 backdrop-blur border-t border-white/10 shadow-[0_-10px_25px_-12px_rgba(0,0,0,0.55)]">
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 backdrop-blur border-t border-[color:var(--app-border)] shadow-[0_-10px_25px_-12px_rgba(0,0,0,0.20)]"
+            style={{ backgroundColor: 'var(--app-surface)' }}
+          >
             <div
               className={[
                 'mx-auto h-[72px] w-full max-w-[1550px] px-4 sm:px-6 lg:px-8',
