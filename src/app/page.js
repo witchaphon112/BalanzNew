@@ -7,14 +7,10 @@ export default function Home() {
   function Header() {
     return (
       <header className="w-full bg-white/80 backdrop-blur sticky top-0 z-30 border-b border-gray-100 shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 md:px-10 flex items-center justify-between h-16">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-0 flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2 select-none">
             <span className="font-extrabold text-xl text-[#4db8a8] tracking-tight">Balanz<span className="text-[#191919]">.IA</span></span>
-          </Link>
-          <nav className="hidden md:flex gap-8 text-gray-700 font-medium">
-            <Link href="/login" className="hover:text-[#4db8a8] transition-colors">เข้าสู่ระบบ</Link>
-            <Link href="/register" className="hover:text-[#4db8a8] transition-colors">สมัครสมาชิก</Link>
-          </nav>
+          </Link>          
         </div>
       </header>
     );
@@ -34,9 +30,9 @@ export default function Home() {
       <Header />
       <main className="min-h-screen bg-white relative overflow-hidden">
       {/* Hero Section */}
-      <section className="relative min-h-[90vh] flex items-center justify-center bg-gradient-to-b from-[#f0fdfa] to-white">
-       <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 md:py-20 grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center">
-                 <div className="md:col-span-6">
+      <section className="relative min-h-[80vh] sm:min-h-[90vh] flex items-center justify-center bg-gradient-to-b from-[#f0fdfa] to-white">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-0 py-8 md:py-20 grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-12 items-center">
+             <div className="md:col-span-6 text-center md:text-left">
                    <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-[#191919] mb-4">
                      ยินดีต้อนรับเข้าสู่{' '}
                      <span className="text-[#4db8a8]">Balanz</span>
@@ -49,20 +45,7 @@ export default function Home() {
                    
                    {!isLoggedIn && (
                      <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
-                       {/* ปุ่มเริ่มต้นใช้งาน */}
-                       <Link
-                         href="/register"
-                         className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-gradient-to-r from-[#4db8a8] to-[#3d9888] hover:from-[#3d9888] hover:to-[#2d7868] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
-                       >
-                         <span className="relative z-10 flex items-center justify-center gap-2">
-                           เริ่มต้นใช้งาน
-                           <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                           </svg>
-                         </span>
-                         <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
-                       </Link>
-                       {/* ปุ่ม Login ด้วย LINE */}
+                      
                        <a
                          href="http://localhost:5050/auth/line"
                          className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-[#06C755] hover:bg-[#05b94d] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
@@ -95,7 +78,7 @@ export default function Home() {
 
       {/* Features Section */}
       <section className="relative bg-white">
-        <div className="max-w-6xl mx-auto px-6 md:px-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-0">
           
           {/* Feature 1 */}
           <div className="grid md:grid-cols-2 gap-12 items-center mb-32">

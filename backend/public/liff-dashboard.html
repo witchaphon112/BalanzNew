@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>กำลังเปิด Dashboard...</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    .spinner {
+      border: 4px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top: 4px solid white;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <h2>กำลังเปิด Dashboard...</h2>
+    <p id="status">กำลังโหลด...</p>
+  </div>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script>
+    const statusEl = document.getElementById('status');
+
+    async function main() {
+      try {
+        // Initialize LIFF
+        const liffId = '{{LIFF_ID}}'; // Replace with your LIFF ID from LINE Developers Console
+        await liff.init({ liffId });
+
+        if (!liff.isLoggedIn()) {
+          statusEl.textContent = 'กำลัง login...';
+          liff.login();
+          return;
+        }
+
+        // Get user profile
+        const profile = await liff.getProfile();
+        const userId = profile.userId;
+
+        // Encode userId
+        const encodedUserId = btoa(userId);
+
+        // Call backend redirect endpoint
+        const backendUrl = window.location.origin;
+        const redirectUrl = `${backendUrl}/webhooks/line/dashboard-redirect?uid=${encodedUserId}`;
+
+        statusEl.textContent = 'เปิด Dashboard...';
+
+        // Redirect
+        window.location.href = redirectUrl;
+
+      } catch (error) {
+        console.error('LIFF error:', error);
+        statusEl.textContent = 'เกิดข้อผิดพลาด: ' + error.message;
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>

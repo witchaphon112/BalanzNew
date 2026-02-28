@@ -7,12 +7,16 @@ const User = require('./models/User');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+// Load environment variables as early as possible so required modules can read them
+dotenv.config();
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const categoryRoutes = require('./routes/categories'); // เปลี่ยนจาก Categories
 const budgetRoutes = require('./routes/budget'); // แก้ไขการพิมพ์ผิด
 const notificationsRouter = require('./routes/notifications');
-dotenv.config();
+const ocrRoutes = require('./routes/ocr'); // OCR routes
+const lineWebhookRouter = require('./routes/line');
+const debugRoutes = require('./routes/debug');
 const app = express();
 // LINE Login configuration
 passport.use(new LineStrategy({
@@ -23,32 +27,58 @@ passport.use(new LineStrategy({
 }, async (accessToken, refreshToken, params, profile, done) => {
   try {
     // LINE profile: profile.id, profile.displayName, profile.emails
-    const email = profile.emails && profile.emails[0] ? profile.emails[0].value : `${profile.id}@line.local`;
-    let user = await User.findOne({ email });
+    const lineId = profile.id;
     const profilePic = profile._json && profile._json.pictureUrl ? profile._json.pictureUrl : '';
-    if (!user) {
-      user = new User({
-        email,
-        password: '', // No password for LINE login
-        name: profile.displayName || '',
-        profilePic,
-        role: 'user'
-      });
-      await user.save();
-    } else {
-      // Update name or profilePic if changed
+    // Prefer linking by lineUserId. If a user with this LINE id exists, use it.
+    let user = await User.findOne({ lineUserId: lineId });
+    if (user) {
       let updated = false;
-      if (profile.displayName && user.name !== profile.displayName) {
-        user.name = profile.displayName;
-        updated = true;
-      }
-      if (profilePic && user.profilePic !== profilePic) {
-        user.profilePic = profilePic;
-        updated = true;
-      }
+      if (profile.displayName && user.name !== profile.displayName) { user.name = profile.displayName; updated = true; }
+      if (profilePic && user.profilePic !== profilePic) { user.profilePic = profilePic; updated = true; }
       if (updated) await user.save();
+      return done(null, user);
     }
-    return done(null, user);
+
+    // Otherwise, try to find by email if available and attach lineUserId
+    const email = profile.emails && profile.emails[0] ? profile.emails[0].value : null;
+    if (email) {
+      user = await User.findOne({ email });
+      if (user) {
+        user.lineUserId = lineId;
+        if (profile.displayName) user.name = profile.displayName;
+        if (profilePic) user.profilePic = profilePic;
+        await user.save();
+        return done(null, user);
+      }
+    }
+
+    // Fallback: create a new user and set lineUserId
+    const newEmail = email || `${lineId}@line.local`;
+    user = new User({
+      email: newEmail,
+      password: '',
+      name: profile.displayName || '',
+      profilePic,
+      role: 'user',
+      lineUserId: lineId
+    });
+    try {
+      await user.save();
+      return done(null, user);
+    } catch (e) {
+      // Handle race or duplicate key on email: attach lineUserId to existing user
+      if (e && e.code === 11000) {
+        const existing = await User.findOne({ email: newEmail });
+        if (existing) {
+          existing.lineUserId = lineId;
+          if (profile.displayName) existing.name = profile.displayName;
+          if (profilePic) existing.profilePic = profilePic;
+          await existing.save();
+          return done(null, existing);
+        }
+      }
+      throw e;
+    }
   } catch (err) {
     return done(err);
   }
@@ -67,7 +97,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
+// Preserve raw body for LINE signature verification middleware
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString(); } }));
 
 // Session and Passport middleware
 app.use(session({
@@ -105,6 +136,13 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/categories', categoryRoutes); // เปลี่ยนจาก Categories
 app.use('/api/budgets', budgetRoutes); // แก้ไขการพิมพ์ผิด
 app.use('/api', notificationsRouter); // ใช้ /api/notifications
+app.use('/api/ocr', ocrRoutes); // OCR routes
+app.use('/uploads', express.static('uploads')); // Serve uploaded files
+// Dev debug endpoints
+app.use('/api/debug', debugRoutes);
+
+// LINE Messaging API webhook
+app.use('/webhooks/line', lineWebhookRouter);
 
 // Start server
 const PORT = process.env.PORT || 5050;
