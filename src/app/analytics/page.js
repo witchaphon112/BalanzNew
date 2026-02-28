@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -15,11 +16,12 @@ import {
 import { 
   Wallet, TrendingUp, TrendingDown,
   ChevronLeft, ChevronRight,
+  X,
   Utensils, ShoppingBag, Car, Home, Zap, Heart, 
   Gamepad2, Stethoscope, GraduationCap, Plane, 
   Briefcase, Gift, Smartphone, Coffee, Music, 
   Dumbbell, PawPrint, Scissors, CreditCard, 
-  Landmark, MoreHorizontal, Layers
+  Landmark, MoreHorizontal, Layers, SlidersHorizontal
 } from 'lucide-react';
 
 // ลงทะเบียน Chart.js
@@ -88,19 +90,38 @@ const MONTH_NAMES = [
 export default function Analytics() {
   const router = useRouter();
 
+  const buildMonthList = () => {
+    const now = new Date();
+    const startYear = now.getFullYear() - 5;
+    const endYear = now.getFullYear() + 1;
+    const out = [];
+    let currentIdx = 0;
+
+    for (let y = startYear; y <= endYear; y++) {
+      for (let m = 0; m < 12; m++) {
+        const d = new Date(y, m, 1);
+        out.push({ label: `${MONTH_NAMES[m]} ${y + 543}`, value: d });
+        if (y === now.getFullYear() && m === now.getMonth()) currentIdx = out.length - 1;
+      }
+    }
+
+    return { out, currentIdx };
+  };
+
   // --- STATE ---
   const [isMobile, setIsMobile] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [currentMonthIndex, setCurrentMonthIndex] = useState(60); // เริ่มที่เดือนปัจจุบัน
+  const { out: monthList, currentIdx: initialMonthIndex } = useMemo(() => buildMonthList(), []);
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(() => initialMonthIndex); // เริ่มที่เดือนปัจจุบัน
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
   // Filter State
   const [filterText, setFilterText] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all', 'income', 'expense'
+  const [showTxnFilters, setShowTxnFilters] = useState(false);
   const [overviewMode, setOverviewMode] = useState('monthly'); // 'daily' | 'monthly'
   const spendChartRef = useRef(null);
   const spendClearTimerRef = useRef(null);
@@ -131,26 +152,43 @@ export default function Analytics() {
     }
   }, []);
 
-  // --- LOGIC: Date Management ---
-  const getMonths = () => {
-    const months = [];
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear(); 
-    const currentMonth = currentDate.getMonth();
-    
-    // Generate 60 months back and 12 months forward
-    for (let i = -60; i < 12; i++) {
-      const d = new Date(currentYear, currentMonth + i, 1);
-      months.push({
-        label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear() + 543}`,
-        value: d
-      });
-    }
-    return months;
-  };
-  
-  const monthList = getMonths();
   const selectedMonthObj = monthList[currentMonthIndex];
+
+  const monthIndexMap = useMemo(() => {
+    const map = new Map();
+    monthList.forEach((m, idx) => {
+      const d = m?.value instanceof Date ? m.value : null;
+      if (!d) return;
+      map.set(`${d.getFullYear()}-${d.getMonth()}`, idx);
+    });
+    return map;
+  }, [monthList]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    for (const key of monthIndexMap.keys()) {
+      const y = Number(String(key).split('-')[0]);
+      if (Number.isFinite(y)) years.add(y);
+    }
+    return Array.from(years.values()).sort((a, b) => b - a);
+  }, [monthIndexMap]);
+
+  const monthPickerMonthsForYear = useMemo(() => {
+    const y = Number(monthPickerYear);
+    return MONTH_NAMES.map((name, monthIndex) => {
+      const idx = monthIndexMap.get(`${y}-${monthIndex}`);
+      return { name, monthIndex, idx: typeof idx === 'number' ? idx : null };
+    });
+  }, [monthIndexMap, monthPickerYear]);
+
+  useEffect(() => {
+    if (!showMonthPicker) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowMonthPicker(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [showMonthPicker]);
 
   // --- EFFECT: Fetch Data ---
   useEffect(() => {
@@ -224,12 +262,12 @@ export default function Analytics() {
     return Math.round(clamp01(savingsRate) * 100);
   }, [summary.income, summary.expense]);
 
-  const healthLabel = healthScore >= 80 ? 'Excellent' : healthScore >= 60 ? 'Good' : 'Needs work';
+  const healthLabel = healthScore >= 80 ? 'ดีเยี่ยม' : healthScore >= 60 ? 'ดี' : 'ควรปรับปรุง';
   const healthSubLabel = healthScore >= 80
-    ? 'You’re doing great! Keep saving.'
+    ? 'คุณทำได้ดีมาก! ออมต่อเนื่องแบบนี้เลย'
     : healthScore >= 60
-      ? 'Good progress. Try to save more.'
-      : 'Reduce expenses or increase income.';
+      ? 'กำลังไปได้ดี ลองเพิ่มสัดส่วนการออมอีกนิด'
+      : 'ลองลดรายจ่าย หรือเพิ่มรายรับเพื่อให้เหลือออมมากขึ้น';
 
   const spendingTrend = useMemo(() => {
     const monthDate = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : null;
@@ -292,7 +330,7 @@ export default function Analytics() {
     const first = points[0];
     const last = points[points.length - 1];
     const areaPath = `${dPath} L ${last.x} ${H} L ${first.x} ${H} Z`;
-    const labels = days.map(d => d.toLocaleDateString('en-US', { weekday: 'short' }));
+    const labels = days.map(d => d.toLocaleDateString('th-TH', { weekday: 'short' }));
 
     return { dPath, areaPath, labels, values, todaySpend, thisMonthExpense, pctChange, points };
   }, [selectedMonthObj, filteredTransactions, transactions, summary.expense]);
@@ -461,12 +499,31 @@ export default function Analytics() {
     return items;
   }, [expenseByCategory, isMobile]);
 
-  // --- PAGINATION Logic ---
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  const currentTableData = filteredTransactions.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const recentTransactions = useMemo(() => {
+    const src = Array.isArray(filteredTransactions) ? filteredTransactions : [];
+    return src.slice(0, 5);
+  }, [filteredTransactions]);
+
+  const formatTxnTime = (dateInput) => {
+    const d = new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return '';
+    const now = new Date();
+    const isSameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    const isYesterday =
+      d.getFullYear() === y.getFullYear() &&
+      d.getMonth() === y.getMonth() &&
+      d.getDate() === y.getDate();
+
+    const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    if (isSameDay) return `วันนี้, ${time}`;
+    if (isYesterday) return `เมื่อวาน, ${time}`;
+    return `${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}, ${time}`;
+  };
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#04161c]">
@@ -475,21 +532,219 @@ export default function Analytics() {
   );
 
   return (
-    <main className="min-h-screen bg-[#04161c] text-slate-100">
-      <div className="mx-auto w-full max-w-lg px-4 py-5 space-y-4">
+    <main className="fixed inset-0 bg-[#04161c] text-slate-100 overflow-y-auto">
+      <div className="mx-auto w-full max-w-lg px-4 py-5 pb-24 space-y-4">
         {/* Header */}
         <div className="text-center">
           <h1 className="text-xl font-extrabold text-slate-50">ภาพรวมการเงิน</h1>
           <p className="mt-1 text-sm font-semibold text-slate-400">ดูกราฟสรุปรายรับ-รายจ่ายแบบเข้าใจง่าย</p>
         </div>
 
-        {/* Financial health score (like reference) */}
+        {/* Month selector */}
+        <div className="relative z-[1] rounded-3xl border border-white/10 bg-[#0b2730] p-2 shadow-sm">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentMonthIndex(prev => Math.max(0, prev - 1))}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
+              disabled={currentMonthIndex === 0}
+              aria-label="เดือนก่อนหน้า"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const d = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : new Date();
+                setMonthPickerYear(d.getFullYear());
+                setShowMonthPicker(true);
+              }}
+              className="min-w-0 flex-1 cursor-pointer rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-center transition hover:bg-white/10 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+              aria-label="เปิดปฏิทินเลือกเดือน"
+              aria-expanded={showMonthPicker}
+            >
+              <div className="text-[11px] font-semibold text-slate-400">เดือนที่เลือก</div>
+              <div className="truncate text-sm font-extrabold text-slate-50">{selectedMonthObj.label}</div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentMonthIndex(prev => Math.min(monthList.length - 1, prev + 1))}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
+              disabled={currentMonthIndex === monthList.length - 1}
+              aria-label="เดือนถัดไป"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Month Picker Modal */}
+        {showMonthPicker && (
+          <div
+            className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
+            onClick={(e) => e.target === e.currentTarget && setShowMonthPicker(false)}
+          >
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+                <div>
+                  <div className="text-sm font-extrabold text-slate-50">เลือกเดือน</div>
+                  <div className="text-[11px] font-semibold text-slate-400">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  aria-label="ปิด"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableYears.indexOf(monthPickerYear);
+                      const next = idx >= 0 ? availableYears[idx + 1] : null;
+                      if (typeof next === 'number') setMonthPickerYear(next);
+                    }}
+                    disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    aria-label="ปีก่อนหน้า"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+
+                  <div className="min-w-0 flex-1 text-center">
+                    <div className="text-sm font-extrabold text-slate-50">{Number(monthPickerYear) + 543}</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-slate-400">พ.ศ.</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableYears.indexOf(monthPickerYear);
+                      const prev = idx > 0 ? availableYears[idx - 1] : null;
+                      if (typeof prev === 'number') setMonthPickerYear(prev);
+                    }}
+                    disabled={availableYears.indexOf(monthPickerYear) <= 0}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    aria-label="ปีถัดไป"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {monthPickerMonthsForYear.map((m) => {
+                    const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
+                    const disabled = m.idx == null;
+                    return (
+                      <button
+                        key={`${monthPickerYear}-${m.monthIndex}`}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
+                          setShowMonthPicker(false);
+                        }}
+                        className={[
+                          'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
+                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                          disabled
+                            ? 'border-white/10 bg-white/5 text-slate-500 opacity-50 cursor-not-allowed'
+                            : isActive
+                              ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                              : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+                        ].join(' ')}
+                      >
+                        {m.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const idx = monthIndexMap.get(`${now.getFullYear()}-${now.getMonth()}`);
+                    if (typeof idx === 'number') setCurrentMonthIndex(idx);
+                    setShowMonthPicker(false);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                >
+                  เดือนนี้
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                  className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                >
+                  เสร็จสิ้น
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
+            <div className="text-sm font-semibold">{error}</div>
+          </div>
+        )}
+
+        {/* Summary (stack like reference) */}
+        <div className="space-y-3">
+          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายรับ</div>
+                <div className="mt-1 text-2xl font-extrabold text-emerald-300">฿{formatCurrency(summary.income)}</div>
+              </div>
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
+                <TrendingUp className="h-6 w-6" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายจ่าย</div>
+                <div className="mt-1 text-2xl font-extrabold text-rose-300">฿{formatCurrency(summary.expense)}</div>
+              </div>
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20">
+                <TrendingDown className="h-6 w-6" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">คงเหลือสุทธิ</div>
+                <div className={`mt-1 text-2xl font-extrabold ${balance >= 0 ? 'text-slate-50' : 'text-rose-200'}`}>฿{formatCurrency(balance)}</div>
+              </div>
+              <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${balance >= 0 ? 'bg-white/5 text-slate-100 ring-white/10' : 'bg-rose-500/15 text-rose-200 ring-rose-400/20'}`}>
+                <Wallet className="h-6 w-6" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Financial health score */}
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-500 to-green-500 p-5 text-slate-950 shadow-lg shadow-emerald-500/20">
           <div className="absolute -right-10 -top-10 h-40 w-40 rounded-[42px] bg-white/20" aria-hidden="true" />
           <div className="absolute -right-2 -top-2 h-24 w-24 rounded-[32px] bg-white/15" aria-hidden="true" />
 
           <div className="relative z-10">
-            <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">Financial Health Score</div>
+            <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">คะแนนสุขภาพการเงิน</div>
             <div className="mt-2 flex items-baseline gap-2">
               <div className="text-4xl font-extrabold">{healthScore}</div>
               <div className="text-sm font-extrabold text-slate-950/70">/ 100</div>
@@ -508,17 +763,17 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Spending trend card (like reference) */}
+        {/* Spending trend */}
         {spendingTrend && (
           <div className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[#0b2730] p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-slate-300">Spending Today</div>
+                <div className="text-sm font-extrabold text-slate-300">ใช้ไปวันนี้</div>
                 <div className="mt-2 text-4xl font-extrabold text-slate-50">฿{formatCurrency(spendingTrend.todaySpend)}</div>
               </div>
 
               <div className="shrink-0 text-right">
-                <div className="text-sm font-extrabold text-slate-300">This Month</div>
+                <div className="text-sm font-extrabold text-slate-300">เดือนนี้</div>
                 <div className="mt-2 text-2xl font-extrabold text-slate-50">฿{formatCurrency(spendingTrend.thisMonthExpense)}</div>
                 {typeof spendingTrend.pctChange === 'number' && (
                   <div
@@ -527,7 +782,7 @@ export default function Analytics() {
                       spendingTrend.pctChange <= 0 ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/20' : 'bg-rose-500/15 text-rose-200 border border-rose-400/20'
                     ].join(' ')}
                   >
-                    {spendingTrend.pctChange > 0 ? `+${spendingTrend.pctChange}%` : `${spendingTrend.pctChange}%`} vs last mo.
+                    {spendingTrend.pctChange > 0 ? `+${spendingTrend.pctChange}%` : `${spendingTrend.pctChange}%`} เทียบเดือนก่อน
                   </div>
                 )}
               </div>
@@ -674,81 +929,6 @@ export default function Analytics() {
           </div>
         )}
 
-        {/* Month selector */}
-        <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setCurrentMonthIndex(prev => Math.max(0, prev - 1))}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
-              disabled={currentMonthIndex === 0}
-              aria-label="เดือนก่อนหน้า"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-
-            <div className="min-w-0 flex-1 text-center">
-              <div className="text-[11px] font-semibold text-slate-400">เดือนที่เลือก</div>
-              <div className="truncate text-sm font-extrabold text-slate-50">{selectedMonthObj.label}</div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setCurrentMonthIndex(prev => Math.min(monthList.length - 1, prev + 1))}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
-              disabled={currentMonthIndex === monthList.length - 1}
-              aria-label="เดือนถัดไป"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
-            <div className="text-sm font-semibold">{error}</div>
-          </div>
-        )}
-
-        {/* Summary (stack like reference) */}
-        <div className="space-y-3">
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายรับ</div>
-                <div className="mt-1 text-2xl font-extrabold text-emerald-300">฿{formatCurrency(summary.income)}</div>
-              </div>
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายจ่าย</div>
-                <div className="mt-1 text-2xl font-extrabold text-rose-300">฿{formatCurrency(summary.expense)}</div>
-              </div>
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20">
-                <TrendingDown className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">คงเหลือสุทธิ</div>
-                <div className={`mt-1 text-2xl font-extrabold ${balance >= 0 ? 'text-slate-50' : 'text-rose-200'}`}>฿{formatCurrency(balance)}</div>
-              </div>
-              <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${balance >= 0 ? 'bg-white/5 text-slate-100 ring-white/10' : 'bg-rose-500/15 text-rose-200 ring-rose-400/20'}`}>
-                <Wallet className="h-6 w-6" />
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Charts */}
         <div className="space-y-3">
           <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
@@ -844,33 +1024,65 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Transactions Table */}
-        <div className="rounded-3xl border border-white/10 bg-[#0b2730] shadow-sm overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-white/10 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-2">
-            <div className="text-sm font-extrabold text-slate-50">รายการล่าสุด</div>
-            <span className="text-xs font-semibold bg-white/5 text-slate-300 px-2 py-1 rounded-lg ring-1 ring-white/10">
-              {filteredTransactions.length} รายการ
-            </span>
+        {/* Recent Transactions (match reference design) */}
+        <div className="rounded-[34px] border border-white/10 bg-[#0b2730] p-6 shadow-[0_20px_70px_-55px_rgba(0,0,0,0.8)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xl font-extrabold text-slate-50">รายการล่าสุด</div>
+            <button
+              type="button"
+              onClick={() => setShowTxnFilters((v) => !v)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+              aria-label="ตัวกรอง"
+              title="ตัวกรอง"
+            >
+              <SlidersHorizontal className="h-5 w-5" />
+            </button>
           </div>
 
-          <div className="w-full md:w-auto">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-2">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[160px,minmax(0,1fr)]">
-                <div className="relative min-w-0">
-                  <select
-                    value={filterType}
-                    onChange={e => { setFilterType(e.target.value); setCurrentPage(1); }}
-                    className="h-10 w-full appearance-none rounded-xl border border-white/10 bg-white/5 pl-3 pr-10 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  >
-                    <option value="all">ทั้งหมด</option>
-                    <option value="income">รายรับ</option>
-                    <option value="expense">รายจ่าย</option>
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400">
-                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                    </svg>
+          {showTxnFilters && (
+            <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/10">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[220px,minmax(0,1fr)]">
+                <div className="min-w-0">
+                  <div className="flex w-full rounded-2xl border border-white/10 bg-black/15 p-1 shadow-sm shadow-black/10" role="group" aria-label="ตัวกรองประเภทรายการ">
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('all')}
+                      aria-pressed={filterType === 'all'}
+                      className={[
+                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                        filterType === 'all'
+                          ? 'bg-white/10 text-slate-50 ring-1 ring-white/10'
+                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                      ].join(' ')}
+                    >
+                      ทั้งหมด
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('income')}
+                      aria-pressed={filterType === 'income'}
+                      className={[
+                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                        filterType === 'income'
+                          ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
+                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                      ].join(' ')}
+                    >
+                      รายรับ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterType('expense')}
+                      aria-pressed={filterType === 'expense'}
+                      className={[
+                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                        filterType === 'expense'
+                          ? 'bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20'
+                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                      ].join(' ')}
+                    >
+                      รายจ่าย
+                    </button>
                   </div>
                 </div>
 
@@ -881,151 +1093,68 @@ export default function Analytics() {
                   <input
                     type="text"
                     value={filterText}
-                    onChange={e => { setFilterText(e.target.value); setCurrentPage(1); }}
-                    className="h-10 w-full min-w-0 rounded-xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm font-semibold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                    onChange={(e) => setFilterText(e.target.value)}
+                    className="h-10 w-full min-w-0 rounded-2xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm font-semibold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                     placeholder="ค้นหา: หมวด หรือ หมายเหตุ..."
                   />
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-          
-          {/* Mobile list */}
-          <div className="sm:hidden p-4 space-y-3">
-            {currentTableData.length > 0 ? currentTableData.map((t) => {
-              const cat = categories.find(c => c._id === t.category?._id || c._id === t.category);
+          )}
+
+          <div className="mt-5 divide-y divide-white/10">
+            {recentTransactions.length > 0 ? recentTransactions.map((t) => {
+              const cat = categories.find((c) => c._id === t.category?._id || c._id === t.category);
               const isExpense = t.type === 'expense';
-              const dateLabel = new Date(t.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+              const title = (t.notes || '').trim() || cat?.name || 'รายการ';
+              const sub = formatTxnTime(t.date);
+              const amount = Number(t.amount) || 0;
+              const amountText = amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               return (
-                <button
-                  key={t._id}
-                  type="button"
-                  aria-label={`${isExpense ? 'รายจ่าย' : 'รายรับ'} ${cat?.name || 'ทั่วไป'} ${formatCurrency(t.amount)} บาท`}
-                  className="group w-full rounded-3xl border border-white/10 bg-white/5 p-4 text-left shadow-sm transition active:scale-[0.99] hover:bg-white/10"
-                >
-                  <div className="flex items-start gap-3">
+                <div key={t._id} className="flex items-center justify-between gap-4 py-4">
+                  <div className="min-w-0 flex items-center gap-4">
                     <div
                       className={[
-                        'h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0',
-                        isExpense ? 'bg-gradient-to-br from-rose-500 to-rose-600' : 'bg-gradient-to-br from-emerald-500 to-green-500',
+                        'h-12 w-12 rounded-full flex items-center justify-center shrink-0 ring-1',
+                        isExpense
+                          ? 'bg-amber-500/15 text-amber-200 ring-amber-400/15'
+                          : 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/15',
                       ].join(' ')}
                       aria-hidden="true"
                     >
                       <CategoryIcon iconName={cat?.icon} className="w-5 h-5" />
                     </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="truncate text-sm font-extrabold text-slate-50">{cat?.name || 'ทั่วไป'}</div>
-                            <span
-                              className={[
-                                'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold border',
-                                isExpense ? 'bg-rose-500/15 text-rose-200 border-rose-400/20' : 'bg-emerald-500/15 text-emerald-200 border-emerald-400/20',
-                              ].join(' ')}
-                            >
-                              {isExpense ? 'รายจ่าย' : 'รายรับ'}
-                            </span>
-                          </div>
-                          <div className="mt-1 truncate text-xs font-semibold text-slate-400">{t.notes || '—'}</div>
-                        </div>
-
-                        <div className="shrink-0 text-right">
-                          <div className={`text-sm font-extrabold ${isExpense ? 'text-rose-200' : 'text-emerald-200'}`}>
-                            {isExpense ? '-' : '+'}฿{formatCurrency(t.amount)}
-                          </div>
-                          <div className="mt-1 text-[11px] font-semibold text-slate-500">{dateLabel}</div>
-                        </div>
-                      </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-extrabold text-slate-50">{title}</div>
+                      <div className="mt-1 truncate text-sm font-semibold text-slate-500">{sub}</div>
                     </div>
                   </div>
-                </button>
+
+                  <div className="shrink-0 text-right">
+                    <div className={`text-lg font-extrabold ${isExpense ? 'text-rose-200' : 'text-emerald-300'}`}>
+                      {isExpense ? '-' : '+'} ฿{amountText}
+                    </div>
+                    <div className="mt-0.5 text-sm font-semibold text-slate-500">
+                      {cat?.name || (isExpense ? 'รายจ่าย' : 'รายรับ')}
+                    </div>
+                  </div>
+                </div>
               );
             }) : (
               <div className="py-10 text-center text-sm font-semibold text-slate-400">ไม่มีรายการในเดือนนี้</div>
             )}
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden sm:block overflow-x-auto">
-            <table className="min-w-[720px] w-full text-left">
-              <thead className="bg-white/5 text-slate-400 text-xs uppercase font-semibold">
-                <tr>
-                  <th className="px-6 py-4">วันที่</th>
-                  <th className="px-6 py-4">หมวดหมู่</th>
-                  <th className="px-6 py-4">หมายเหตุ</th>
-                  <th className="px-6 py-4 text-right">จำนวนเงิน</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {currentTableData.length > 0 ? currentTableData.map((t) => {
-                  const cat = categories.find(c => c._id === t.category?._id || c._id === t.category);
-                  const isExpense = t.type === 'expense';
-                  return (
-                    <tr key={t._id} className="hover:bg-white/5 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-100">
-                            {new Date(t.date).getDate()}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            {MONTH_NAMES[new Date(t.date).getMonth()]}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ring-1 ${isExpense ? 'bg-rose-500/15 text-rose-200 ring-rose-400/20' : 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20'}`}>
-                             {/* เรียกใช้ Icon Helper */}
-                             <CategoryIcon iconName={cat?.icon} />
-                          </div>
-                          <span className="text-sm font-medium text-slate-100">{cat?.name || 'ทั่วไป'}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm text-slate-400">{t.notes || '-'}</span>
-                      </td>
-                      <td className={`px-6 py-4 text-right font-bold ${isExpense ? 'text-rose-200' : 'text-emerald-200'}`}>
-                        {isExpense ? '-' : '+'}฿{formatCurrency(t.amount)}
-                      </td>
-                    </tr>
-                  );
-                }) : (
-                  <tr>
-                    <td colSpan="4" className="px-6 py-12 text-center text-slate-500">
-                      ไม่มีรายการในเดือนนี้
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="mt-6">
+            <Link
+              href="/transactions"
+              className="block rounded-2xl py-2 text-center text-sm font-semibold text-slate-400 hover:text-slate-200"
+            >
+              ดูรายการทั้งหมด
+            </Link>
           </div>
-
-          {/* PAGINATION CONTROLS */}
-          {totalPages > 1 && (
-            <div className="mb-10 p-3 sm:mb-8 sm:p-4 border-t border-white/10 flex items-center justify-between sm:justify-center gap-2">
-              <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="whitespace-nowrap px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-              >
-                ก่อนหน้า
-              </button>
-              <span className="whitespace-nowrap px-2 sm:px-4 py-2 text-xs sm:text-sm text-slate-400 flex items-center justify-center">
-                หน้า {currentPage} / {totalPages}
-              </span>
-              <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="whitespace-nowrap px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50"
-              >
-                ถัดไป
-              </button>
-            </div>
-          )}
-      </div>
+        </div>
       </div>
     </main>
   );

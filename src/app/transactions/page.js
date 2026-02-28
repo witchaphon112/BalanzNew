@@ -611,7 +611,17 @@ export default function TransactionsPage() {
   const dropdownItemBase = 'w-full px-4 py-3 text-left text-sm font-semibold flex items-center justify-between gap-3 hover:bg-white/5';
   const dropdownActive = 'bg-emerald-500/15 text-emerald-200';
 
-  const weekdayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const weekdayLabels = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
+  const formatThaiShortDate = (isoKey) => {
+    if (!isoKey) return '';
+    try {
+      const d = new Date(`${isoKey}T00:00:00`);
+      if (Number.isNaN(d.getTime())) return isoKey;
+      return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+      return isoKey;
+    }
+  };
   const toISOKeyLocal = (d) => {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -676,6 +686,12 @@ export default function TransactionsPage() {
     setDayFilter('all');
     setSelectedMonth('');
 
+    // If a start date already exists and no end date yet, this pick will finish the range.
+    // Auto-close the calendar to make selection feel "workable" on mobile.
+    if (dateRange?.start && !dateRange?.end) {
+      try { setOpenDropdown(null); } catch {}
+    }
+
     setDateRange((prev) => {
       const start = prev?.start || '';
       const end = prev?.end || '';
@@ -701,40 +717,50 @@ export default function TransactionsPage() {
     const startKey = dateRange?.start || '';
     const endKey = dateRange?.end || '';
     const rangeEnd = endKey || startKey;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayKey = toISOKeyLocal(today);
 
     return (
       <div className="min-w-0">
-        <div className="flex items-center justify-center py-2">
-          <div className="text-sm font-extrabold text-slate-50">
-            {monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </div>
-        </div>
-
         <div className="grid grid-cols-7 gap-1 px-1 pb-2 text-center text-[10px] font-semibold text-slate-500">
-          {weekdayLabels.map((l, i) => <div key={`${l}-${i}`}>{l}</div>)}
+          {weekdayLabels.map((l, i) => (
+            <div key={`${l}-${i}`} className={i >= 5 ? 'text-slate-400' : ''}>
+              {l}
+            </div>
+          ))}
         </div>
 
         <div className="grid grid-cols-7 gap-1 px-1">
           {cells.map((d, idx) => {
-            if (!d) return <div key={`e-${idx}`} className="h-8" />;
+            if (!d) return <div key={`e-${idx}`} className="aspect-square w-full" />;
             const key = toISOKeyLocal(d);
             const inRange = startKey && key >= startKey && key <= rangeEnd;
             const isStart = startKey && key === startKey;
             const isEnd = rangeEnd && key === rangeEnd;
             const selected = isStart || isEnd;
+            const isToday = key === todayKey;
+            const isFuture = !!todayKey && key > todayKey;
             return (
               <button
                 key={key}
                 type="button"
+                disabled={isFuture}
                 onClick={() => onPickDay(key)}
                 className={[
-                  'h-8 w-full rounded-lg text-[12px] font-semibold transition motion-reduce:transition-none',
-                  'hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
-                  inRange ? 'bg-emerald-500/10 text-slate-50' : 'text-slate-200',
-                  selected ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20' : '',
+                  'relative aspect-square w-full rounded-2xl text-[13px] font-extrabold transition motion-reduce:transition-none',
+                  'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                  'disabled:opacity-35 disabled:cursor-not-allowed',
+                  inRange ? 'bg-emerald-500/10 text-slate-50' : 'bg-white/0 text-slate-200 hover:bg-white/5',
+                  selected ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20 hover:bg-emerald-300' : '',
+                  isToday && !selected ? 'ring-1 ring-sky-400/35 text-sky-100' : '',
                 ].join(' ')}
+                aria-label={`${formatThaiShortDate(key) || key}${isToday ? ' (วันนี้)' : ''}${isFuture ? ' (อนาคต)' : ''}`}
               >
                 {d.getDate()}
+                {isToday && !selected && (
+                  <span className="pointer-events-none absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-sky-300" aria-hidden="true" />
+                )}
               </button>
             );
           })}
@@ -991,56 +1017,91 @@ export default function TransactionsPage() {
                   </button>
                   {openDropdown === 'date' && (
                     <div
-                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-[30] overflow-hidden rounded-2xl border border-white/10 bg-[#071f26] shadow-[0_18px_40px_-20px_rgba(0,0,0,0.75)]"
+                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-[30] overflow-hidden rounded-3xl border border-white/10 bg-[#071f26] shadow-[0_18px_40px_-20px_rgba(0,0,0,0.75)]"
                       role="dialog"
                       aria-label="เลือกช่วงเวลา"
                     >
                       {/* Presets */}
-                      <div className="flex gap-2 overflow-x-auto border-b border-white/10 p-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex gap-2 overflow-x-auto border-b border-white/10 px-3 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {[
-                          { key: 'thisWeek', label: 'This Week' },
-                          { key: 'lastWeek', label: 'Last Week' },
-                          { key: 'last7', label: 'Last 7 Days' },
-                          { key: 'currentMonth', label: 'Current Month' },
-                          { key: 'lastMonth', label: 'Last Month' },
-                          { key: 'reset', label: 'Reset' },
+                          { key: 'thisWeek', label: 'สัปดาห์นี้' },
+                          { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
+                          { key: 'last7', label: '7 วันล่าสุด' },
+                          { key: 'currentMonth', label: 'เดือนนี้' },
+                          { key: 'lastMonth', label: 'เดือนที่แล้ว' },
+                          { key: 'reset', label: 'รีเซ็ต' },
                         ].map((p) => (
                           <button
                             key={p.key}
                             type="button"
                             onClick={() => applyPreset(p.key)}
-                            className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-extrabold text-slate-100 hover:bg-white/10"
+                            className={[
+                              'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
+                              p.key === 'reset'
+                                ? 'border-rose-400/20 bg-rose-500/10 text-rose-200 hover:bg-rose-500/15'
+                                : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+                            ].join(' ')}
                           >
                             {p.label}
                           </button>
                         ))}
                       </div>
 
+                      {/* Selected range summary */}
+                      <div className="border-b border-white/10 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] font-semibold text-slate-400">ช่วงที่เลือก</div>
+                          {(dateRange?.start || dateRange?.end) && (
+                            <button
+                              type="button"
+                              onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
+                              className="text-[11px] font-extrabold text-slate-300 hover:text-slate-100"
+                            >
+                              ล้าง
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
+                            {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
+                          </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                          <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
+                            {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Calendar */}
-                      <div className="p-2.5">
-                        <div className="flex items-center justify-between">
+                      <div className="p-3">
+                        <div className="flex items-center justify-between gap-3">
                           <button
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                             aria-label="เดือนก่อนหน้า"
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </button>
-                          <div className="text-xs font-semibold text-slate-400">
-                            {dateRange?.start ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                          <div className="min-w-0 flex-1 text-center">
+                            <div className="truncate text-sm font-extrabold text-slate-50">
+                              {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                              {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                            </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                             aria-label="เดือนถัดไป"
                           >
                             <ChevronRight className="h-4 w-4" />
                           </button>
                         </div>
 
-                        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-2">
+                        <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 p-3">
                           {renderMonth(calendarMonth)}
                         </div>
 
@@ -1048,14 +1109,14 @@ export default function TransactionsPage() {
                           <button
                             type="button"
                             onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
                           >
                             ล้าง
                           </button>
                           <button
                             type="button"
                             onClick={() => setOpenDropdown(null)}
-                            className="rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                            className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                           >
                             เสร็จสิ้น
                           </button>
@@ -1259,42 +1320,42 @@ export default function TransactionsPage() {
       {/* Edit Modal */}
       {showEditModal && editingTransaction && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md z-[80] animate-fadeIn"
+          className="fixed inset-0 bg-slate-950/30 backdrop-blur-sm z-[9999] animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+88px)] sm:pb-0 overflow-hidden overscroll-contain"
           onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
         >
           <div
-            className="bg-[#0b2730] h-[100dvh] w-full overflow-hidden animate-slideUp border border-white/10 text-slate-100 flex flex-col"
+            className="bg-[#0b2730] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-white/10 text-slate-100 flex flex-col max-h-[92dvh] sm:max-h-[88dvh] sm:-translate-y-4"
             role="dialog"
             aria-modal="true"
           >
-            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-6 pb-6 pt-[calc(env(safe-area-inset-top)+24px)] overflow-hidden shrink-0">
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 sm:px-6 pb-4 sm:pb-6 pt-[calc(env(safe-area-inset-top)+16px)] sm:pt-[calc(env(safe-area-inset-top)+24px)] overflow-hidden shrink-0">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
               <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
 
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold">แก้ไขรายการ</h2>
-                    <p className="text-slate-950/70 text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
+                    <h2 className="text-xl sm:text-2xl font-bold">แก้ไขรายการ</h2>
+                    <p className="text-slate-950/70 text-xs sm:text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowEditModal(false)}
-                  className="p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
+                  className="p-2 sm:p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
               </div>
             </div>
 
-	            <form onSubmit={handleUpdateSubmit} className="flex-1 p-6 space-y-5 overflow-y-auto">
+	            <form onSubmit={handleUpdateSubmit} className="flex-1 p-4 sm:p-6 pb-[calc(env(safe-area-inset-bottom)+16px)] sm:pb-6 space-y-4 sm:space-y-5 overflow-y-auto">
               {error && (
                 <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
                   <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">

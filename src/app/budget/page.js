@@ -1,5 +1,30 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import {
+  Utensils,
+  Coffee,
+  ShoppingBag,
+  Car,
+  Home,
+  Zap,
+  Heart,
+  Gamepad2,
+  Stethoscope,
+  GraduationCap,
+  Gift,
+  Smartphone,
+  CreditCard,
+  Landmark,
+  Briefcase,
+  PawPrint,
+  Music,
+  Dumbbell,
+  MoreHorizontal,
+  CheckCircle2,
+  AlertTriangle,
+  Info,
+  X,
+} from 'lucide-react';
 
 // Utility for formatting currency
 const formatCurrency = (amount) => {
@@ -11,6 +36,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050'
 const monthNamesTH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+];
+
+const monthShortTH = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
 ];
 
 const monthLabelFromDate = (dateInput) => {
@@ -60,24 +90,55 @@ const buildSmoothSvgPath = (points) => {
   return d;
 };
 
+const ICON_MAP = {
+  food: Utensils,
+  drink: Coffee,
+  shopping: ShoppingBag,
+  transport: Car,
+  home: Home,
+  bills: Zap,
+  health: Stethoscope,
+  education: GraduationCap,
+  tech: Smartphone,
+  pet: PawPrint,
+  game: Gamepad2,
+  music: Music,
+  sport: Dumbbell,
+  gift: Gift,
+  salary: CreditCard,
+  money: Landmark,
+  work: Briefcase,
+  love: Heart,
+  other: MoreHorizontal,
+};
+
+const CategoryIcon = ({ iconKey, className = 'w-6 h-6' }) => {
+  const IconComp = ICON_MAP[iconKey];
+  if (IconComp) return <IconComp className={className} aria-hidden="true" />;
+  if (typeof iconKey === 'string' && iconKey.trim()) {
+    return <span className="text-xl leading-none" aria-hidden="true">{iconKey}</span>;
+  }
+  return <MoreHorizontal className={className} aria-hidden="true" />;
+};
+
 const POPULAR_CATEGORY_PRESETS = {
   expense: [
-    { name: 'อาหาร', icon: '🍽️' },
-    { name: 'กาแฟ', icon: '☕' },
-    { name: 'เดินทาง', icon: '🚌' },
-    { name: 'ช้อปปิ้ง', icon: '🛍️' },
-    { name: 'ผ่อนรถ', icon: '🚗' },
-    { name: 'Subscriptions', icon: '📦' },
-    { name: 'ผ่อนบ้าน', icon: '🏠' },
-    { name: 'อินเตอร์เน็ต', icon: '📶' },
+    { name: 'อาหาร', icon: 'food' },
+    { name: 'กาแฟ', icon: 'drink' },
+    { name: 'เดินทาง', icon: 'transport' },
+    { name: 'ช้อปปิ้ง', icon: 'shopping' },
+    { name: 'ผ่อนรถ', icon: 'transport' },
+    { name: 'ค่าสมาชิก/ซับสคริปชัน', icon: 'other' },
+    { name: 'ผ่อนบ้าน', icon: 'home' },
+    { name: 'อินเตอร์เน็ต', icon: 'tech' },
   ],
   income: [
-    { name: 'เงินเดือน', icon: '💰' },
-    { name: 'โบนัส', icon: '🎁' },
-    { name: 'รายได้เสริม', icon: '💼' },
-    { name: 'ลงทุน', icon: '📈' },
-    { name: 'คืนเงิน', icon: '💸' },
-    { name: 'อื่นๆ', icon: '🌐' },
+    { name: 'เงินเดือน', icon: 'salary' },
+    { name: 'โบนัส', icon: 'gift' },
+    { name: 'รายได้เสริม', icon: 'work' },
+    { name: 'ลงทุน', icon: 'money' },
+    { name: 'คืนเงิน', icon: 'money' },
+    { name: 'อื่นๆ', icon: 'other' },
   ],
 };
 
@@ -96,6 +157,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tempMonthIndex, setTempMonthIndex] = useState(12);
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [monthScroll, setMonthScroll] = useState({ canLeft: false, canRight: false });
   const [sortBy, setSortBy] = useState(() => {
     try {
       if (typeof window === 'undefined') return 'budget_desc';
@@ -121,7 +183,40 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('');
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
-  const iconOptions = ['🍽️','🍩','🧴','🚗','🏠','🎬','🛒','🏥','📚','💰','📈','🎁','🏦','🌐','💡','🎯'];
+  const iconOptions = ['food', 'drink', 'shopping', 'transport', 'home', 'bills', 'health', 'education', 'tech', 'pet', 'game', 'music', 'gift', 'salary', 'work', 'money', 'love', 'other'];
+  const [toast, setToast] = useState(null); // { id, tone: 'success'|'error'|'info'|'warning', message }
+  const toastTimerRef = useRef(null);
+
+  const dismissToast = useCallback(() => {
+    setToast(null);
+    try {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const showToast = useCallback((tone, message) => {
+    const id = Date.now();
+    setToast({ id, tone: tone || 'info', message: String(message || '') });
+    try {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), 2600);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      try {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   // --- Date Logic ---
   const months = useMemo(() => {
@@ -140,6 +235,103 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   }, []);
 
   const selectedMonth = months[currentMonthIndex];
+  const monthTabsRef = useRef(null);
+  const activeMonthRef = useRef(null);
+  const monthDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0 });
+  const suppressMonthClickRef = useRef(false);
+  const monthScrollRafRef = useRef(0);
+
+  const updateMonthScroll = useCallback(() => {
+    const el = monthTabsRef.current;
+    if (!el) return;
+    const left = el.scrollLeft > 2;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setMonthScroll((prev) => (prev.canLeft === left && prev.canRight === right ? prev : { canLeft: left, canRight: right }));
+  }, []);
+
+  const scheduleUpdateMonthScroll = useCallback(() => {
+    if (monthScrollRafRef.current) return;
+    monthScrollRafRef.current = window.requestAnimationFrame(() => {
+      monthScrollRafRef.current = 0;
+      updateMonthScroll();
+    });
+  }, [updateMonthScroll]);
+
+  useEffect(() => {
+    const el = activeMonthRef.current;
+    if (!el) return;
+    try {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    } catch {
+      // ignore
+    }
+    scheduleUpdateMonthScroll();
+  }, [currentMonthIndex, selectedType, scheduleUpdateMonthScroll]);
+
+  useEffect(() => {
+    updateMonthScroll();
+    return () => {
+      if (monthScrollRafRef.current) window.cancelAnimationFrame(monthScrollRafRef.current);
+    };
+  }, [currentMonthIndex, months.length, updateMonthScroll]);
+
+  const scrollMonthTabsBy = (deltaX) => {
+    const el = monthTabsRef.current;
+    if (!el) return;
+    try {
+      el.scrollBy({ left: deltaX, behavior: 'smooth' });
+    } catch {
+      el.scrollLeft += deltaX;
+    }
+  };
+
+  const onMonthWheel = (e) => {
+    const el = monthTabsRef.current;
+    if (!el) return;
+    if (e.shiftKey) return;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    if (!e.deltaY) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaY;
+    scheduleUpdateMonthScroll();
+  };
+
+  const onMonthPointerDown = (e) => {
+    const el = monthTabsRef.current;
+    if (!el) return;
+    if (e.pointerType === 'touch') return; // keep native swipe scrolling on touch devices
+    if (e.button != null && e.button !== 0) return; // left click only (mouse)
+    suppressMonthClickRef.current = false;
+    monthDragRef.current = { active: true, startX: e.clientX, startScrollLeft: el.scrollLeft };
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const onMonthPointerMove = (e) => {
+    const el = monthTabsRef.current;
+    const st = monthDragRef.current;
+    if (!el || !st.active) return;
+    const dx = e.clientX - st.startX;
+    if (Math.abs(dx) > 4) suppressMonthClickRef.current = true;
+    el.scrollLeft = st.startScrollLeft - dx;
+    scheduleUpdateMonthScroll();
+  };
+
+  const onMonthPointerUp = () => {
+    monthDragRef.current.active = false;
+    // allow click again after this tick
+    setTimeout(() => { suppressMonthClickRef.current = false; }, 0);
+    scheduleUpdateMonthScroll();
+  };
+
+  const onMonthClickCapture = (e) => {
+    if (!suppressMonthClickRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   const budgetSparkline = useMemo(() => {
     const parsed = parseThaiMonthLabel(selectedMonth);
@@ -305,7 +497,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         budget: budgetAmount,
         spent: spentAmount,
         remaining: budgetAmount - spentAmount,
-        percent: Math.min(percent, 100),
+        percent,
         isOverBudget: spentAmount > budgetAmount
       };
     });
@@ -403,9 +595,10 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       }
 
       setEditingCategory(null);
+      showToast('success', 'บันทึกงบประมาณแล้ว');
     } catch (error) {
       console.error('Save budget error', error);
-      alert('ไม่สามารถบันทึกงบได้: ' + (error.message || 'ข้อผิดพลาดจากเซิร์ฟเวอร์'));
+      showToast('error', 'ไม่สามารถบันทึกงบได้: ' + (error.message || 'ข้อผิดพลาดจากเซิร์ฟเวอร์'));
     }
   };
 
@@ -434,6 +627,19 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     ? clamp01(processedData.summary.totalSpent / processedData.summary.monthly)
     : 0;
 
+  const overallBudgetForSummary = processedData.summary.overallMonthly > 0
+    ? processedData.summary.overallMonthly
+    : processedData.summary.monthly;
+  const overallSpentForSummary = processedData.summary.totalSpent || 0;
+  const overallRemainingForSummary = overallBudgetForSummary - overallSpentForSummary;
+  const overallSpentPct = overallBudgetForSummary > 0
+    ? Math.round((overallSpentForSummary / overallBudgetForSummary) * 100)
+    : 0;
+  const overallSpentPctClamped = overallBudgetForSummary > 0
+    ? Math.min(100, Math.max(0, (overallSpentForSummary / overallBudgetForSummary) * 100))
+    : 0;
+  const budgetedItemCount = (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
+
   const openQuickBudget = () => {
     setIsSortOpen(false);
     setIsSettingsOpen(false);
@@ -451,50 +657,22 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 font-sans">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#04161c] text-slate-100 font-sans">
       {/* Top / Sticky header (removed sticky wrapper) */}
       <>
-        <div className="mx-auto w-full max-w-lg px-4 pb-3">
+        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+12px)]">
+          {/* Title row */}
           <div className="relative flex items-center justify-center">
-            <div className="text-center pt-4">
-              <div className="text-[11px] font-semibold tracking-wide text-slate-500">จัดการงบ{typeLabel}</div>
-              <div className="text-lg font-extrabold text-slate-900">หมวดและงบประมาณ</div>
+            <div className="text-center">
+              <div className="text-[11px] font-semibold tracking-wide text-slate-400">งบประมาณ{typeLabel}</div>
+              <div className="text-lg font-extrabold text-slate-50">งบที่ตั้งไว้</div>
             </div>
-          </div>
 
-          {/* Month + Summary */}
-          <div className="mt-3 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 rounded-full bg-white px-2 py-2 shadow-sm ring-1 ring-blue-200/70">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    disabled={currentMonthIndex <= 0}
-                    onClick={() => setCurrentMonthIndex(v => Math.max(0, v - 1))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-                    aria-label="เดือนก่อนหน้า"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>
-                  </button>
-                  <div className="min-w-0 flex-1 text-center">
-                    <div className="truncate text-sm font-extrabold text-blue-800">{selectedMonth}</div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={currentMonthIndex >= months.length - 1}
-                    onClick={() => setCurrentMonthIndex(v => Math.min(months.length - 1, v + 1))}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40"
-                    aria-label="เดือนถัดไป"
-                  >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
-                  </button>
-                </div>
-              </div>
-
+            <div className="absolute right-0 flex items-center gap-2">
               <button
                 type="button"
                 onClick={openSettings}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                 aria-label="ตั้งค่า"
                 title="ตั้งค่า"
               >
@@ -502,144 +680,201 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H21M10 12H21M10 18H21M3 6h.01M3 12h.01M3 18h.01" />
                 </svg>
               </button>
-
               <button
                 type="button"
                 onClick={openQuickBudget}
-                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/30 hover:bg-blue-700"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
                 aria-label="เพิ่มงบ"
                 title="เพิ่มงบ"
               >
-                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                 </svg>
               </button>
             </div>
+          </div>
 
-            <div className="relative overflow-hidden rounded-3xl bg-white p-4 shadow-sm">
-              <div className="relative z-10">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-slate-500">งบรวมทั้งหมด</div>
-                    <div className="mt-1 flex items-baseline gap-2">
-                      <div className="text-3xl font-extrabold text-slate-900">{formatCurrency(processedData.summary.monthly)}</div>
-                      <div className="text-xs font-bold text-slate-400">THB</div>
-                    </div>
-                  </div>
-
-                  {processedData.summary.monthly > 0 && (
-                    <div
-                      className={[
-                        'shrink-0 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold',
-                        processedData.summary.remaining < 0 ? 'bg-rose-50 text-rose-700' : 'bg-blue-50 text-blue-700'
-                      ].join(' ')}
-                    >
-                      {Math.max(0, Math.round((processedData.summary.totalSpent / processedData.summary.monthly) * 100))}% ใช้ไป
-                    </div>
-                  )}
+          {/* Month tabs */}
+          {(() => {
+            const selectedYear = String((selectedMonth || '').split(' ')[1] || '');
+            const yearMonths = months
+              .map((label, idx) => ({ label, idx }))
+              .filter((x) => String(x.label.split(' ')[1] || '') === selectedYear);
+            const tabs = yearMonths.length ? yearMonths : months.map((label, idx) => ({ label, idx }));
+            return (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-400">เดือน</div>
+                  <div className="text-xs font-extrabold text-slate-300">พ.ศ. {selectedYear || '—'}</div>
                 </div>
 
-                <div className="mt-4">
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className={`h-full rounded-full ${processedData.summary.remaining < 0 ? 'bg-rose-500' : 'bg-blue-600'}`}
-                      style={{
-                        width: `${Math.min(100, Math.max(0, processedData.summary.monthly > 0 ? (processedData.summary.totalSpent / processedData.summary.monthly) * 100 : 0))}%`
-                      }}
-                    />
+                <div className="relative rounded-3xl border border-white/10 bg-[#0b2730] p-2 shadow-sm shadow-black/10">
+                  <div
+                    ref={monthTabsRef}
+                    className="flex gap-2 overflow-x-auto scroll-smooth snap-x snap-proximity pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+                    onPointerDown={onMonthPointerDown}
+                    onPointerMove={onMonthPointerMove}
+                    onPointerUp={onMonthPointerUp}
+                    onPointerCancel={onMonthPointerUp}
+                    onPointerLeave={onMonthPointerUp}
+                    onClickCapture={onMonthClickCapture}
+                    onWheel={onMonthWheel}
+                    onScroll={scheduleUpdateMonthScroll}
+                  >
+                    {tabs.map(({ label, idx }) => {
+                      const monthName = String(label.split(' ')[0] || '');
+                      const mIdx = monthIndexFromThaiName(monthName);
+                      const short = mIdx >= 0 ? monthShortTH[mIdx] : monthName;
+                      const active = idx === currentMonthIndex;
+                      return (
+                        <button
+                          key={label}
+                          ref={active ? activeMonthRef : null}
+                          type="button"
+                          onClick={() => setCurrentMonthIndex(idx)}
+                          className={[
+                            'shrink-0 snap-center px-4 py-2 rounded-2xl text-sm font-extrabold transition',
+                            'border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                            active
+                              ? [
+                                  'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25',
+                                  'shadow-[0_10px_25px_-18px_rgba(16,185,129,0.9)]',
+                                  'focus:ring-emerald-300/40',
+                                ].join(' ')
+                              : [
+                                  'border-white/10 bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10',
+                                  'focus:ring-emerald-400/20',
+                                ].join(' '),
+                          ].join(' ')}
+                          aria-current={active ? 'date' : undefined}
+                          title={label}
+                        >
+                          {short}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-2xl bg-slate-50 p-3">
-                      <div className="text-[11px] font-semibold text-slate-500">ใช้ไป</div>
-                      <div className="mt-0.5 font-extrabold text-slate-900">{formatCurrency(processedData.summary.totalSpent)}</div>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
-                      <div className="text-[11px] font-semibold text-slate-500">คงเหลือ</div>
-                      <div className={`mt-0.5 font-extrabold ${processedData.summary.remaining < 0 ? 'text-rose-600' : 'text-blue-700'}`}>
-                        {formatCurrency(processedData.summary.remaining)}
-                      </div>
-                    </div>
-                  </div>
+
+                  {/* Scroll buttons (desktop-friendly) */}
+                  {monthScroll.canLeft && (
+                    <button
+                      type="button"
+                      onClick={() => scrollMonthTabsBy(-220)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-slate-100 backdrop-blur-sm hover:bg-black/35 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      aria-label="เลื่อนไปเดือนก่อนหน้า"
+                      title="เลื่อนไปเดือนก่อนหน้า"
+                    >
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                  )}
+                  {monthScroll.canRight && (
+                    <button
+                      type="button"
+                      onClick={() => scrollMonthTabsBy(220)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-slate-100 backdrop-blur-sm hover:bg-black/35 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      aria-label="เลื่อนไปเดือนถัดไป"
+                      title="เลื่อนไปเดือนถัดไป"
+                    >
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* Edge fades */}
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl [background:linear-gradient(to_right,rgba(11,39,48,1),rgba(11,39,48,0))]" />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl [background:linear-gradient(to_left,rgba(11,39,48,1),rgba(11,39,48,0))]" />
                 </div>
               </div>
+            );
+          })()}
 
-              {budgetSparkline && (
-                <svg
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full"
-                  viewBox="0 0 100 40"
-                  preserveAspectRatio="none"
-                  aria-hidden="true"
-                >
-                  <defs>
-                    <linearGradient id="budgetSparklineFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.18" />
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
-                    </linearGradient>
-                    <linearGradient id="budgetSparklineStroke" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.35" />
-                      <stop offset="60%" stopColor="#3b82f6" stopOpacity="0.55" />
-                      <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.55" />
-                    </linearGradient>
-                  </defs>
+          {/* Summary card */}
+          <div className="mt-4 relative overflow-hidden rounded-[28px] border border-emerald-400/20 bg-gradient-to-br from-emerald-400 via-emerald-400 to-green-500 text-slate-950 shadow-[0_20px_60px_-40px_rgba(16,185,129,0.85)]">
+            <div className="absolute inset-0 opacity-25 [background:radial-gradient(800px_circle_at_10%_20%,rgba(255,255,255,0.6),transparent_45%),radial-gradient(700px_circle_at_70%_80%,rgba(0,0,0,0.2),transparent_55%)]" />
+            <div className="relative p-5">
+              <div className="text-sm font-extrabold">งบที่เหลือทั้งหมด</div>
+              <div className="mt-1 text-4xl font-extrabold tracking-tight">
+                {formatCurrency(overallRemainingForSummary)}
+              </div>
 
-                  <path d={budgetSparkline.areaPath} fill="url(#budgetSparklineFill)" />
-                  <path
-                    d={budgetSparkline.dPath}
-                    fill="none"
-                    stroke="url(#budgetSparklineStroke)"
-                    strokeWidth="2.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
+              <div className="mt-4 flex items-center justify-between text-sm font-extrabold">
+                <div>ใช้ไปแล้ว {overallSpentPct}%</div>
+                <div>เหลือ {formatCurrency(overallRemainingForSummary)}</div>
+              </div>
+
+              <div className="mt-2 h-3 w-full rounded-full bg-black/15 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-white shadow-[0_10px_25px_-10px_rgba(255,255,255,0.95)]"
+                  style={{ width: `${overallSpentPctClamped}%` }}
+                />
+              </div>
+
+              <div className="mt-3 text-sm font-semibold text-slate-950/80">
+                จากงบทั้งหมด {formatCurrency(overallBudgetForSummary)}
+              </div>
+            </div>
+          </div>
+
+          {/* Type toggle + sort */}
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <div className="flex rounded-2xl border border-white/10 bg-white/5 p-1 shadow-sm shadow-black/10">
+              <button
+                type="button"
+                onClick={() => setSelectedType('expense')}
+                className={[
+                  'px-4 py-2 text-sm font-extrabold rounded-2xl transition',
+                  selectedType === 'expense'
+                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25'
+                    : 'text-slate-300 hover:text-slate-100',
+                ].join(' ')}
+              >
+                รายจ่าย
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedType('income')}
+                className={[
+                  'px-4 py-2 text-sm font-extrabold rounded-2xl transition',
+                  selectedType === 'income'
+                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25'
+                    : 'text-slate-300 hover:text-slate-100',
+                ].join(' ')}
+              >
+                รายรับ
+              </button>
             </div>
 
-            {/* Type toggle + sort */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex rounded-2xl bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setSelectedType('expense')}
-                  className={`px-4 py-2 text-sm font-extrabold rounded-2xl transition ${selectedType === 'expense' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  รายจ่าย
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedType('income')}
-                  className={`px-4 py-2 text-sm font-extrabold rounded-2xl transition ${selectedType === 'income' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  รายรับ
-                </button>
-              </div>
-
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsSortOpen(v => !v)}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
-                  aria-haspopup="menu"
-                  aria-expanded={isSortOpen}
-                >
-                  <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h10M4 18h16"/></svg>
-                  {sortBy === 'name_asc'
-                    ? 'ชื่อ A - Z'
-                    : sortBy === 'name_desc'
-                      ? 'ชื่อ Z - A'
-                      : sortBy === 'budget_asc'
-                        ? 'งบน้อย → มาก'
-                        : sortBy === 'spent_desc'
-                          ? 'ใช้มาก → น้อย'
-                          : sortBy === 'remaining_desc'
-                            ? 'คงเหลือมาก → น้อย'
-                            : 'งบมาก → น้อย'}
-                </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSortOpen(v => !v)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-extrabold text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                aria-haspopup="menu"
+                aria-expanded={isSortOpen}
+              >
+                <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h10M4 18h16"/>
+                </svg>
+                {sortBy === 'name_asc'
+                  ? 'ชื่อ A - Z'
+                  : sortBy === 'name_desc'
+                    ? 'ชื่อ Z - A'
+                    : sortBy === 'budget_asc'
+                      ? 'งบน้อย → มาก'
+                      : sortBy === 'spent_desc'
+                        ? 'ใช้มาก → น้อย'
+                        : sortBy === 'remaining_desc'
+                          ? 'คงเหลือมาก → น้อย'
+                          : 'งบมาก → น้อย'}
+              </button>
 
                 {isSortOpen && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setIsSortOpen(false)} />
-                    <div className="absolute right-0 mt-2 z-40 w-56 rounded-2xl border border-slate-200 bg-white p-1 shadow-xl">
+                    <div className="absolute right-0 mt-2 z-40 w-56 rounded-2xl border border-white/10 bg-[#0b2730] p-1 shadow-xl shadow-black/20">
                       {[
                         { key: 'budget_desc', label: 'งบมาก → น้อย' },
                         { key: 'budget_asc', label: 'งบน้อย → มาก' },
@@ -655,12 +890,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                             setSortBy(opt.key);
                             setIsSortOpen(false);
                           }}
-                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-slate-50 ${sortBy === opt.key ? 'bg-slate-50' : ''}`}
+                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-white/5 ${sortBy === opt.key ? 'bg-white/5' : ''}`}
                           role="menuitem"
                         >
-                          <span className="text-slate-700">{opt.label}</span>
+                          <span className="text-slate-100">{opt.label}</span>
                           {sortBy === opt.key && (
-                            <svg className="h-4 w-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="h-4 w-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                             </svg>
                           )}
@@ -673,48 +908,58 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
 
             {processedData.summary.overallMonthly > 0 && (
-              <div className="mt-3 text-[11px] font-semibold text-slate-500">
-                งบรวมทุกหมวดในเดือนนี้: <span className="font-extrabold text-slate-700">{formatCurrency(processedData.summary.overallMonthly)}</span>
+              <div className="mt-3 text-[11px] font-semibold text-slate-400">
+                งบรวมทุกหมวดในเดือนนี้: <span className="font-extrabold text-slate-200">{formatCurrency(processedData.summary.overallMonthly)}</span>
               </div>
             )}
-          </div>
         </div>
       </>
 
       {/* Settings Modal */}
       {isSettingsOpen && (
         <div
-          className="fixed inset-0 z-[52] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => setIsSettingsOpen(false)}
+          className="fixed inset-0 z-[52] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+88px)] sm:pb-4"
+          onClick={(e) => e.target === e.currentTarget && setIsSettingsOpen(false)}
         >
           <div
-            className="bg-white w-full max-w-md p-5 rounded-t-3xl sm:rounded-3xl shadow-2xl animate-slideUp"
+            className="bg-[#0b2730] w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp border border-white/10 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-extrabold text-slate-900">ตั้งค่า</h3>
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-              >
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-4 overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
+                  aria-label="ปิด"
+                  title="ปิด"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+
+                <div className="mx-auto max-w-[70%] text-center">
+                  <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">ตั้งค่า</div>
+                  <div className="mt-1 truncate text-lg font-extrabold">ตั้งค่างบประมาณ</div>
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4">
-              <label className="block text-xs font-semibold text-slate-700 mb-2">เดือนที่ต้องการตั้งงบ</label>
+            <div className="p-5">
+              <label className="block text-xs font-semibold text-slate-300 mb-2">เดือนที่ต้องการตั้งงบ</label>
               <select
-                className="w-full p-3 border border-slate-200 rounded-2xl text-slate-800 bg-white shadow-sm"
+                className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                 value={tempMonthIndex}
                 onChange={(e) => setTempMonthIndex(parseInt(e.target.value, 10))}
               >
                 {months.map((m, idx) => (
-                  <option key={m} value={idx}>{m}</option>
+                  <option key={m} value={idx} className="text-slate-900">{m}</option>
                 ))}
               </select>
 
@@ -723,7 +968,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   type="button"
                   disabled={tempMonthIndex <= 0}
                   onClick={() => setTempMonthIndex(v => Math.max(0, v - 1))}
-                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-sm font-extrabold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10"
                 >
                   เดือนก่อนหน้า
                 </button>
@@ -731,18 +976,17 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   type="button"
                   disabled={tempMonthIndex >= months.length - 1}
                   onClick={() => setTempMonthIndex(v => Math.min(months.length - 1, v + 1))}
-                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-sm font-extrabold text-slate-700 disabled:opacity-40 hover:bg-slate-50"
+                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10"
                 >
                   เดือนถัดไป
                 </button>
               </div>
-            </div>
 
-            <div className="mt-5 flex gap-3">
+              <div className="mt-5 flex gap-3">
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(false)}
-                className="flex-1 py-3 rounded-2xl border border-slate-200 font-extrabold text-slate-700 bg-white hover:bg-slate-50"
+                className="flex-1 py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
               >
                 ยกเลิก
               </button>
@@ -752,10 +996,11 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   setCurrentMonthIndex(tempMonthIndex);
                   setIsSettingsOpen(false);
                 }}
-                className="flex-1 py-3 rounded-2xl bg-blue-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
+                className="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95"
               >
                 บันทึก
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -764,29 +1009,37 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       {/* Category list */}
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-lg p-4">
+        {/* Categories header */}
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-lg font-extrabold text-slate-50">หมวดหมู่</div>
+          <div className="inline-flex items-center rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs font-extrabold text-slate-200">
+            {budgetedItemCount || processedData.items.length} รายการ
+          </div>
+        </div>
+
         {isLoading ? (
           <div className="space-y-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-20 rounded-3xl bg-white shadow-sm">
+              <div key={i} className="h-24 rounded-3xl border border-white/10 bg-[#0b2730] shadow-sm shadow-black/10">
                 <div className="flex h-full items-center gap-4 px-4">
-                  <div className="h-11 w-11 rounded-2xl bg-slate-100" />
+                  <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10" />
                   <div className="flex-1">
-                    <div className="h-3 w-2/3 rounded bg-slate-100" />
-                    <div className="mt-2 h-2 w-1/2 rounded bg-slate-100" />
+                    <div className="h-3 w-2/3 rounded bg-white/10" />
+                    <div className="mt-2 h-2 w-1/2 rounded bg-white/10" />
                   </div>
-                  <div className="h-3 w-16 rounded bg-slate-100" />
+                  <div className="h-3 w-16 rounded bg-white/10" />
                 </div>
               </div>
             ))}
           </div>
         ) : (
           processedData.items.length === 0 ? (
-            <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
-              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-blue-50 text-2xl">
+            <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-8 text-center shadow-sm shadow-black/10">
+              <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-2xl">
                 🗂️
               </div>
-              <div className="text-base font-extrabold text-slate-900">ยังไม่มีหมวด{typeLabel}</div>
-              <div className="mt-1 text-sm font-semibold text-slate-500">กดปุ่มด้านล่างเพื่อเพิ่มหมวดใหม่</div>
+              <div className="text-base font-extrabold text-slate-50">ยังไม่มีหมวด{typeLabel}</div>
+              <div className="mt-1 text-sm font-semibold text-slate-400">กดปุ่ม “เพิ่มงบ” ด้านบนเพื่อเพิ่มหมวดใหม่</div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -794,61 +1047,96 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 const pct = cat.budget > 0 ? Math.round((cat.spent / cat.budget) * 100) : 0;
                 const progress = cat.budget > 0 ? clamp01(cat.spent / cat.budget) : 0;
                 const over = cat.isOverBudget && cat.budget > 0;
+                const pctText = cat.budget > 0 ? `${Math.max(0, pct)}%` : '—';
+                const pctColor = over ? 'text-rose-300' : progress >= 0.85 ? 'text-amber-200' : 'text-emerald-200';
+                const barColor = over ? '#FB7185' : progress >= 0.85 ? '#FACC15' : '#22C55E';
                 return (
-                  <button
+                  <div
                     key={cat._id}
-                    type="button"
                     onClick={() => openEditModal(cat)}
-                    className="w-full rounded-3xl bg-white p-4 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openEditModal(cat);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className={[
+                      'w-full rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition',
+                      'cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                      over ? 'border-rose-500/25 bg-[#0b2730]' : 'border-white/10 bg-[#0b2730] hover:bg-white/5',
+                    ].join(' ')}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-xl ${cat.budget > 0 ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>
-                          {cat.icon || '🏷️'}
+                        <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl bg-white/5 ring-1 ring-white/10">
+                          <CategoryIcon iconKey={cat.icon} className="w-6 h-6 text-slate-200" />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-base font-extrabold text-slate-900">{cat.name}</div>
-                          <div className="mt-0.5 text-xs font-semibold text-slate-500">
-                            ใช้ไป {formatCurrency(cat.spent)} • คงเหลือ{' '}
-                            <span className={cat.remaining < 0 ? 'text-rose-600' : 'text-blue-700'}>
+                          <div className="truncate text-base font-extrabold text-slate-50">{cat.name}</div>
+                          <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                            เหลือ{' '}
+                            <span className={cat.remaining < 0 ? 'text-rose-300' : 'text-emerald-200'}>
                               {formatCurrency(cat.remaining)}
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="shrink-0 text-right">
-                        <div className="text-[11px] font-semibold text-slate-500">งบ</div>
-                        <div className="text-base font-extrabold text-slate-900">{cat.budget > 0 ? formatCurrency(cat.budget) : '-'}</div>
-                        <div className={`mt-1 text-[11px] font-extrabold ${over ? 'text-rose-600' : 'text-blue-700'}`}>
-                          {cat.budget > 0 ? `${Math.max(0, pct)}%` : '—'}
-                        </div>
-                        {over && (
-                          <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-extrabold text-rose-600">
-                            เกินงบ
-                          </div>
-                        )}
+                      <div className="shrink-0 flex flex-col items-end gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(cat);
+                          }}
+                          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                        >
+                          แก้ไข
+                        </button>
+                        <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
                       </div>
                     </div>
 
                     <div className="mt-3">
-                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
+                        <div className="truncate">
+                          {formatCurrency(cat.spent)} <span className="text-slate-500">/ {formatCurrency(cat.budget)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
                         <div
-                          className={`h-full rounded-full ${over ? 'bg-rose-500' : progress >= 0.85 ? 'bg-amber-500' : 'bg-blue-600'}`}
-                          style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                          className="h-full rounded-full shadow-[0_10px_22px_-14px_rgba(34,197,94,0.8)]"
+                          style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: barColor }}
                         />
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                        <span className={over ? 'text-rose-600 font-extrabold' : 'text-blue-700 font-extrabold'}>{cat.budget > 0 ? `${Math.max(0, pct)}%` : ''}</span>
-                        <span className="inline-flex items-center gap-1 text-slate-400">
-                          แก้ไข
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
-                        </span>
-                      </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={openQuickBudget}
+                className={[
+                  'w-full rounded-3xl border border-dashed border-white/20 bg-white/0 p-5 text-left',
+                  'transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                ].join(' ')}
+                aria-label={`เพิ่มงบ${typeLabel}`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="h-12 w-12 rounded-2xl border border-dashed border-white/20 bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-200">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14m7-7H5" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-base font-extrabold text-slate-50">เพิ่มงบ{typeLabel}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-400">แตะเพื่อเพิ่มงบให้หมวด</div>
+                  </div>
+                </div>
+              </button>
             </div>
           )
         )}
@@ -859,47 +1147,51 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
       {/* Add Category Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-[55] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={closeAddCategoryModal}>
-          <div
-            className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl animate-slideUp overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="px-5 pt-3">
-              <div className="mx-auto h-1 w-12 rounded-full bg-slate-200" aria-hidden="true" />
-            </div>
+        <div
+          className="fixed inset-0 z-[55] flex items-stretch justify-center bg-slate-950/45 backdrop-blur-sm p-0"
+          onClick={(e) => e.target === e.currentTarget && closeAddCategoryModal()}
+        >
+	          <div
+	            className="bg-[#0b2730] w-full max-w-none rounded-none shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-white/10 flex flex-col h-[100dvh]"
+	            onClick={(e) => e.stopPropagation()}
+	            role="dialog"
+	            aria-modal="true"
+	          >
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
 
-            <div className="px-5 pt-4 pb-2">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="text-lg font-extrabold text-slate-900">เพิ่มหมวด{typeLabel}</h3>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">ตั้งชื่อหมวด และเลือกไอคอนให้สวยงาม</p>
-                </div>
+              <div className="relative">
                 <button
                   type="button"
                   onClick={closeAddCategoryModal}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
                   aria-label="ปิด"
                   title="ปิด"
                 >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+
+                <div className="mx-auto max-w-[78%] text-center">
+                  <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">เพิ่มหมวด{typeLabel}</div>
+                  <h3 className="mt-1 truncate text-lg font-extrabold">สร้างหมวดใหม่</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-950/70">ตั้งชื่อหมวด และเลือกไอคอน</p>
+                </div>
               </div>
             </div>
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const token = localStorage.getItem('token');
-              if (!token) { alert('กรุณาเข้าสู่ระบบ'); return; }
-              try {
+		            <form onSubmit={async (e) => {
+		              e.preventDefault();
+		              const token = localStorage.getItem('token');
+		              if (!token) { showToast('warning', 'กรุณาเข้าสู่ระบบ'); return; }
+		              try {
                 setAddCategoryLoading(true);
                 const res = await fetch(`${API_BASE}/api/categories`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify({ name: newCategoryName, icon: newCategoryIcon || '🌐', type: selectedType })
+                  body: JSON.stringify({ name: newCategoryName, icon: newCategoryIcon || 'other', type: selectedType })
                 });
                 if (!res.ok) {
                   const text = await res.text();
@@ -930,6 +1222,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 setShowAddModal(false);
                 setNewCategoryName('');
                 setNewCategoryIcon('');
+                showToast('success', 'สร้างหมวดเรียบร้อยแล้ว');
 
                 if (resumeQuickBudgetAfterAdd) {
                   setResumeQuickBudgetAfterAdd(false);
@@ -938,16 +1231,16 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 }
               } catch (err) {
                 console.error('Create category error', err);
-                alert('ไม่สามารถสร้างหมวดได้: ' + (err.message || 'ข้อผิดพลาด'));
+                showToast('error', 'ไม่สามารถสร้างหมวดได้: ' + (err.message || 'ข้อผิดพลาด'));
               } finally {
                 setAddCategoryLoading(false);
               }
-            }} className="px-5 pb-5">
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-slate-700 mb-2">ตั้งชื่อหมวด{typeLabel}</label>
+		            }} className="flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+96px)]">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">ตั้งชื่อหมวด{typeLabel}</label>
                 <div className="relative">
                   <input
-                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-4 pr-11 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 py-3 pl-4 pr-11 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                     value={newCategoryName}
                     onChange={(e) => setNewCategoryName(e.target.value)}
                     required
@@ -959,14 +1252,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     </svg>
                   </div>
                 </div>
-                <div className="mt-2 text-[11px] font-semibold text-slate-500">
-                  พิมพ์ชื่อหมวด หรือเลือกจากตัวเลือกด้านล่าง
-                </div>
+                <div className="mt-2 text-[11px] font-semibold text-slate-500">พิมพ์ชื่อหมวด หรือเลือกจากตัวอย่างด้านล่าง</div>
               </div>
 
               <div className="mt-5">
-                <div className="text-sm font-extrabold text-slate-900">ชื่อหมวดยอดฮิต</div>
-                <div className="mt-1 text-[11px] font-semibold text-slate-500">กดเพื่อเลือกชื่อหมวด + ไอคอนให้อัตโนมัติ</div>
+                <div className="text-sm font-extrabold text-slate-50">ตัวอย่างยอดฮิต</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-500">กดเพื่อเลือกชื่อหมวด + ไอคอนอัตโนมัติ</div>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   {(POPULAR_CATEGORY_PRESETS[selectedType] || POPULAR_CATEGORY_PRESETS.expense).map((p) => {
@@ -980,15 +1271,17 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                           setNewCategoryIcon(p.icon);
                         }}
                         className={[
-                          'flex items-center gap-3 rounded-2xl border bg-white px-3 py-3 text-left shadow-sm hover:bg-slate-50 transition',
-                          selected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-slate-200'
+                          'flex items-center gap-3 rounded-2xl border px-3 py-3 text-left shadow-sm transition',
+                          selected
+                            ? 'border-emerald-400/30 bg-emerald-500/10 ring-2 ring-emerald-400/20'
+                            : 'border-white/10 bg-white/5 hover:bg-white/10'
                         ].join(' ')}
                       >
-                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-50 text-xl">
-                          {p.icon}
+                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
+                          <CategoryIcon iconKey={p.icon} className="w-5 h-5" />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-extrabold text-slate-900">{p.name}</div>
+                          <div className="truncate text-sm font-extrabold text-slate-50">{p.name}</div>
                           <div className="mt-0.5 text-[11px] font-semibold text-slate-500">แตะเพื่อเลือก</div>
                         </div>
                       </button>
@@ -999,35 +1292,44 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
               <div className="mt-5">
                 <div className="flex items-center justify-between gap-3">
-                  <label className="text-xs font-semibold text-slate-700">เลือกไอคอน</label>
+                  <label className="text-xs font-semibold text-slate-300">เลือกไอคอน</label>
                   {newCategoryIcon?.trim() ? (
-                    <div className="text-[11px] font-semibold text-slate-500">เลือกแล้ว: <span className="font-extrabold text-slate-700">{newCategoryIcon}</span></div>
+                    <div className="text-[11px] font-semibold text-slate-500">
+                      เลือกแล้ว:{' '}
+                      <span className="font-extrabold text-slate-200">{newCategoryIcon}</span>
+                    </div>
                   ) : (
                     <div className="text-[11px] font-semibold text-slate-500">ยังไม่ได้เลือก</div>
                   )}
                 </div>
 
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="mt-3 grid grid-cols-6 gap-2">
                   {iconOptions.map((ic) => (
                     <button
                       key={ic}
                       type="button"
                       onClick={() => setNewCategoryIcon(ic)}
                       className={[
-                        'shrink-0 h-11 w-11 rounded-2xl border shadow-sm flex items-center justify-center text-xl transition',
-                        newCategoryIcon === ic ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                        'h-11 w-11 rounded-2xl border shadow-sm flex items-center justify-center transition',
+                        'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                        newCategoryIcon === ic
+                          ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
+                          : 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
                       ].join(' ')}
                       aria-label={`เลือกไอคอน ${ic}`}
                     >
-                      {ic}
+                      <CategoryIcon iconKey={ic} className="w-5 h-5" />
                     </button>
                   ))}
                   <button
                     type="button"
                     onClick={() => setNewCategoryIcon('')}
                     className={[
-                      'shrink-0 h-11 px-4 rounded-2xl border shadow-sm flex items-center justify-center text-sm font-extrabold transition',
-                      newCategoryIcon === '' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      'col-span-2 h-11 rounded-2xl border shadow-sm flex items-center justify-center text-sm font-extrabold transition',
+                      'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                      newCategoryIcon === ''
+                        ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
+                        : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
                     ].join(' ')}
                   >
                     ล้าง
@@ -1035,12 +1337,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">ไอคอน (กำหนดเอง หากต้องการ)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-2">ไอคอน (กำหนดเอง)</label>
                   <input
-                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 px-4 text-sm font-semibold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                     value={newCategoryIcon}
                     onChange={(e) => setNewCategoryIcon(e.target.value)}
-                    placeholder="พิมพ์ไอคอนเพื่อใช้แทน (เช่น 🍽️)"
+                    placeholder="พิมพ์คีย์ไอคอน (เช่น food, shopping) หรือใส่ Emoji ก็ได้"
                   />
                 </div>
               </div>
@@ -1049,7 +1351,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <button
                   type="submit"
                   disabled={addCategoryLoading || !newCategoryName.trim()}
-                  className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-3.5 text-white font-extrabold shadow-lg shadow-blue-600/20 disabled:opacity-50"
+                  className="w-full rounded-2xl bg-emerald-500 py-3.5 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 disabled:opacity-50"
                 >
                   <span className="inline-flex items-center justify-center gap-2">
                     {addCategoryLoading ? 'กำลังบันทึก...' : 'ต่อไป'}
@@ -1065,48 +1367,51 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       )}
 
       {/* Quick Add Budget Modal */}
-      {showQuickBudgetModal && (
-        <div className="fixed inset-0 z-[58] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowQuickBudgetModal(false)}>
-          <div
-            className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl shadow-2xl animate-slideUp overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="px-5 pt-3">
-              <div className="mx-auto h-1 w-12 rounded-full bg-slate-200" aria-hidden="true" />
-            </div>
+	      {showQuickBudgetModal && (
+	        <div
+	          className="fixed inset-0 z-[58] flex items-stretch justify-center bg-slate-950/45 backdrop-blur-sm p-0"
+	          onClick={(e) => e.target === e.currentTarget && setShowQuickBudgetModal(false)}
+	        >
+	          <div
+	            className="bg-[#0b2730] w-full max-w-none rounded-none shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-white/10 flex flex-col h-[100dvh]"
+	            onClick={(e) => e.stopPropagation()}
+	            role="dialog"
+	            aria-modal="true"
+	          >
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
 
-            <div className="px-5 pt-4 pb-2">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="text-lg font-extrabold text-slate-900">เพิ่มงบ{typeLabel}</h3>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">{selectedMonth}</div>
-                </div>
+              <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowQuickBudgetModal(false)}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
                   aria-label="ปิด"
                   title="ปิด"
                 >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+
+                <div className="mx-auto max-w-[78%] text-center">
+                  <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">{selectedMonth}</div>
+                  <h3 className="mt-1 truncate text-lg font-extrabold">เพิ่มงบ{typeLabel}</h3>
+                </div>
               </div>
             </div>
 
-            <form
-              onSubmit={async (e) => {
+	            <form
+	              onSubmit={async (e) => {
                 e.preventDefault();
                 const token = localStorage.getItem('token');
                 if (!token) {
-                  alert('กรุณาเข้าสู่ระบบ');
+                  showToast('warning', 'กรุณาเข้าสู่ระบบ');
                   return;
                 }
                 if (!quickBudgetCategoryId) {
-                  alert('กรุณาเลือกหมวด');
+                  showToast('warning', 'กรุณาเลือกหมวด');
                   return;
                 }
 
@@ -1134,28 +1439,29 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     }
                   }));
                   setShowQuickBudgetModal(false);
+                  showToast('success', 'บันทึกงบแล้ว');
                 } catch (err) {
                   console.error('Quick add budget error', err);
-                  alert('ไม่สามารถบันทึกงบได้: ' + (err.message || 'ข้อผิดพลาดจากเซิร์ฟเวอร์'));
+                  showToast('error', 'ไม่สามารถบันทึกงบได้: ' + (err.message || 'ข้อผิดพลาดจากเซิร์ฟเวอร์'));
                 } finally {
                   setQuickBudgetLoading(false);
                 }
               }}
-              className="px-5 pb-5"
-            >
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-slate-700 mb-2">หมวด</label>
+	              className="flex-1 overflow-y-auto p-5 pb-[calc(env(safe-area-inset-bottom)+96px)]"
+	            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">หมวด</label>
                 <select
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                   value={quickBudgetCategoryId}
                   onChange={(e) => setQuickBudgetCategoryId(e.target.value)}
                 >
-                  <option value="" disabled>เลือกหมวด</option>
+                  <option value="" disabled className="text-slate-900">เลือกหมวด</option>
                   {(categories || [])
                     .filter(c => c.type === selectedType)
                     .map(c => (
                       <option key={c._id} value={c._id}>
-                        {(c.icon ? `${c.icon} ` : '')}{c.name}
+                        {c.name}
                       </option>
                     ))}
                 </select>
@@ -1167,26 +1473,26 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     setShowQuickBudgetModal(false);
                     setShowAddModal(true);
                   }}
-                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-extrabold text-blue-700 shadow-sm hover:bg-blue-100"
+                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm font-extrabold text-emerald-200 shadow-sm hover:bg-emerald-500/15"
                 >
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-white/70 border border-blue-200">+</span>
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 border border-white/10 text-slate-100">+</span>
                   เพิ่มหมวดใหม่
                 </button>
               </div>
 
               <div className="mt-5">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">วงเงิน (บาท)</label>
-                <div className="relative rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+                <label className="block text-xs font-semibold text-slate-300 mb-2">วงเงิน (บาท)</label>
+                <div className="relative rounded-3xl border border-white/10 bg-white/5 px-4 py-3 shadow-sm">
                   <input
                     type="number"
-                    className="w-full bg-transparent text-3xl font-extrabold text-slate-900 outline-none placeholder-slate-300"
+                    className="w-full bg-transparent text-3xl font-extrabold text-slate-50 outline-none placeholder-slate-600"
                     placeholder="0"
                     value={quickBudgetAmount}
                     onChange={(e) => setQuickBudgetAmount(e.target.value)}
                     inputMode="numeric"
                     min="0"
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-extrabold text-slate-400">THB</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-extrabold text-slate-500">THB</span>
                 </div>
               </div>
 
@@ -1194,14 +1500,14 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <button
                   type="button"
                   onClick={() => setShowQuickBudgetModal(false)}
-                  className="py-3 rounded-2xl border border-slate-200 font-extrabold text-slate-700 bg-white hover:bg-slate-50"
+                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={quickBudgetLoading}
-                  className="py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50"
+                  className="py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 disabled:opacity-50"
                 >
                   {quickBudgetLoading ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
@@ -1222,7 +1528,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-xl">
-                {editingCategory.icon || '🏷️'}
+                <CategoryIcon iconKey={editingCategory.icon} className="w-6 h-6 text-slate-700" />
               </div>
               <div>
                 <p className="text-slate-500 text-xs">ตั้งงบประมาณสำหรับ</p>
@@ -1277,6 +1583,57 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
           </div>
         </div>
         )}
+
+      {/* Toast */}
+      {toast && (() => {
+        const tone = toast.tone || 'info';
+        const meta =
+          tone === 'success'
+            ? { Icon: CheckCircle2, ring: 'ring-emerald-400/20', border: 'border-emerald-400/25', bg: 'bg-emerald-500/10', text: 'text-emerald-100' }
+            : tone === 'warning'
+              ? { Icon: AlertTriangle, ring: 'ring-amber-400/20', border: 'border-amber-400/25', bg: 'bg-amber-500/10', text: 'text-amber-100' }
+              : tone === 'error'
+                ? { Icon: AlertTriangle, ring: 'ring-rose-400/20', border: 'border-rose-400/25', bg: 'bg-rose-500/10', text: 'text-rose-100' }
+                : { Icon: Info, ring: 'ring-sky-400/20', border: 'border-sky-400/25', bg: 'bg-sky-500/10', text: 'text-sky-100' };
+        const IconComp = meta.Icon;
+        return (
+          <div
+            key={toast.id}
+            className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[90] flex justify-center px-4"
+            aria-live="polite"
+            role="status"
+          >
+            <div
+              className={[
+                'pointer-events-auto w-full max-w-md rounded-2xl border shadow-2xl shadow-black/40',
+                'bg-[#0b2730]/95 backdrop-blur-md',
+                'ring-1',
+                meta.border,
+                meta.ring,
+              ].join(' ')}
+            >
+              <div className="flex items-start gap-3 p-3.5">
+                <div className={['mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-2xl ring-1', meta.bg, meta.ring].join(' ')}>
+                  <IconComp className={['h-5 w-5', meta.text].join(' ')} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-extrabold text-slate-50">แจ้งเตือน</div>
+                  <div className="mt-0.5 text-sm font-semibold text-slate-200 break-words">{toast.message}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={dismissToast}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                  aria-label="ปิดแจ้งเตือน"
+                  title="ปิด"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

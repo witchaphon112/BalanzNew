@@ -1,10 +1,8 @@
 "use client";
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon } from 'lucide-react';
 
-// Import Budget modal component
-import Budget from '../budget/page';
 import Currency from '../currency/page';
 const CurrencyModalContent = ({ onClose }) => (
   <Currency onClose={onClose} />
@@ -13,10 +11,71 @@ const CurrencyModalContent = ({ onClose }) => (
 // Brand tone (Blue product theme)
 const PRIMARY_COLOR = '#2563EB'; // blue-600
 const PRIMARY_COLOR_DARK = '#1D4ED8'; // blue-700
-const INCOME_COLOR = '#2563EB'; // blue
+const INCOME_COLOR = '#22C55E'; // emerald-500
 const EXPENSE_COLOR = '#F43F5E'; // rose-500
 const NET_SAVING_COLOR = '#0F172A'; // slate-900
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+
+const MONTH_NAMES_TH = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+const parseThaiMonthLabel = (label) => {
+  if (!label || typeof label !== 'string') return null;
+  const parts = label.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const monthName = parts[0];
+  const buddhistYear = Number(parts[1]);
+  const monthIndex = MONTH_NAMES_TH.findIndex((m) => m === monthName);
+  if (monthIndex < 0 || !Number.isFinite(buddhistYear)) return null;
+  return { year: buddhistYear - 543, monthIndex };
+};
+
+const BANGKOK_TZ = 'Asia/Bangkok';
+
+const getBangkokDateParts = (dateInput) => {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: BANGKOK_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const map = {};
+    parts.forEach((p) => { if (p?.type) map[p.type] = p.value; });
+    const year = Number(map.year);
+    const month = Number(map.month);
+    const day = Number(map.day);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return { year, monthIndex: month - 1, day };
+  } catch {
+    // Fallback: use local parts (may be inaccurate for users outside TH timezone)
+    return { year: d.getFullYear(), monthIndex: d.getMonth(), day: d.getDate() };
+  }
+};
+
+const toBangkokISODateKey = (dateInput) => {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    // en-CA yields YYYY-MM-DD
+    return new Intl.DateTimeFormat('en-CA', { timeZone: BANGKOK_TZ }).format(d);
+  } catch {
+    return toLocalISODateKey(d);
+  }
+};
+
+const toLocalISODateKey = (dateInput) => {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
 
 const ICON_MAP = {
   'food': Utensils, 'drink': Coffee, 'restaurant': Utensils,
@@ -86,9 +145,11 @@ export default function Dashboard() {
       return { name: '', profilePic: '' };
     }
   });
-  const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [budgetInitialType, setBudgetInitialType] = useState('expense');
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerYear, setMonthPickerYear] = useState(() => getBangkokDateParts(Date.now())?.year || new Date().getFullYear());
+  const [readNotifMap, setReadNotifMap] = useState(() => ({}));
   const [stats, setStats] = useState({
     totalIncome: 0,
     totalExpenses: 0,
@@ -103,6 +164,9 @@ export default function Dashboard() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingTransaction, setViewingTransaction] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [budgetsByMonth, setBudgetsByMonth] = useState({}); // { [monthLabel]: { [categoryId]: number } }
+  const [monthlyBudgetTotals, setMonthlyBudgetTotals] = useState({}); // { [monthLabel]: number }
+  const [budgetCategoryTypeById, setBudgetCategoryTypeById] = useState({}); // { [categoryId]: 'expense'|'income'|... }
   const [editFormData, setEditFormData] = useState({
     amount: '',
     type: 'expense',
@@ -114,20 +178,54 @@ export default function Dashboard() {
     amount: '',
     type: 'expense',
     category: '',
-    date: new Date().toISOString().split('T')[0],
+    date: toBangkokISODateKey(Date.now()),
     notes: '',
   });
 
-  const monthNames = [
-    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-  ];
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('dashboard_notif_read_v1');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') setReadNotifMap(parsed);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('dashboard_notif_read_v1', JSON.stringify(readNotifMap || {}));
+    } catch {
+      // ignore
+    }
+  }, [readNotifMap]);
+
+  useEffect(() => {
+    if (!showNotifications) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowNotifications(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [showNotifications]);
+
+  useEffect(() => {
+    if (!showMonthPicker) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowMonthPicker(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [showMonthPicker]);
 
   /* --- Data & Logic Setup --- */
   const getMonths = () => {
     const currentDate = new Date();
-    const currentYear = currentDate.getFullYear() + 543; 
-    const currentMonth = currentDate.getMonth();
+    const nowParts = getBangkokDateParts(currentDate) || { year: currentDate.getFullYear(), monthIndex: currentDate.getMonth() };
+    const currentYear = (nowParts.year || currentDate.getFullYear()) + 543; 
+    const currentMonth = typeof nowParts.monthIndex === 'number' ? nowParts.monthIndex : currentDate.getMonth();
     const months = [];
     const span = 12;
 
@@ -139,20 +237,50 @@ export default function Dashboard() {
       }
       const actualMonthIndex = (monthIndex + 12) % 12;
       const year = currentYear + yearOffset;
-      months.push(`${monthNames[actualMonthIndex]} ${year}`);
+      months.push(`${MONTH_NAMES_TH[actualMonthIndex]} ${year}`);
     }
     return months;
   };
 
   const months = getMonths();
+  const nowBkk = getBangkokDateParts(Date.now());
   const currentDate = new Date();
-  const currentMonthYear = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear() + 543}`;
+  const currentMonthYear = (() => {
+    const p = nowBkk || getBangkokDateParts(currentDate) || { year: currentDate.getFullYear(), monthIndex: currentDate.getMonth() };
+    return `${MONTH_NAMES_TH[p.monthIndex]} ${p.year + 543}`;
+  })();
   
   const currentMonthInitialIndex = months.findIndex(m => m === currentMonthYear);
   const [currentMonthIndex, setCurrentMonthIndex] = useState(currentMonthInitialIndex !== -1 ? currentMonthInitialIndex : Math.floor(months.length / 2));
   const selectedMonth = months[currentMonthIndex];
 
-  const getThaiYear = (date) => date.getFullYear() + 543;
+  const monthIndexMap = useMemo(() => {
+    const map = new Map();
+    months.forEach((label, idx) => {
+      const p = parseThaiMonthLabel(label);
+      if (!p) return;
+      map.set(`${p.year}-${p.monthIndex}`, idx);
+    });
+    return map;
+  }, [months]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    for (const key of monthIndexMap.keys()) {
+      const y = Number(String(key).split('-')[0]);
+      if (Number.isFinite(y)) years.add(y);
+    }
+    return Array.from(years.values()).sort((a, b) => b - a);
+  }, [monthIndexMap]);
+
+  const monthPickerMonthsForYear = useMemo(() => {
+    const y = Number(monthPickerYear);
+    const cells = MONTH_NAMES_TH.map((name, monthIndex) => {
+      const idx = monthIndexMap.get(`${y}-${monthIndex}`);
+      return { name, monthIndex, idx: typeof idx === 'number' ? idx : null };
+    });
+    return cells;
+  }, [monthIndexMap, monthPickerYear]);
 
   const fetchStats = async () => {
     const token = localStorage.getItem('token');
@@ -172,11 +300,11 @@ export default function Dashboard() {
       const selectedYear = selectedMonth.split(' ')[1];
 
       const filteredTransactions = transactions.filter(t => {
-        const tDate = new Date(t.date);
-        const tMonthIndex = tDate.getMonth();
-        const tYear = getThaiYear(tDate);
-        
-        return monthNames[tMonthIndex] === selectedMonthName && tYear.toString() === selectedYear;
+        const p = getBangkokDateParts(t?.date);
+        if (!p) return false;
+        const tMonthIndex = p.monthIndex;
+        const tYearBuddhist = p.year + 543;
+        return MONTH_NAMES_TH[tMonthIndex] === selectedMonthName && String(tYearBuddhist) === String(selectedYear);
       });
 
       const sortedTransactions = filteredTransactions.sort(
@@ -209,6 +337,15 @@ export default function Dashboard() {
   useEffect(() => {
     const token = localStorage.getItem('token');
 
+    const safeJson = async (res) => {
+      try {
+        const text = await res.text();
+        return JSON.parse(text);
+      } catch {
+        return null;
+      }
+    };
+
     const fetchCategories = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/categories`, {
@@ -223,6 +360,52 @@ export default function Dashboard() {
       }
     };
 
+    const fetchBudgets = async () => {
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [budgetRes, totalRes] = await Promise.all([
+          fetch(`${API_BASE}/api/budgets`, { headers }),
+          fetch(`${API_BASE}/api/budgets/total`, { headers }),
+        ]);
+
+        const buds = await safeJson(budgetRes);
+        const totals = await safeJson(totalRes);
+
+        if (budgetRes.ok && Array.isArray(buds)) {
+          const map = {};
+          const typeMap = {};
+          buds.forEach((b) => {
+            const month = b?.month;
+            if (!month) return;
+            if (!map[month]) map[month] = {};
+            const catId = (b?.category && typeof b.category === 'object')
+              ? (b.category?._id || '')
+              : (b?.category || '');
+            if (!catId) return;
+            map[month][catId] = Number(b?.total ?? 0) || 0;
+            if (b?.category && typeof b.category === 'object') {
+              const t = b.category?.type;
+              if (typeof t === 'string' && t) typeMap[catId] = t;
+            }
+          });
+          setBudgetsByMonth(map);
+          setBudgetCategoryTypeById(typeMap);
+        }
+
+        if (totalRes.ok && Array.isArray(totals)) {
+          const tMap = {};
+          totals.forEach((tb) => {
+            const month = tb?.month;
+            if (!month) return;
+            tMap[month] = Number(tb?.total ?? 0) || 0;
+          });
+          setMonthlyBudgetTotals(tMap);
+        }
+      } catch (e) {
+        // ignore budgets load errors (dashboard can still work)
+      }
+    };
+
     if (!token) {
         window.location.href = '/login';
         return;
@@ -230,6 +413,7 @@ export default function Dashboard() {
 
     fetchStats();
     fetchCategories();
+    fetchBudgets();
     
     return () => {};
   }, [selectedMonth]);
@@ -389,7 +573,7 @@ export default function Dashboard() {
         amount: '',
         type: 'expense',
         category: '',
-        date: new Date().toISOString().split('T')[0],
+        date: toBangkokISODateKey(Date.now()),
         notes: '',
       });
       fetchStats();
@@ -399,11 +583,16 @@ export default function Dashboard() {
   };
 
   const formatCurrentDate = () => {
-    const d = new Date();
-    const m = monthNames[d.getMonth()];
-    const day = d.getDate();
-    const year = d.getFullYear() + 543;
-    return `${m} ${day}, ${year}`;
+    const p = getBangkokDateParts(Date.now());
+    if (!p) {
+      const d = new Date();
+      const m = MONTH_NAMES_TH[d.getMonth()];
+      const day = d.getDate();
+      const year = d.getFullYear() + 543;
+      return `${m} ${day}, ${year}`;
+    }
+    const m = MONTH_NAMES_TH[p.monthIndex];
+    return `${m} ${p.day}, ${p.year + 543}`;
   };
 
   const formatTHB = (value) => {
@@ -411,46 +600,425 @@ export default function Dashboard() {
     return `฿${n.toLocaleString('th-TH')}`;
   };
 
-  const expenseBreakdown = useMemo(() => {
-    const src = (stats.transactionsAll && stats.transactionsAll.length)
-      ? stats.transactionsAll
-      : (stats.recentTransactions || []);
+  const selectedParsed = useMemo(() => parseThaiMonthLabel(selectedMonth), [selectedMonth]);
+  const monthExpenseBudgetTotal = useMemo(() => {
+    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+    const entries = Object.entries(monthBudgets || {});
+    if (!entries.length) return 0;
+    let sum = 0;
+    for (const [categoryId, total] of entries) {
+      const cat = (categories || []).find((c) => c?._id === categoryId);
+      const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+      if (type && type !== 'expense') continue;
+      sum += Number(total) || 0;
+    }
+    return Number(sum) || 0;
+  }, [budgetsByMonth, selectedMonth, categories, budgetCategoryTypeById]);
 
+  const monthIncomeTotal = useMemo(() => {
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    return src.filter((t) => t?.type === 'income').reduce((s, t) => s + (Number(t?.amount) || 0), 0);
+  }, [stats.transactionsAll]);
+
+  const monthExpenseTotal = useMemo(() => {
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    return src.filter((t) => t?.type === 'expense').reduce((s, t) => s + (Number(t?.amount) || 0), 0);
+  }, [stats.transactionsAll]);
+
+  const todaySpend = useMemo(() => {
+    const parsed = selectedParsed;
+    if (!parsed) return 0;
+    const nowParts = nowBkk;
+    if (!nowParts || nowParts.year !== parsed.year || nowParts.monthIndex !== parsed.monthIndex) return 0;
+    const todayKey = toBangkokISODateKey(Date.now());
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    return src
+      .filter((t) => t?.type === 'expense' && toBangkokISODateKey(t?.date) === todayKey)
+      .reduce((s, t) => s + (Number(t?.amount) || 0), 0);
+  }, [stats.transactionsAll, selectedParsed, nowBkk]);
+
+  const daysInSelectedMonth = useMemo(() => {
+    const parsed = selectedParsed;
+    if (!parsed) return 30;
+    const d = new Date(parsed.year, parsed.monthIndex + 1, 0);
+    const n = d.getDate();
+    return Number.isFinite(n) && n > 0 ? n : 30;
+  }, [selectedParsed]);
+
+  const daysUntilReset = useMemo(() => {
+    const parsed = selectedParsed;
+    if (!parsed) return 0;
+    const nowParts = nowBkk;
+    if (!nowParts || nowParts.year !== parsed.year || nowParts.monthIndex !== parsed.monthIndex) return 0;
+    return Math.max(0, (Number(daysInSelectedMonth) || 0) - (Number(nowParts.day) || 0) + 1);
+  }, [selectedParsed, nowBkk, daysInSelectedMonth]);
+
+  const dailyTarget = useMemo(() => {
+    if (monthExpenseBudgetTotal > 0) return monthExpenseBudgetTotal / Math.max(1, daysInSelectedMonth);
+    return 300;
+  }, [monthExpenseBudgetTotal, daysInSelectedMonth]);
+
+  const monthRemaining = useMemo(() => {
+    if (monthExpenseBudgetTotal > 0) return Math.max(0, monthExpenseBudgetTotal - monthExpenseTotal);
+    return Math.max(0, monthIncomeTotal - monthExpenseTotal);
+  }, [monthExpenseBudgetTotal, monthExpenseTotal, monthIncomeTotal]);
+
+  const healthAnalysis = useMemo(() => {
+    const income = Number(monthIncomeTotal) || 0;
+    const expense = Math.max(0, Number(monthExpenseTotal) || 0);
+    const budgetTotal = Number(monthExpenseBudgetTotal) || 0;
+    const hasBudget = budgetTotal > 0;
+
+    const savings = income - expense;
+    const savingsRate = income > 0 ? savings / income : null; // -inf..1
+    const expenseRatio = income > 0 ? expense / income : null; // 0..inf
+
+    const parsed = selectedParsed;
+    const nowParts = nowBkk;
+    const isCurrentMonth = !!parsed && !!nowParts && nowParts.year === parsed.year && nowParts.monthIndex === parsed.monthIndex;
+    const progress = isCurrentMonth ? Math.max(0.05, Math.min(1, (Number(nowParts?.day) || 1) / Math.max(1, daysInSelectedMonth))) : 1;
+
+    const expectedSpendSoFar = hasBudget ? budgetTotal * progress : null;
+    const paceRatio = hasBudget && expectedSpendSoFar && expectedSpendSoFar > 0 ? expense / expectedSpendSoFar : null;
+
+    let score = 0;
+    if (income <= 0) {
+      score = expense > 0 ? 10 : 0;
+    } else {
+      const s = Math.max(0, Math.min(1, (Number.isFinite(savingsRate) ? savingsRate : 0) / 0.3)); // 30%+ => full
+      const savingsComponent = 50 * s;
+
+      let budgetComponent = 0;
+      let paceComponent = 0;
+
+      if (hasBudget && expectedSpendSoFar && expectedSpendSoFar > 0) {
+        const pr = Number(paceRatio) || 0;
+        const paceScore = pr <= 1 ? 1 : Math.max(0, 1 - (pr - 1) / 0.6); // 0 at 1.6x pace
+        budgetComponent = 30 * paceScore;
+
+        if (isCurrentMonth) {
+          const remainingDays = Math.max(1, daysInSelectedMonth - (Number(nowParts?.day) || 1) + 1);
+          const remainingBudget = budgetTotal - expense;
+          const neededPerDay = remainingBudget / remainingDays;
+          const targetPerDay = budgetTotal / Math.max(1, daysInSelectedMonth);
+          const dpRatio = targetPerDay > 0 ? neededPerDay / targetPerDay : 1;
+          const dailyScore = dpRatio <= 1 ? 1 : Math.max(0, 1 - (dpRatio - 1) / 1); // 0 at 2x
+          paceComponent = 20 * dailyScore;
+        } else {
+          paceComponent = 20;
+        }
+      } else {
+        const er = Number(expenseRatio);
+        const expenseScore = !Number.isFinite(er) ? 0 : er <= 0.55 ? 1 : er >= 1 ? 0 : 1 - (er - 0.55) / 0.45;
+        budgetComponent = 30 * expenseScore;
+        paceComponent = 20 * (isCurrentMonth ? Math.max(0, Math.min(1, (Number.isFinite(savingsRate) ? savingsRate : 0) / 0.2)) : 1);
+      }
+
+      score = Math.round(Math.max(0, Math.min(100, savingsComponent + budgetComponent + paceComponent)));
+    }
+
+    let label = 'ควรปรับปรุง';
+    let tone = 'text-rose-200';
+    let ringColor = '#FB7185'; // rose-400
+
+    if (income <= 0 && expense > 0) {
+      label = 'ยังไม่มีรายรับ';
+      tone = 'text-rose-200';
+      ringColor = '#FB7185';
+    } else if (hasBudget && expense > budgetTotal) {
+      label = 'เกินงบแล้ว';
+      tone = 'text-rose-200';
+      ringColor = '#FB7185';
+    } else if (score >= 80) {
+      label = 'ดีเยี่ยม';
+      tone = 'text-emerald-200';
+      ringColor = '#34D399'; // emerald-400
+    } else if (score >= 60) {
+      label = 'ดี';
+      tone = 'text-sky-200';
+      ringColor = '#38BDF8'; // sky-400
+    } else if (score >= 40) {
+      label = 'พอใช้';
+      tone = 'text-amber-200';
+      ringColor = '#FACC15'; // amber-400
+    }
+
+    const parts = [];
+    if (income > 0 && Number.isFinite(savingsRate)) {
+      parts.push(`ออม ${Math.round(savingsRate * 100)}%`);
+    } else if (income <= 0) {
+      parts.push('ไม่มีรายรับ');
+    }
+
+    if (hasBudget) {
+      parts.push(`ใช้งบ ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}%`);
+      if (isCurrentMonth && expectedSpendSoFar && expectedSpendSoFar > 0) {
+        const pr = Number(paceRatio) || 0;
+        if (pr >= 1.15) parts.push('ใช้เร็วกว่าแผน');
+        else if (pr <= 0.85) parts.push('คุมงบได้ดี');
+        else parts.push('ตามแผน');
+      }
+    } else if (income > 0 && Number.isFinite(expenseRatio)) {
+      parts.push(`รายจ่าย ${Math.round(expenseRatio * 100)}% ของรายรับ`);
+    }
+
+    let hint = '';
+    if (!hasBudget) hint = 'แนะนำ: ตั้งงบประมาณรายเดือนเพื่อประเมินได้แม่นขึ้น';
+    else if (income > 0 && Number.isFinite(savingsRate) && savingsRate < 0.1) hint = 'แนะนำ: พยายามเหลือออมอย่างน้อย 10%';
+    else if (hasBudget && expense > budgetTotal) hint = 'แนะนำ: ลดรายจ่ายหรือปรับงบให้เหมาะกับเดือนนี้';
+    else hint = 'ดูแนวโน้มรายจ่ายและจุดรั่วไหลเพื่อปรับพฤติกรรม';
+
+    return {
+      score,
+      label,
+      tone,
+      ringColor,
+      summary: parts.join(' • '),
+      hint,
+    };
+  }, [monthIncomeTotal, monthExpenseTotal, monthExpenseBudgetTotal, selectedParsed, daysInSelectedMonth, nowBkk]);
+
+  const leakItems = useMemo(() => {
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
     const map = new Map();
-    let total = 0;
     for (const t of src) {
-      if (!t) continue;
-      if (t.type !== 'expense') continue;
+      if (!t || t.type !== 'expense') continue;
       const amt = Number(t.amount) || 0;
       if (amt <= 0) continue;
-      total += amt;
-      const id = t.category?._id || '_none';
-      const name = t.category?.name || 'อื่นๆ';
-      const prev = map.get(id) || { id, name, amount: 0 };
+      const id = t.category?._id || t.category || '_none';
+      const name = t.category?.name || 'ไม่ระบุ';
+      const icon = t.category?.icon || 'other';
+      const prev = map.get(id) || { id, name, icon, amount: 0 };
       prev.amount += amt;
       map.set(id, prev);
     }
+    return Array.from(map.values()).sort((a, b) => b.amount - a.amount).slice(0, 3);
+  }, [stats.transactionsAll]);
 
-    const sorted = Array.from(map.values()).sort((a, b) => b.amount - a.amount);
-    const colors = ['#3B82F6', '#EF4444', '#10B981']; // blue, red, green
-    const top = sorted.slice(0, 3).map((item, idx) => ({
-      ...item,
-      color: colors[idx],
-      pct: total > 0 ? item.amount / total : 0,
-    }));
+  const notifications = useMemo(() => {
+    if (loading) return [];
 
-    return { total, top };
-  }, [stats.transactionsAll, stats.recentTransactions]);
+    const income = Number(monthIncomeTotal) || 0;
+    const expense = Math.max(0, Number(monthExpenseTotal) || 0);
+    const budgetTotal = Number(monthExpenseBudgetTotal) || 0;
+    const hasBudget = budgetTotal > 0;
+
+    const parsed = selectedParsed;
+    const nowParts = nowBkk;
+    const isCurrentMonth = !!parsed && !!nowParts && nowParts.year === parsed.year && nowParts.monthIndex === parsed.monthIndex;
+    const progress = isCurrentMonth ? Math.max(0.05, Math.min(1, (Number(nowParts?.day) || 1) / Math.max(1, daysInSelectedMonth))) : 1;
+    const expectedSpendSoFar = hasBudget ? budgetTotal * progress : 0;
+
+    const list = [];
+    const push = (n) => { if (n && n.id) list.push(n); };
+
+    if (hasBudget && expense > budgetTotal) {
+      push({
+        id: `budget_over_${selectedMonth}`,
+        tone: 'rose',
+        icon: TrendingDownIcon,
+        title: 'ใช้จ่ายเกินงบเดือนนี้แล้ว',
+        body: `ใช้งบไป ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}% • เกิน ${formatTHB(expense - budgetTotal)}`,
+        href: '/budget',
+        cta: 'ไปหน้างบประมาณ',
+      });
+    } else if (hasBudget && expense / Math.max(1, budgetTotal) >= 0.85) {
+      push({
+        id: `budget_near_${selectedMonth}`,
+        tone: 'amber',
+        icon: Target,
+        title: 'ใกล้ถึงงบประมาณเดือนนี้',
+        body: `ใช้งบไป ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}% • เหลือ ${formatTHB(Math.max(0, budgetTotal - expense))}`,
+        href: '/budget',
+        cta: 'ดูงบประมาณ',
+      });
+    }
+
+    if (hasBudget && isCurrentMonth && expectedSpendSoFar > 0 && expense / expectedSpendSoFar >= 1.15) {
+      push({
+        id: `budget_pace_${selectedMonth}`,
+        tone: 'amber',
+        icon: Zap,
+        title: 'ใช้จ่ายเร็วกว่าแผน',
+        body: `ควรใช้ราว ${formatTHB(expectedSpendSoFar)} แต่ตอนนี้ใช้ไป ${formatTHB(expense)}`,
+        href: '/analytics',
+        cta: 'ดูสถิติรายจ่าย',
+      });
+    }
+
+    if (income <= 0 && expense > 0) {
+      push({
+        id: `no_income_${selectedMonth}`,
+        tone: 'rose',
+        icon: Wallet,
+        title: 'เดือนนี้ยังไม่มีรายรับ',
+        body: `แต่มีรายจ่าย ${formatTHB(expense)} ลองบันทึกรายรับเพื่อให้วิเคราะห์แม่นขึ้น`,
+        href: '/transactions',
+        cta: 'ไปหน้ารายการ',
+      });
+    }
+
+    if (Number.isFinite(healthAnalysis?.score) && healthAnalysis.score < 40 && income > 0) {
+      push({
+        id: `health_low_${selectedMonth}`,
+        tone: 'rose',
+        icon: Lightbulb,
+        title: 'สุขภาพการเงินควรปรับปรุง',
+        body: healthAnalysis.summary || 'ลองลดรายจ่ายหรือเพิ่มรายรับเพื่อให้เหลือออมมากขึ้น',
+        href: '/analytics',
+        cta: 'ดูภาพรวม',
+      });
+    }
+
+    if (dailyTarget > 0 && todaySpend > dailyTarget * 1.25) {
+      push({
+        id: `daily_over_${selectedMonth}`,
+        tone: 'amber',
+        icon: TrendingDownIcon,
+        title: 'วันนี้ใช้เกินเป้าที่ตั้งไว้',
+        body: `ใช้ไป ${formatTHB(todaySpend)} จากเป้า ${formatTHB(dailyTarget)}`,
+        href: '/transactions',
+        cta: 'ดูรายการวันนี้',
+      });
+    }
+
+    if (Array.isArray(leakItems) && leakItems[0] && expense > 0) {
+      const top = leakItems[0];
+      const pct = top.amount / Math.max(1, expense);
+      if (pct >= 0.35) {
+        push({
+          id: `leak_top_${selectedMonth}`,
+          tone: 'sky',
+          icon: TrendingDownIcon,
+          title: 'หมวดนี้ใช้เยอะเป็นพิเศษ',
+          body: `${top.name} คิดเป็น ${Math.round(pct * 100)}% ของรายจ่ายเดือนนี้`,
+          href: '/analytics',
+          cta: 'ดูสัดส่วนรายจ่าย',
+        });
+      }
+    }
+
+    if (isCurrentMonth && daysUntilReset > 0 && daysUntilReset <= 3 && hasBudget) {
+      push({
+        id: `reset_soon_${selectedMonth}`,
+        tone: 'sky',
+        icon: AlarmClock,
+        title: 'งบประมาณใกล้รีเซ็ต',
+        body: `เหลืออีก ${daysUntilReset} วัน งบเดือนนี้จะรีเซ็ต`,
+        href: '/budget',
+        cta: 'ตรวจงบเดือนนี้',
+      });
+    }
+
+    if (list.length === 0) {
+      push({
+        id: `all_good_${selectedMonth}`,
+        tone: 'emerald',
+        icon: TrendingUpIcon,
+        title: 'ทุกอย่างดูโอเค',
+        body: 'ยังไม่พบสิ่งที่ควรแจ้งเตือนในตอนนี้',
+        href: '/analytics',
+        cta: 'ดูสรุปการเงิน',
+      });
+    }
+
+    return list;
+  }, [
+    loading,
+    monthIncomeTotal,
+    monthExpenseTotal,
+    monthExpenseBudgetTotal,
+    selectedParsed,
+    daysInSelectedMonth,
+    daysUntilReset,
+    todaySpend,
+    dailyTarget,
+    leakItems,
+    healthAnalysis,
+    selectedMonth,
+    nowBkk,
+  ]);
+
+  const unreadNotifCount = useMemo(() => {
+    const read = readNotifMap || {};
+    return (notifications || []).reduce((acc, n) => acc + (read?.[n.id] ? 0 : 1), 0);
+  }, [notifications, readNotifMap]);
+
+  const markNotifRead = (id) => {
+    if (!id) return;
+    setReadNotifMap((prev) => {
+      const curr = prev && typeof prev === 'object' ? prev : {};
+      if (curr[id]) return curr;
+      return { ...curr, [id]: Date.now() };
+    });
+  };
+
+  const markAllNotifsRead = () => {
+    setReadNotifMap((prev) => {
+      const curr = prev && typeof prev === 'object' ? prev : {};
+      const next = { ...curr };
+      (notifications || []).forEach((n) => {
+        if (n?.id && !next[n.id]) next[n.id] = Date.now();
+      });
+      return next;
+    });
+  };
+
+  const notifToneUI = (tone) => {
+    if (tone === 'rose') return { iconBg: 'bg-rose-500/15 text-rose-200 ring-rose-400/20', border: 'border-rose-400/15' };
+    if (tone === 'amber') return { iconBg: 'bg-amber-500/15 text-amber-200 ring-amber-400/20', border: 'border-amber-400/15' };
+    if (tone === 'sky') return { iconBg: 'bg-sky-500/15 text-sky-200 ring-sky-400/20', border: 'border-sky-400/15' };
+    return { iconBg: 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20', border: 'border-emerald-400/15' };
+  };
+
+  const budgetRows = useMemo(() => {
+    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+    const entries = Object.entries(monthBudgets || {});
+    if (!entries.length) return [];
+
+    const spentByCategory = new Map();
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    for (const t of src) {
+      if (!t || t.type !== 'expense') continue;
+      const id = t.category?._id || t.category || '';
+      if (!id) continue;
+      spentByCategory.set(id, (spentByCategory.get(id) || 0) + (Number(t.amount) || 0));
+    }
+
+    const colors = ['#38BDF8', '#FACC15', '#A78BFA']; // sky, yellow, violet
+    const rows = entries
+      .map(([categoryId, total], idx) => {
+        const cat = (categories || []).find((c) => c?._id === categoryId);
+        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+        if (type && type !== 'expense') return null;
+        const budget = Number(total) || 0;
+        const spent = Math.max(0, Number(spentByCategory.get(categoryId) || 0));
+        return {
+          id: categoryId,
+          name: cat?.name || 'หมวดหมู่',
+          icon: cat?.icon || 'other',
+          spent,
+          budget,
+          pct: budget > 0 ? Math.max(0, Math.min(1, spent / budget)) : 0,
+          color: colors[idx % colors.length],
+        };
+      })
+      .filter(Boolean)
+      .filter((r) => r.budget > 0)
+      .sort((a, b) => b.pct - a.pct);
+
+    return rows.slice(0, 2);
+  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById]);
 
   /* --- JSX Rendering --- */
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-[100dvh] bg-[#04161c] text-slate-100">
       <div className="mx-auto w-full max-w-lg px-4 py-5 space-y-4">
         {/* Top bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="h-11 w-11 rounded-full bg-white shadow-sm border border-slate-200 flex items-center justify-center shrink-0">
+            <div className="h-11 w-11 rounded-full bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 flex items-center justify-center shrink-0">
               {userProfile.profilePic ? (
                 <img
                   src={userProfile.profilePic}
@@ -459,15 +1027,15 @@ export default function Dashboard() {
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-extrabold">
+                <div className="h-8 w-8 rounded-full bg-blue-500/15 text-blue-200 ring-1 ring-blue-400/25 flex items-center justify-center font-extrabold">
                   {(userProfile.name || 'B').trim().slice(0, 1).toUpperCase()}
                 </div>
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-semibold text-slate-500 truncate">Welcome back</div>
-              <div className="text-lg font-extrabold text-slate-900 truncate">{userProfile.name || 'Balanz'}</div>
-              <div className="text-[11px] font-semibold text-slate-400">{formatCurrentDate()}</div>
+              <div className="text-[12px] font-semibold text-slate-400 truncate">Welcome back</div>
+              <div className="text-lg font-extrabold text-slate-50 truncate">{userProfile.name || 'Balanz'}</div>
+              <div className="text-[11px] font-semibold text-slate-500">{formatCurrentDate()}</div>
             </div>
           </div>
 
@@ -475,256 +1043,511 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowCurrencyModal(true)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-slate-50"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 text-slate-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
               aria-label="อัตราแลกเปลี่ยน"
               title="อัตราแลกเปลี่ยน"
             >
-              <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="h-5 w-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m-5 3H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </button>
 
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white shadow-sm border border-slate-200 text-slate-600 hover:bg-slate-50"
+              onClick={() => setShowNotifications(true)}
+              className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 text-slate-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
               aria-label="การแจ้งเตือน"
               title="การแจ้งเตือน"
             >
+              {unreadNotifCount > 0 && (
+                <span
+                  className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-[#04161c]"
+                  aria-label={`มีการแจ้งเตือนใหม่ ${unreadNotifCount} รายการ`}
+                >
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
+                </span>
+              )}
               <Bell className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Budget Modal */}
-        {showBudgetModal && (
-          <Budget initialType={budgetInitialType} onClose={() => setShowBudgetModal(false)} />
-        )}
+        {/* Month selector */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex-1 rounded-3xl border border-white/10 bg-[#0b2730] p-2 shadow-sm shadow-black/10">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentMonthIndex((p) => Math.max(0, p - 1))}
+                disabled={currentMonthIndex === 0}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                aria-label="เดือนก่อนหน้า"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+
+	              <button
+	                type="button"
+	                onClick={() => {
+	                  const p = parseThaiMonthLabel(selectedMonth);
+	                  setMonthPickerYear(p?.year || new Date().getFullYear());
+	                  setShowMonthPicker(true);
+	                }}
+	                className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-center hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+	                aria-label="เปิดปฏิทินเลือกเดือน"
+	              >
+	                <div className="text-[11px] font-semibold text-slate-400">เดือนที่เลือก</div>
+	                <div className="truncate text-sm font-extrabold text-slate-50">{selectedMonth}</div>
+	              </button>
+
+              <button
+                type="button"
+                onClick={() => setCurrentMonthIndex((p) => Math.min(months.length - 1, p + 1))}
+                disabled={currentMonthIndex === months.length - 1}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                aria-label="เดือนถัดไป"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          <Link
+            href="/budget"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+          >
+            <Plus className="h-4 w-4" />
+            งบประมาณ
+          </Link>
+        </div>
+
         {/* Currency Modal */}
         {showCurrencyModal && (
           <CurrencyModalContent onClose={() => setShowCurrencyModal(false)} />
         )}
 
-        {/* Error Message */}
-        {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-800 shadow-sm">
-            <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
-            </svg>
-            <p className="text-red-700 font-medium text-sm">{error}</p>
+        {/* Month Picker Modal */}
+        {showMonthPicker && (
+          <div
+            className="fixed inset-0 z-[75] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
+            onClick={(e) => e.target === e.currentTarget && setShowMonthPicker(false)}
+          >
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+                <div>
+                  <div className="text-sm font-extrabold text-slate-50">เลือกเดือน</div>
+                  <div className="text-[11px] font-semibold text-slate-400">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  aria-label="ปิด"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableYears.indexOf(monthPickerYear);
+                      const next = idx >= 0 ? availableYears[idx + 1] : null;
+                      if (typeof next === 'number') setMonthPickerYear(next);
+                    }}
+                    disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    aria-label="ปีก่อนหน้า"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+
+                  <div className="min-w-0 flex-1 text-center">
+                    <div className="text-sm font-extrabold text-slate-50">
+                      {Number(monthPickerYear) + 543}
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-slate-400">พ.ศ.</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableYears.indexOf(monthPickerYear);
+                      const prev = idx > 0 ? availableYears[idx - 1] : null;
+                      if (typeof prev === 'number') setMonthPickerYear(prev);
+                    }}
+                    disabled={availableYears.indexOf(monthPickerYear) <= 0}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    aria-label="ปีถัดไป"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {monthPickerMonthsForYear.map((m) => {
+                    const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
+                    const disabled = m.idx == null;
+                    return (
+                      <button
+                        key={`${monthPickerYear}-${m.monthIndex}`}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
+                          setShowMonthPicker(false);
+                        }}
+                        className={[
+                          'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
+                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                          disabled
+                            ? 'border-white/10 bg-white/5 text-slate-500 opacity-50 cursor-not-allowed'
+                            : isActive
+                              ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                              : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+                        ].join(' ')}
+                      >
+                        {m.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const idx = currentMonthInitialIndex !== -1 ? currentMonthInitialIndex : currentMonthIndex;
+                    setCurrentMonthIndex(idx);
+                    setShowMonthPicker(false);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                >
+                  เดือนนี้
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                  className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                >
+                  เสร็จสิ้น
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Total balance card */}
-        <div className="rounded-[28px] bg-gradient-to-br from-blue-500 to-blue-700 p-5 text-white shadow-xl shadow-blue-600/20">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-white/80">Total Balance</div>
-              <div className="mt-1 text-3xl font-extrabold tracking-tight">
-                {loading ? '—' : formatTHB(stats.netSavings)}
-              </div>
-            </div>
-
-            <div className="shrink-0">
-              <select
-                value={currentMonthIndex}
-                onChange={(e) => setCurrentMonthIndex(parseInt(e.target.value, 10))}
-                className="rounded-full bg-white/15 px-3 py-2 text-sm font-extrabold text-white outline-none ring-1 ring-white/20 backdrop-blur"
-                aria-label="เลือกเดือน"
-              >
-                {months.map((m, idx) => (
-                  <option key={m} value={idx} className="text-slate-900">
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
-              <div className="flex items-center gap-2 text-white/85 text-sm font-semibold">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-400/20">
-                  <TrendingUpIcon className="h-4 w-4 text-emerald-200" />
-                </span>
-                Income
-              </div>
-              <div className="mt-2 text-xl font-extrabold">{loading ? '—' : formatTHB(stats.totalIncome)}</div>
-            </div>
-
-            <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/15">
-              <div className="flex items-center gap-2 text-white/85 text-sm font-semibold">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-400/20">
-                  <TrendingDownIcon className="h-4 w-4 text-rose-100" />
-                </span>
-                Expenses
-              </div>
-              <div className="mt-2 text-xl font-extrabold">{loading ? '—' : formatTHB(stats.totalExpenses)}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setBudgetInitialType('expense');
-                setShowBudgetModal(true);
-              }}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/15 px-4 py-2 text-sm font-extrabold text-white ring-1 ring-white/15 hover:bg-white/20"
-            >
-              <Plus className="h-4 w-4" />
-              จัดการงบรายจ่าย
-            </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCurrentMonthIndex((prev) => (prev > 0 ? prev - 1 : 0))}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-40"
-                disabled={currentMonthIndex === 0}
-                aria-label="เดือนก่อนหน้า"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentMonthIndex((prev) => (prev < months.length - 1 ? prev + 1 : months.length - 1))}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-40"
-                disabled={currentMonthIndex === months.length - 1}
-                aria-label="เดือนถัดไป"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Spending */}
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-extrabold text-slate-900">Spending</h2>
-          <Link href="/analytics" className="text-sm font-extrabold text-blue-700 hover:text-blue-800">
-            See All
-          </Link>
-        </div>
-
-        <div className="rounded-[28px] bg-white p-5 shadow-sm border border-slate-200/60">
-          <div className="flex items-center justify-center">
-            {(() => {
-              const radius = 42;
-              const circ = 2 * Math.PI * radius;
-              const segments = expenseBreakdown.top;
-              const totalPct = segments.reduce((s, it) => s + (it.pct || 0), 0);
-              let offset = 0;
-              return (
-                <div className="relative h-56 w-56">
-                  <svg viewBox="0 0 100 100" className="h-full w-full">
-                    <g transform="rotate(-90 50 50)">
-                      <circle cx="50" cy="50" r={radius} fill="none" stroke="#E2E8F0" strokeWidth="10" />
-                      {segments.map((seg) => {
-                        const len = circ * (seg.pct || 0);
-                        const dashArray = `${len} ${Math.max(0, circ - len)}`;
-                        const dashOffset = -offset;
-                        offset += len;
-                        return (
-                          <circle
-                            key={seg.id}
-                            cx="50"
-                            cy="50"
-                            r={radius}
-                            fill="none"
-                            stroke={seg.color}
-                            strokeWidth="10"
-                            strokeLinecap="round"
-                            strokeDasharray={dashArray}
-                            strokeDashoffset={dashOffset}
-                          />
-                        );
-                      })}
-                      {totalPct < 1 && (
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r={radius}
-                          fill="none"
-                          stroke="#94A3B8"
-                          opacity="0.12"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={`${circ * (1 - totalPct)} ${circ}`}
-                          strokeDashoffset={-offset}
-                        />
-                      )}
-                    </g>
-                  </svg>
-
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                    <div className="text-xs font-semibold text-slate-500">Total Spent</div>
-                    <div className="mt-1 text-2xl font-extrabold text-slate-900">
-                      {loading ? '—' : formatTHB(expenseBreakdown.total)}
+        {/* Notifications Modal */}
+        {showNotifications && (
+          <div
+            className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
+            onClick={(e) => e.target === e.currentTarget && setShowNotifications(false)}
+          >
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
+                    <Bell className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-extrabold text-slate-50">การแจ้งเตือน</div>
+                    <div className="text-[11px] font-semibold text-slate-400">
+                      {unreadNotifCount > 0 ? `ยังไม่อ่าน ${unreadNotifCount} รายการ` : 'ไม่มีรายการที่ยังไม่อ่าน'}
                     </div>
                   </div>
                 </div>
-              );
-            })()}
+
+                <button
+                  type="button"
+                  onClick={() => setShowNotifications(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  aria-label="ปิด"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="max-h-[62dvh] overflow-y-auto p-4 space-y-3">
+                {notifications.map((n) => {
+                  const read = !!readNotifMap?.[n.id];
+                  const Icon = n.icon || Bell;
+                  const ui = notifToneUI(n.tone);
+                  const row = (
+                    <div
+                      className={[
+                        'rounded-3xl border bg-white/0 p-4 transition',
+                        'hover:bg-white/5',
+                        ui.border,
+                        read ? 'opacity-80' : 'opacity-100',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={[
+                            'h-11 w-11 rounded-2xl shrink-0 ring-1 flex items-center justify-center',
+                            ui.iconBg,
+                          ].join(' ')}
+                          aria-hidden="true"
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-extrabold text-slate-50">{n.title}</div>
+                              <div className="mt-1 text-xs font-semibold text-slate-400">{n.body}</div>
+                            </div>
+                            {!read && <span className="mt-1 h-2 w-2 rounded-full bg-rose-400" aria-hidden="true" />}
+                          </div>
+
+                          {n.cta && (
+                            <div className="mt-3 inline-flex items-center gap-2 text-xs font-extrabold text-emerald-200">
+                              {n.cta}
+                              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+
+                  if (n.href) {
+                    return (
+                      <Link
+                        key={n.id}
+                        href={n.href}
+                        onClick={() => {
+                          markNotifRead(n.id);
+                          setShowNotifications(false);
+                        }}
+                        className="block focus:outline-none focus:ring-2 focus:ring-emerald-400/30 rounded-3xl"
+                      >
+                        {row}
+                      </Link>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => markNotifRead(n.id)}
+                      className="block w-full text-left focus:outline-none focus:ring-2 focus:ring-emerald-400/30 rounded-3xl"
+                    >
+                      {row}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => { markAllNotifsRead(); }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                >
+                  อ่านแล้วทั้งหมด
+                </button>
+                <Link
+                  href="/transactions"
+                  onClick={() => setShowNotifications(false)}
+                  className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                >
+                  ไปหน้ารายการ
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
+            <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+            </svg>
+            <p className="text-rose-200 font-semibold text-sm">{error}</p>
+          </div>
+        )}
+
+        {/* Summary grid (match reference UI) */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Financial health */}
+          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+            <div className="flex items-start justify-between">
+              <div className="relative h-14 w-14">
+                {(() => {
+                  const r = 22;
+                  const circ = 2 * Math.PI * r;
+                  const pct = Math.max(0, Math.min(100, Number(healthAnalysis.score) || 0));
+                  const dash = (pct / 100) * circ;
+                  return (
+                    <svg viewBox="0 0 56 56" className="h-14 w-14">
+                      <g transform="rotate(-90 28 28)">
+                        <circle cx="28" cy="28" r={r} fill="none" stroke="#1F3340" strokeWidth="6" />
+                        <circle
+                          cx="28"
+                          cy="28"
+                          r={r}
+                          fill="none"
+                          stroke={healthAnalysis.ringColor}
+                          strokeWidth="6"
+                          strokeLinecap="round"
+                          strokeDasharray={`${dash} ${Math.max(0, circ - dash)}`}
+                        />
+                      </g>
+                      <text x="28" y="33" textAnchor="middle" fontSize="16" fill="#E2E8F0" fontWeight="800">
+                        {pct}
+                      </text>
+                    </svg>
+                  );
+                })()}
+              </div>
+              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center">
+                <Lightbulb className="h-6 w-6 text-slate-500" aria-hidden="true" />
+              </div>
+            </div>
+            <div className="mt-3 text-base font-extrabold text-slate-50">สุขภาพการเงิน</div>
+            <div className={`mt-1 text-xs font-semibold ${healthAnalysis.tone}`}>{healthAnalysis.label}</div>
+            <div className="mt-2 text-[11px] font-semibold text-slate-400">{healthAnalysis.summary}</div>
+            <div className="mt-2 line-clamp-2 text-[11px] font-semibold text-slate-500">{healthAnalysis.hint}</div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            {(expenseBreakdown.top.length ? expenseBreakdown.top : [
-              { id: 'none1', name: '—', pct: 0, color: '#3B82F6' },
-              { id: 'none2', name: '—', pct: 0, color: '#EF4444' },
-              { id: 'none3', name: '—', pct: 0, color: '#10B981' },
-            ]).map((it) => (
-              <div key={it.id} className="rounded-2xl bg-slate-50 p-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: it.color }} />
-                  <div className="truncate text-[12px] font-semibold text-slate-600">{it.name}</div>
-                </div>
-                <div className="mt-1 text-base font-extrabold text-slate-900">
-                  {Math.round((it.pct || 0) * 100)}%
-                </div>
+          {/* Right column */}
+          <div className="grid grid-rows-2 gap-3">
+            <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+              <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
+              <div className="mt-1 flex items-end gap-2">
+                <div className="text-2xl font-extrabold text-slate-50">{formatTHB(todaySpend)}</div>
+                <div className="pb-1 text-sm font-semibold text-slate-500">/ {formatTHB(dailyTarget)}</div>
               </div>
-            ))}
+              <div className="mt-3 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-emerald-400"
+                  style={{ width: `${Math.max(0, Math.min(100, (todaySpend / Math.max(1, dailyTarget)) * 100))}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+              <div className="text-xs font-semibold text-slate-400">คงเหลือเดือนนี้</div>
+              <div className="mt-1 text-3xl font-extrabold text-slate-50">{loading ? '—' : formatTHB(monthRemaining)}</div>
+            </div>
           </div>
+        </div>
+
+        {/* Leak points */}
+        {leakItems.length > 0 && (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-extrabold text-slate-50">จุดรั่วไหล</h2>
+              <Link href="/analytics" className="text-sm font-extrabold text-sky-300 hover:text-sky-200">
+                ดูทั้งหมด
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              {leakItems.map((it) => (
+                <div key={it.id} className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+                  <div className="mx-auto h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-rose-200">
+                    <div className="scale-90">{renderIcon(it.icon)}</div>
+                  </div>
+                  <div className="mt-3 text-center text-sm font-extrabold text-slate-50 truncate">{it.name}</div>
+                  <div className="mt-1 text-center text-sm font-extrabold text-rose-300">
+                    -{formatTHB(it.amount)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Budget */}
+        <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-5 shadow-sm shadow-black/10">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-extrabold text-slate-50">งบประมาณ</div>
+            <div className="text-xs font-semibold text-slate-500">รีเซ็ตใน {daysUntilReset} วัน</div>
+          </div>
+
+          {budgetRows.length === 0 ? (
+            <div className="mt-4">
+              <div className="text-sm font-semibold text-slate-400">ยังไม่มีการตั้งงบประมาณ</div>
+              <Link
+                href="/budget"
+                className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+              >
+                <Plus className="h-4 w-4" />
+                ตั้งงบประมาณ
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {budgetRows.map((r) => (
+                <div key={r.id}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
+                      <div className="text-sm font-extrabold text-slate-50 truncate">{r.name}</div>
+                    </div>
+                    <div className="text-sm font-semibold text-slate-200">
+                      {formatTHB(r.spent)} <span className="text-slate-500">/ {formatTHB(r.budget)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${Math.round(r.pct * 100)}%`, backgroundColor: r.color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Recent Transactions Section */}
         <div>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-1 rounded-full bg-blue-600" />
-              <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">ธุรกรรมล่าสุด</h2>
+              <div className="h-8 w-1 rounded-full bg-emerald-400" />
+              <h2 className="text-lg sm:text-xl font-extrabold text-slate-50">ธุรกรรมล่าสุด</h2>
             </div>
-            <Link href="/transactions" className="text-sm font-extrabold text-blue-700 hover:text-blue-800">
+            <Link href="/transactions" className="text-sm font-extrabold text-emerald-300 hover:text-emerald-200">
               ดูทั้งหมด
             </Link>
           </div>
           
-          <div className="mt-3 rounded-3xl border border-slate-200/60 bg-white p-4 sm:p-5 shadow-sm">
+          <div className="mt-3 rounded-3xl border border-white/10 bg-[#0b2730] p-4 sm:p-5 shadow-sm shadow-black/10">
             
             {loading ? (
               <div className="text-center py-10">
-                <div className="inline-block w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
-                <p className="text-slate-500 mt-3 text-sm font-semibold">กำลังโหลด...</p>
+                <div className="inline-block w-8 h-8 border-4 border-white/10 border-t-emerald-400 rounded-full animate-spin"></div>
+                <p className="text-slate-400 mt-3 text-sm font-semibold">กำลังโหลด...</p>
               </div>
             ) : stats.recentTransactions.length === 0 ? (
               <div className="text-center py-10">
-                <svg className="w-16 h-16 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                 </svg>
-                <p className="text-slate-700 text-sm font-extrabold">ไม่มีธุรกรรมในเดือนนี้</p>
-                <p className="text-slate-500 text-xs mt-1 font-semibold">ลองเพิ่มรายการ หรือเปลี่ยนช่วงเดือน</p>
+                <p className="text-slate-200 text-sm font-extrabold">ไม่มีธุรกรรมในเดือนนี้</p>
+                <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการ หรือเปลี่ยนช่วงเดือน</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {stats.recentTransactions.map((txn, index) => (
-                  <button
+                  <div
                     key={txn._id}
-                    type="button"
                     onClick={() => handleView(txn)}
-                    className="group w-full rounded-3xl border border-slate-200/60 bg-white p-4 text-left shadow-sm hover:shadow-md transition active:scale-[0.99]"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleView(txn);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className="group w-full cursor-pointer rounded-3xl border border-white/10 bg-[#071f26] p-4 text-left shadow-sm shadow-black/10 hover:bg-white/5 hover:shadow-md transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -732,7 +1555,7 @@ export default function Dashboard() {
                           className={[
                             'h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0',
                             txn.type === 'income'
-                              ? 'bg-gradient-to-br from-blue-600 to-blue-700'
+                              ? 'bg-gradient-to-br from-emerald-500 to-green-500'
                               : 'bg-gradient-to-br from-rose-500 to-rose-600',
                           ].join(' ')}
                           aria-hidden="true"
@@ -743,15 +1566,15 @@ export default function Dashboard() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="truncate text-sm font-extrabold text-slate-900">
+                              <div className="truncate text-sm font-extrabold text-slate-50">
                                 {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
                               </div>
-                              <div className="mt-1 truncate text-xs font-semibold text-slate-500">
+                              <div className="mt-1 truncate text-xs font-semibold text-slate-400">
                                 {txn.notes || '—'}
                               </div>
                             </div>
                           </div>
-                          <div className="mt-2 text-[11px] font-semibold text-slate-400">
+                          <div className="mt-2 text-[11px] font-semibold text-slate-500">
                             {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </div>
                         </div>
@@ -765,7 +1588,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleEdit(txn); }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                             title="แก้ไข"
                             aria-label="แก้ไข"
                           >
@@ -776,7 +1599,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleDelete(txn._id); }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
                             title="ลบ"
                             aria-label="ลบ"
                           >
@@ -787,7 +1610,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -804,7 +1627,7 @@ export default function Dashboard() {
           className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
           onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
         >
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
+          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
             {/* Modal Header */}
             <div className="relative bg-gradient-to-br from-teal-500 via-teal-600 to-teal-700 text-white p-6 overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
@@ -837,17 +1660,17 @@ export default function Dashboard() {
             {/* Modal Body */}
             <form onSubmit={handleAddSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-120px)]">
               {error && (
-                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3">
-                  <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
+                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
                   </svg>
-                  <p className="text-red-700 font-medium text-sm">{error}</p>
+                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
                 </div>
               )}
 
               {/* Type Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">ประเภท</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">ประเภท</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -858,8 +1681,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       addFormData.type === 'income'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600'
+                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
                     รายรับ
@@ -873,8 +1696,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       addFormData.type === 'expense'
-                        ? 'bg-red-50 border-red-500 text-red-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600'
+                        ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
                     รายจ่าย
@@ -884,28 +1707,28 @@ export default function Dashboard() {
 
               {/* Amount Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">จำนวนเงิน</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">จำนวนเงิน</label>
                 <div className="relative">
                   <input
                     type="number"
                     step="0.01"
                     value={addFormData.amount}
                     onChange={(e) => setAddFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-4 focus:ring-teal-500/20 outline-none transition-all"
+                    className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                     placeholder="0.00"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">฿</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">฿</span>
                 </div>
               </div>
 
               {/* Category Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">หมวดหมู่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">หมวดหมู่</label>
                 <select
                   value={addFormData.category}
                   onChange={(e) => setAddFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-4 focus:ring-teal-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                   required
                 >
                   <option value="">เลือกหมวดหมู่</option>
@@ -921,25 +1744,25 @@ export default function Dashboard() {
 
               {/* Date Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">วันที่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
                 <input
                   type="date"
                   value={addFormData.date}
                   onChange={(e) => setAddFormData(prev => ({ ...prev, date: e.target.value }))}
                   max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-4 focus:ring-teal-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                   required
                 />
               </div>
 
               {/* Notes Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">หมายเหตุ</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">หมายเหตุ</label>
                 <textarea
                   value={addFormData.notes}
                   onChange={(e) => setAddFormData(prev => ({ ...prev, notes: e.target.value }))}
                   rows="3"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-teal-500 focus:ring-4 focus:ring-teal-500/20 outline-none transition-all resize-none"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
                   placeholder="เพิ่มรายละเอียด..."
                 />
               </div>
@@ -949,13 +1772,13 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-6 py-3 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-teal-500 to-teal-600 text-white font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
                 >
                   เพิ่มรายการ
                 </button>
@@ -971,7 +1794,7 @@ export default function Dashboard() {
           className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
           onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
         >
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
+          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
             {/* Modal Header */}
             <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white p-6 overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
@@ -1004,17 +1827,17 @@ export default function Dashboard() {
             {/* Modal Body */}
             <form onSubmit={handleUpdateSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-120px)]">
               {error && (
-                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3">
-                  <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
+                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
                   </svg>
-                  <p className="text-red-700 font-medium text-sm">{error}</p>
+                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
                 </div>
               )}
 
               {/* Type Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">ประเภท</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">ประเภท</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -1025,8 +1848,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       editFormData.type === 'income'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600'
+                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
                     รายรับ
@@ -1040,8 +1863,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       editFormData.type === 'expense'
-                        ? 'bg-red-50 border-red-500 text-red-700'
-                        : 'bg-gray-50 border-gray-200 text-gray-600'
+                        ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
                     รายจ่าย
@@ -1051,27 +1874,27 @@ export default function Dashboard() {
 
               {/* Amount Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">จำนวนเงิน</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">จำนวนเงิน</label>
                 <div className="relative">
                   <input
                     type="number"
                     step="0.01"
                     value={editFormData.amount}
                     onChange={(e) => setEditFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                    className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">฿</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">฿</span>
                 </div>
               </div>
 
               {/* Category Selection */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">หมวดหมู่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">หมวดหมู่</label>
                 <select
                   value={editFormData.category}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                   required
                 >
                   <option value="">กรุณาเลือกหมวดหมู่</option>
@@ -1087,25 +1910,25 @@ export default function Dashboard() {
 
               {/* Date Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">วันที่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
                 <input
                   type="date"
                   value={editFormData.date}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, date: e.target.value }))}
                   max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                   required
                 />
               </div>
 
               {/* Notes Input */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">หมายเหตุ</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">หมายเหตุ</label>
                 <textarea
                   value={editFormData.notes}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
                   rows="3"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all resize-none"
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
                   placeholder="เพิ่มรายละเอียด..."
                 />
               </div>
@@ -1115,7 +1938,7 @@ export default function Dashboard() {
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  className="flex-1 px-6 py-3 border-2 border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
                 >
                   ยกเลิก
                 </button>
@@ -1134,36 +1957,36 @@ export default function Dashboard() {
       {/* View Transaction Modal */}
       {showViewModal && viewingTransaction && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && setShowViewModal(false)}>
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-white/10 bg-white/5 flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg"
                 style={{ background: viewingTransaction.type === 'income' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}>
                 {renderIcon(viewingTransaction.category?.icon)}
               </div>
               <div>
-                <h3 className="text-lg font-bold text-gray-800">{viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}</h3>
-                <p className="text-xs text-gray-500">{viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}</p>
+                <h3 className="text-lg font-extrabold text-slate-50">{viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}</h3>
+                <p className="text-xs text-slate-400 font-semibold">{viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}</p>
               </div>
             </div>
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">จำนวนเงิน</span>
-                <span className="text-xl font-bold" style={{ color: viewingTransaction.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
+                <span className="text-sm text-slate-400 font-semibold">จำนวนเงิน</span>
+                <span className="text-xl font-extrabold" style={{ color: viewingTransaction.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
                   {viewingTransaction.type === 'expense' ? '-' : '+'}{viewingTransaction.amount.toLocaleString()} ฿
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">วันที่</span>
-                <span className="text-base font-medium text-gray-700">{new Date(viewingTransaction.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                <span className="text-sm text-slate-400 font-semibold">วันที่</span>
+                <span className="text-base font-semibold text-slate-200">{new Date(viewingTransaction.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">หมายเหตุ</span>
-                <span className="text-base text-gray-700">{viewingTransaction.notes || '-'}</span>
+                <span className="text-sm text-slate-400 font-semibold">หมายเหตุ</span>
+                <span className="text-base text-slate-200">{viewingTransaction.notes || '-'}</span>
               </div>
               
             </div>
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-              <button onClick={() => setShowViewModal(false)} className="py-2 px-6 bg-teal-500 text-white font-bold rounded-xl hover:bg-teal-600 transition-all">ปิด</button>
+            <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end">
+              <button onClick={() => setShowViewModal(false)} className="py-2 px-6 bg-emerald-500 text-slate-950 font-extrabold rounded-xl hover:brightness-95 transition-all">ปิด</button>
             </div>
           </div>
         </div>
