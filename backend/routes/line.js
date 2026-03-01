@@ -1,12 +1,13 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const router = express.Router();
-const { User, Transaction, Category, ImportExportLog, LineLoginSession, LineMessagingLinkSession } = require('../models');
+const { User, Transaction, Category, Budget, ImportExportLog, LineLoginSession, LineMessagingLinkSession } = require('../models');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const { scanImageFile } = require('../utils/ocrScan');
 const { transcribeAudioFile } = require('../utils/transcribeAudio');
+const { mergeUsers } = require('../utils/mergeUsers');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -254,6 +255,47 @@ async function resolveMessagingUser(lineMessagingUserId) {
       console.error('user creation/upsert final error', finalErr);
       throw finalErr;
     }
+  }
+
+  // Auto-unify: if the web OAuth user was created first (lineUserId exists) and the bot user
+  // was created shortly after, unify them automatically when it's unambiguous.
+  //
+  // We can’t deterministically map lineUserId <-> lineMessagingUserId, so only do this when:
+  // - exact same display name
+  // - exactly 1 OAuth candidate within a short time window
+  // - OAuth candidate has no data (no tx/categories/budgets)
+  // This keeps the system “one user record” for most common flows without requiring the link code.
+  try {
+    const messagingName = String(user?.name || '').trim();
+    const hasLineUserIdAlready = Boolean(String(user?.lineUserId || '').trim());
+    if (messagingName && !hasLineUserIdAlready) {
+      const since = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+      const candidates = await User.find({
+        name: messagingName,
+        lineUserId: { $exists: true, $ne: '' },
+        lineMessagingUserId: { $exists: false },
+        email: { $regex: /@line\.local$/i },
+        createdAt: { $gte: since },
+      }).sort({ createdAt: -1 }).limit(2);
+
+      if (candidates.length === 1) {
+        const oauthUser = candidates[0];
+        const [txCount, catCount, budCount] = await Promise.all([
+          Transaction.countDocuments({ userId: oauthUser._id }).catch(() => 0),
+          Category.countDocuments({ userId: oauthUser._id }).catch(() => 0),
+          Budget.countDocuments({ userId: oauthUser._id }).catch(() => 0),
+        ]);
+        const hasAnyData = (Number(txCount) + Number(catCount) + Number(budCount)) > 0;
+
+        // Only merge if OAuth user is empty to avoid accidental merges.
+        if (!hasAnyData) {
+          await mergeUsers({ fromUserId: oauthUser._id, toUserId: user._id, deleteSource: true });
+          user = await User.findById(user._id) || user;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('LINE auto-unify oauth->messaging skipped:', e?.message || e);
   }
 
   return { user, userByMessagingId, userByLegacyLineId };
