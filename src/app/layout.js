@@ -174,6 +174,7 @@ export default function RootLayout({ children }) {
   return (
    <html lang="th" suppressHydrationWarning>
       <body
+        suppressHydrationWarning
         className={[
           'app min-h-screen font-sans overflow-x-hidden pb-24',
           effectiveTheme === 'dark'

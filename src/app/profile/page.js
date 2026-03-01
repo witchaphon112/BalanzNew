@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User,
@@ -13,8 +13,46 @@ import {
   LayoutGrid,
   Pencil,
   Flame,
-  Loader2,
 } from 'lucide-react';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+const BANGKOK_TZ = 'Asia/Bangkok';
+const LEVEL_DAYS = 7;
+const USAGE_STATS_CACHE_KEY = 'balanz_usage_stats_cache_v1';
+
+const toBangkokISODateKey = (dateInput) => {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone: BANGKOK_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const map = {};
+    for (const p of parts) {
+      if (p?.type) map[p.type] = p.value;
+    }
+    const yyyy = map.year;
+    const mm = map.month;
+    const dd = map.day;
+    if (!yyyy || !mm || !dd) return '';
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+};
+
+const shiftBangkokISODateKey = (isoKey, deltaDays) => {
+  if (!isoKey) return '';
+  const base = new Date(`${isoKey}T00:00:00.000+07:00`);
+  if (Number.isNaN(base.getTime())) return '';
+  return toBangkokISODateKey(new Date(base.getTime() + deltaDays * 86400000));
+};
 
 export default function Profile() {
   const router = useRouter();
@@ -28,6 +66,17 @@ export default function Profile() {
   const [rankingOpen, setRankingOpen] = useState(false);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
   const fileInputId = 'avatar-file-input';
+  const [usageStats, setUsageStats] = useState({
+    loading: true,
+    error: '',
+    streakDays: 0,
+    loggedToday: false,
+    totalLoggedDays: 0,
+    level: 1,
+    progressPercent: 0,
+    nextLevelInDays: LEVEL_DAYS,
+  });
+  const [usageStatsUpdatedAt, setUsageStatsUpdatedAt] = useState(0);
 
   const rankingData = [
     { name: 'Witchaphon y.', days: 42 },
@@ -105,7 +154,6 @@ export default function Profile() {
           return;
         }
 
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
         const res = await fetch(`${API_BASE}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -134,6 +182,115 @@ export default function Profile() {
     fetchUser();
   }, []);
 
+  const refreshUsageStats = useCallback(async (signal) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setUsageStats((prev) => ({ ...prev, loading: false, error: 'กรุณาเข้าสู่ระบบเพื่อดูสถิติ' }));
+      return;
+    }
+
+    setUsageStats((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await fetch(`${API_BASE}/api/transactions`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || 'ไม่สามารถโหลดธุรกรรมได้');
+    }
+    const transactions = await res.json();
+    const list = Array.isArray(transactions) ? transactions : [];
+
+    const dayKeys = new Set();
+    for (const t of list) {
+      const dt = t?.date || t?.datetime || t?.createdAt;
+      const key = dt ? toBangkokISODateKey(dt) : '';
+      if (key) dayKeys.add(key);
+    }
+
+    const todayKey = toBangkokISODateKey(Date.now());
+    const yesterdayKey = shiftBangkokISODateKey(todayKey, -1);
+    const loggedToday = Boolean(todayKey && dayKeys.has(todayKey));
+
+    const streakStartKey = loggedToday
+      ? todayKey
+      : (yesterdayKey && dayKeys.has(yesterdayKey) ? yesterdayKey : '');
+
+    let streakDays = 0;
+    if (streakStartKey) {
+      let cursor = streakStartKey;
+      while (cursor && dayKeys.has(cursor)) {
+        streakDays += 1;
+        cursor = shiftBangkokISODateKey(cursor, -1);
+      }
+    }
+
+    const totalLoggedDays = dayKeys.size;
+    const level = Math.floor(totalLoggedDays / LEVEL_DAYS) + 1;
+    const daysIntoLevel = totalLoggedDays % LEVEL_DAYS;
+    const progressPercent = Math.round((daysIntoLevel / LEVEL_DAYS) * 100);
+    const nextLevelInDays = daysIntoLevel === 0 ? LEVEL_DAYS : (LEVEL_DAYS - daysIntoLevel);
+
+    const computed = {
+      loading: false,
+      error: '',
+      streakDays,
+      loggedToday,
+      totalLoggedDays,
+      level,
+      progressPercent,
+      nextLevelInDays,
+    };
+
+    setUsageStats(computed);
+    const now = Date.now();
+    setUsageStatsUpdatedAt(now);
+    try {
+      localStorage.setItem(USAGE_STATS_CACHE_KEY, JSON.stringify({ updatedAt: now, ...computed }));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(USAGE_STATS_CACHE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object' && Number.isFinite(parsed.updatedAt)) {
+        setUsageStats((prev) => ({
+          ...prev,
+          ...parsed,
+          loading: true,
+          error: '',
+        }));
+        setUsageStatsUpdatedAt(parsed.updatedAt);
+      }
+    } catch {}
+
+    const controller = new AbortController();
+    refreshUsageStats(controller.signal).catch((err) => {
+      setUsageStats((prev) => ({
+        ...prev,
+        loading: false,
+        error: err?.name === 'AbortError' ? '' : (err?.message ? String(err.message) : 'ไม่สามารถโหลดสถิติได้'),
+      }));
+    });
+
+    const onFocus = () => {
+      const c = new AbortController();
+      refreshUsageStats(c.signal).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') onFocus();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [refreshUsageStats]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -141,7 +298,6 @@ export default function Profile() {
     
     try {
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/auth/me`, {
         method: 'PUT',
         headers: {
@@ -191,7 +347,6 @@ export default function Profile() {
       const token = localStorage.getItem('token');
       const fd = new FormData();
       fd.append('avatar', file);
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/auth/avatar`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
@@ -223,7 +378,6 @@ export default function Profile() {
     try {
       setUploading(true);
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       await fetch(`${API_BASE}/api/auth/avatar`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
@@ -265,10 +419,10 @@ export default function Profile() {
     ? `LINE ID: ${user.email.replace('@line.local', '')}`
     : user.email;
 
-  const streakDays = 0;
-  const progressPercent = 15;
-  const level = 1;
-  const nextLevelInDays = 1;
+  const streakDays = usageStats.streakDays || 0;
+  const progressPercent = Number.isFinite(usageStats.progressPercent) ? usageStats.progressPercent : 0;
+  const level = usageStats.level || 1;
+  const nextLevelInDays = usageStats.nextLevelInDays || LEVEL_DAYS;
 
   return (
     <div className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
@@ -322,7 +476,15 @@ export default function Profile() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-sm font-extrabold text-[color:var(--app-text)]">{streakDays} วันต่อเนื่อง</div>
-              <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">เข้าใช้งานทุกวันเพื่อรับรางวัล</div>
+              <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
+                {usageStats.loading
+                  ? 'กำลังคำนวณสถิติ...'
+                  : usageStats.error
+                    ? 'โหลดสถิติไม่สำเร็จ'
+                    : usageStats.loggedToday
+                      ? 'วันนี้จดแล้ว เยี่ยมมาก'
+                      : 'จดวันนี้เพื่อรักษาสถิติ'}
+              </div>
             </div>
           </div>
 
@@ -335,6 +497,16 @@ export default function Profile() {
               <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
             </div>
             <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted-2)]">เลเวลต่อไปใน {nextLevelInDays} วัน</div>
+            {usageStatsUpdatedAt ? (
+              <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                อัปเดตล่าสุด {new Date(usageStatsUpdatedAt).toLocaleString('th-TH')}
+              </div>
+            ) : null}
+            {usageStats.error ? (
+              <div className="mt-2 text-[11px] font-semibold text-rose-200/90">
+                {usageStats.error}
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 flex justify-end">

@@ -715,7 +715,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   <div className="text-xs font-extrabold text-[color:var(--app-text)]">พ.ศ. {selectedYear || '—'}</div>
                 </div>
 
-                <div className="relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-2 shadow-sm shadow-black/10">
+                <div className="relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-2 shadow-sm shadow-black/5">
                   <div
                     ref={monthTabsRef}
                     className="flex gap-2 overflow-x-auto scroll-smooth snap-x snap-proximity pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
@@ -762,37 +762,15 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     })}
                   </div>
 
-                  {/* Scroll buttons (desktop-friendly) */}
-                  {monthScroll.canLeft && (
-                    <button
-                      type="button"
-                      onClick={() => scrollMonthTabsBy(-220)}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-slate-100 backdrop-blur-sm hover:bg-black/35 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                      aria-label="เลื่อนไปเดือนก่อนหน้า"
-                      title="เลื่อนไปเดือนก่อนหน้า"
-                    >
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                  )}
-                  {monthScroll.canRight && (
-                    <button
-                      type="button"
-                      onClick={() => scrollMonthTabsBy(220)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 z-10 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-slate-100 backdrop-blur-sm hover:bg-black/35 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                      aria-label="เลื่อนไปเดือนถัดไป"
-                      title="เลื่อนไปเดือนถัดไป"
-                    >
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  )}
-
                   {/* Edge fades */}
-                  <div className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl [background:linear-gradient(to_right,rgba(11,39,48,1),rgba(11,39,48,0))]" />
-                  <div className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl [background:linear-gradient(to_left,rgba(11,39,48,1),rgba(11,39,48,0))]" />
+                  <div
+                    className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl"
+                    style={{ background: 'linear-gradient(to right, var(--app-surface-2), rgba(0,0,0,0))' }}
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl"
+                    style={{ background: 'linear-gradient(to left, var(--app-surface-2), rgba(0,0,0,0))' }}
+                  />
                 </div>
               </div>
             );
@@ -979,23 +957,78 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
 
             <div className="p-5">
-              <label className="block text-xs font-semibold text-slate-300 mb-2">เดือนที่ต้องการตั้งงบ</label>
-              <select
-                className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                value={tempMonthIndex}
-                onChange={(e) => setTempMonthIndex(parseInt(e.target.value, 10))}
-              >
-                {months.map((m, idx) => (
-                  <option key={m} value={idx} className="bg-slate-950 text-slate-100">{m}</option>
-                ))}
-              </select>
+              {(() => {
+                const selectedLabel = months[tempMonthIndex] || '';
+                const selectedYear = String((selectedLabel || '').split(' ')[1] || '');
+                const yearMonths = months
+                  .map((label, idx) => ({ label, idx }))
+                  .filter((x) => String(x.label.split(' ')[1] || '') === selectedYear);
+                const tabs = yearMonths.length ? yearMonths : months.map((label, idx) => ({ label, idx }));
+                return (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">เดือนที่ต้องการตั้งงบ</div>
+                      <div className="text-xs font-extrabold text-[color:var(--app-text)]">พ.ศ. {selectedYear || '—'}</div>
+                    </div>
+
+                    <div className="mt-2 relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-2 shadow-sm shadow-black/5">
+                      <div className="flex gap-2 overflow-x-auto scroll-smooth snap-x snap-proximity pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none">
+                        {tabs.map(({ label, idx }) => {
+                          const monthName = String(label.split(' ')[0] || '');
+                          const mIdx = monthIndexFromThaiName(monthName);
+                          const short = mIdx >= 0 ? monthShortTH[mIdx] : monthName;
+                          const active = idx === tempMonthIndex;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setTempMonthIndex(idx)}
+                              className={[
+                                'shrink-0 snap-center px-4 py-2 rounded-2xl text-sm font-extrabold transition',
+                                'border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                                active
+                                  ? [
+                                      'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25',
+                                      'shadow-[0_10px_25px_-18px_rgba(16,185,129,0.9)]',
+                                      'focus:ring-emerald-300/40',
+                                    ].join(' ')
+                                  : [
+                                      'border-white/10 bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10',
+                                      'focus:ring-emerald-400/20',
+                                    ].join(' '),
+                              ].join(' ')}
+                              aria-current={active ? 'date' : undefined}
+                              title={label}
+                            >
+                              {short}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div
+                        className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl"
+                        style={{ background: 'linear-gradient(to right, var(--app-surface-2), rgba(0,0,0,0))' }}
+                      />
+                      <div
+                        className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl"
+                        style={{ background: 'linear-gradient(to left, var(--app-surface-2), rgba(0,0,0,0))' }}
+                      />
+                    </div>
+
+                    <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                      เลือกเดือนจากรายการด้านบน หรือใช้ปุ่มเลื่อนเดือน
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   disabled={tempMonthIndex <= 0}
                   onClick={() => setTempMonthIndex(v => Math.max(0, v - 1))}
-                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10"
+                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                 >
                   เดือนก่อนหน้า
                 </button>
@@ -1003,7 +1036,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   type="button"
                   disabled={tempMonthIndex >= months.length - 1}
                   onClick={() => setTempMonthIndex(v => Math.min(months.length - 1, v + 1))}
-                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10"
+                  className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                 >
                   เดือนถัดไป
                 </button>
@@ -1389,62 +1422,88 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
       {/* 4. Edit Budget Bottom Sheet / Modal */}
         {editingCategory && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEditingCategory(null)}>
+        <div
+          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setEditingCategory(null)}
+        >
           <div 
-            className="bg-white w-full max-w-sm p-5 rounded-t-3xl sm:rounded-3xl shadow-2xl animate-slideUp" 
+            className="bg-[var(--app-surface)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col max-h-[90dvh] sm:max-h-[85dvh]"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-xl">
-                <CategoryIcon iconKey={editingCategory.icon} className="w-6 h-6 text-slate-700" />
-              </div>
-              <div>
-                <p className="text-[color:var(--app-muted-2)] text-xs">ตั้งงบประมาณสำหรับ</p>
-                <h3 className="text-lg font-extrabold text-slate-900">{editingCategory.name}</h3>
-                <p className="text-xs text-[color:var(--app-muted)] mt-0.5">{selectedMonth}</p>
-              </div>
-            </div>
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] sm:pt-4 overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
 
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">ใช้ไป</div>
-                <div className="mt-0.5 text-sm font-extrabold text-slate-900">{formatCurrency(editingCategory.spent || 0)}</div>
-              </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">คงเหลือ</div>
-                <div className={`mt-0.5 text-sm font-extrabold ${(editingCategory.remaining || 0) < 0 ? 'text-rose-600' : 'text-blue-700'}`}>
-                  {formatCurrency(editingCategory.remaining || 0)}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setEditingCategory(null)}
+                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
+                  aria-label="ปิด"
+                  title="ปิด"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 ring-1 ring-white/25">
+                    <CategoryIcon iconKey={editingCategory.icon} className="w-6 h-6 text-slate-950" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">{selectedMonth}</div>
+                    <h3 className="mt-0.5 truncate text-lg font-extrabold">ตั้งงบ: {editingCategory.name}</h3>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-950/70">ปรับวงเงินสำหรับหมวดนี้</div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <form onSubmit={handleSaveBudget}>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">วงเงินที่ต้องการ (บาท)</label>
-              <div className="relative mb-6">
-                <input 
-                  type="number" 
-                  className="w-full text-3xl font-extrabold text-slate-900 border-b-2 border-slate-200 py-2 focus:border-blue-600 outline-none bg-transparent placeholder-slate-300"
-                  placeholder="0"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value)}
-                  autoFocus
-                />
-                <span className="absolute right-0 bottom-2 text-[color:var(--app-muted)]">THB</span>
+            <form onSubmit={handleSaveBudget} className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+32px)] sm:pb-6">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/5">
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">ใช้ไป</div>
+                  <div className="mt-0.5 text-sm font-extrabold text-slate-100">{formatCurrency(editingCategory.spent || 0)}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/5">
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">คงเหลือ</div>
+                  <div className={['mt-0.5 text-sm font-extrabold', (editingCategory.remaining || 0) < 0 ? 'text-rose-300' : 'text-emerald-200'].join(' ')}>
+                    {formatCurrency(editingCategory.remaining || 0)}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex gap-2">
-                <button 
-                  type="button" 
+              <div className="mt-5">
+                <label className="block text-xs font-semibold text-slate-300 mb-2">วงเงินที่ต้องการ (บาท)</label>
+                <div className="relative rounded-3xl border border-white/10 bg-white/5 px-4 py-3 shadow-sm ring-1 ring-white/5 focus-within:ring-emerald-400/25">
+                  <input
+                    type="number"
+                    className="w-full bg-transparent text-3xl font-extrabold text-[color:var(--app-text)] outline-none placeholder-[color:var(--app-muted-2)]"
+                    placeholder="0"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    inputMode="numeric"
+                    min="0"
+                    autoFocus
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-extrabold text-[color:var(--app-muted-2)]">THB</span>
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
                   onClick={() => setEditingCategory(null)}
-                  className="flex-1 py-2.5 rounded-2xl border border-slate-200 font-extrabold text-slate-700 hover:bg-slate-50"
+                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
                 >
                   ยกเลิก
                 </button>
-                <button 
-                  type="submit" 
-                  className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white font-extrabold shadow-lg shadow-blue-600/20 hover:bg-blue-700"
+                <button
+                  type="submit"
+                  className="py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95"
                 >
                   บันทึก
                 </button>

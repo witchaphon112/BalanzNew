@@ -134,17 +134,21 @@ export default function Dashboard() {
     }
   }, []);
 
-  const [userProfile, setUserProfile] = useState(() => {
+  // NOTE: Keep the first render identical between server and client to avoid hydration mismatch.
+  // Load localStorage values in an effect instead of the useState initializer.
+  const [userProfile, setUserProfile] = useState({ name: '', profilePic: '' });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     try {
-      if (typeof window === 'undefined') return { name: '', profilePic: '' };
-      return {
+      setUserProfile({
         name: localStorage.getItem('user_name') || '',
         profilePic: localStorage.getItem('profilePic') || '',
-      };
+      });
     } catch {
-      return { name: '', profilePic: '' };
+      // ignore
     }
-  });
+  }, []);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
