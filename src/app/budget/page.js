@@ -162,14 +162,22 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const [tempMonthIndex, setTempMonthIndex] = useState(12);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [monthScroll, setMonthScroll] = useState({ canLeft: false, canRight: false });
-  const [sortBy, setSortBy] = useState(() => {
+  // NOTE: Keep the first render deterministic between server and client to avoid hydration mismatch.
+  // Load localStorage values in an effect instead of the useState initializer.
+  const [sortBy, setSortBy] = useState('budget_desc');
+  const [sortPrefReady, setSortPrefReady] = useState(false);
+
+  useEffect(() => {
     try {
-      if (typeof window === 'undefined') return 'budget_desc';
-      return localStorage.getItem('budget_sort_by') || 'budget_desc';
+      const raw = localStorage.getItem('budget_sort_by');
+      const allowed = new Set(['budget_desc', 'budget_asc', 'spent_desc', 'remaining_desc', 'name_asc', 'name_desc']);
+      if (raw && allowed.has(raw)) setSortBy(raw);
     } catch {
-      return 'budget_desc';
+      // ignore
+    } finally {
+      setSortPrefReady(true);
     }
-  });
+  }, []);
 
   useEffect(() => {
     setSelectedType(normalizedInitialType);
@@ -468,12 +476,13 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   }, []);
 
   useEffect(() => {
+    if (!sortPrefReady) return;
     try {
       localStorage.setItem('budget_sort_by', sortBy);
     } catch {
       // ignore
     }
-  }, [sortBy]);
+  }, [sortBy, sortPrefReady]);
 
     // --- Process Data for Display ---
     // Combine Categories + Budgets + Transactions for the selected month

@@ -89,6 +89,78 @@ function parseTransactionText(text) {
   return { command: 'unknown' };
 }
 
+async function resolveMessagingUser(lineMessagingUserId) {
+  if (!lineMessagingUserId) return { user: null };
+
+  const [userByMessagingId, userByLegacyLineId] = await Promise.all([
+    User.findOne({ lineMessagingUserId }),
+    // Backwards compat: some installs may have stored messaging userId in lineUserId
+    User.findOne({ lineUserId: lineMessagingUserId }),
+  ]);
+
+  // If we found a legacy record that stored Messaging userId in `lineUserId`,
+  // migrate it to the correct field so future lookups are consistent.
+  if (!userByMessagingId && userByLegacyLineId && !userByLegacyLineId.lineMessagingUserId) {
+    try {
+      userByLegacyLineId.lineMessagingUserId = String(lineMessagingUserId);
+      const email = String(userByLegacyLineId.email || '');
+      // If this looks like a bot-created placeholder account, detach legacy `lineUserId`
+      // to avoid confusing it with LINE Login (OAuth) ids.
+      if (
+        String(userByLegacyLineId.lineUserId || '') === String(lineMessagingUserId) &&
+        email &&
+        !email.endsWith('@line.local') &&
+        (/^line_/i.test(email) || /^line_msg_/i.test(email))
+      ) {
+        userByLegacyLineId.lineUserId = undefined;
+      }
+      await userByLegacyLineId.save();
+    } catch (e) {
+      // ignore migration errors
+    }
+  }
+
+  let user = userByMessagingId || userByLegacyLineId;
+
+  if (!user) {
+    let profile = null;
+    try {
+      ensureClient();
+      profile = await client.getProfile(lineMessagingUserId);
+    } catch (e) {
+      // profile fetch may fail if CHANNEL_TOKEN not configured or permission denied - continue
+    }
+
+    try {
+      user = await User.findOne({ lineMessagingUserId });
+      if (!user) {
+        const placeholderEmail = `line_msg_${lineMessagingUserId}@local`;
+        try {
+          user = await User.create({
+            lineMessagingUserId: String(lineMessagingUserId),
+            name: (profile && profile.displayName) ? profile.displayName : '',
+            profilePic: (profile && profile.pictureUrl) ? profile.pictureUrl : '',
+            email: placeholderEmail
+          });
+        } catch (createErr) {
+          if (createErr && createErr.code === 11000) {
+            // race: another process created a user with the same placeholder or a null-email collision
+            user = await User.findOne({ lineMessagingUserId });
+          } else {
+            console.error('Failed to create user', createErr);
+            throw createErr;
+          }
+        }
+      }
+    } catch (finalErr) {
+      console.error('user creation/upsert final error', finalErr);
+      throw finalErr;
+    }
+  }
+
+  return { user, userByMessagingId, userByLegacyLineId };
+}
+
 async function handleTextEvent(event) {
   const rawText = (event.message && event.message.text) ? event.message.text : '';
   // normalize: remove invisible/zero-width characters and soft-hyphens, then trim
@@ -190,74 +262,7 @@ async function handleTextEvent(event) {
     return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบ userId จาก LINE' });
   }
 
-  const [userByMessagingId, userByLegacyLineId] = await Promise.all([
-    User.findOne({ lineMessagingUserId }),
-    // Backwards compat: some installs may have stored messaging userId in lineUserId
-    User.findOne({ lineUserId: lineMessagingUserId }),
-  ]);
-
-  // If we found a legacy record that stored Messaging userId in `lineUserId`,
-  // migrate it to the correct field so future lookups are consistent.
-  if (!userByMessagingId && userByLegacyLineId && !userByLegacyLineId.lineMessagingUserId) {
-    try {
-      userByLegacyLineId.lineMessagingUserId = String(lineMessagingUserId);
-      const email = String(userByLegacyLineId.email || '');
-      // If this looks like a bot-created placeholder account, detach legacy `lineUserId`
-      // to avoid confusing it with LINE Login (OAuth) ids.
-      if (
-        String(userByLegacyLineId.lineUserId || '') === String(lineMessagingUserId) &&
-        email &&
-        !email.endsWith('@line.local') &&
-        (/^line_/i.test(email) || /^line_msg_/i.test(email))
-      ) {
-        userByLegacyLineId.lineUserId = undefined;
-      }
-      await userByLegacyLineId.save();
-    } catch (e) {
-      // ignore migration errors
-    }
-  }
-
-  let user = userByMessagingId || userByLegacyLineId;
-
-  if (!user) {
-    // Try to upsert user; if unique index on email causes E11000 (existing null email),
-    // fall back to creating a user with a placeholder email to avoid duplicate-null collisions.
-    let profile = null;
-    try {
-      profile = await client.getProfile(lineMessagingUserId);
-    } catch (e) {
-      // profile fetch may fail if CHANNEL_TOKEN not configured or permission denied - continue
-    }
-    // Avoid upsert via findOneAndUpdate because a legacy unique index on `email` (with nulls)
-    // can cause E11000 on upsert. Instead, attempt an atomic create with a placeholder
-    // unique email (based on the LINE userId), then fall back to find.
-    try {
-      user = await User.findOne({ lineMessagingUserId });
-      if (!user) {
-        const placeholderEmail = `line_msg_${lineMessagingUserId}@local`;
-        try {
-          user = await User.create({
-            lineMessagingUserId: String(lineMessagingUserId),
-            name: (profile && profile.displayName) ? profile.displayName : '',
-            profilePic: (profile && profile.pictureUrl) ? profile.pictureUrl : '',
-            email: placeholderEmail
-          });
-        } catch (createErr) {
-          if (createErr && createErr.code === 11000) {
-            // race: another process created a user with the same placeholder or a null-email collision
-            user = await User.findOne({ lineMessagingUserId });
-          } else {
-            console.error('Failed to create user', createErr);
-            throw createErr;
-          }
-        }
-      }
-    } catch (finalErr) {
-      console.error('user creation/upsert final error', finalErr);
-      throw finalErr;
-    }
-  }
+  const { user, userByMessagingId, userByLegacyLineId } = await resolveMessagingUser(lineMessagingUserId);
 
   console.log('LINE resolved user mapping:', {
     lineMessagingUserId: String(lineMessagingUserId || ''),
@@ -388,10 +393,10 @@ async function handleTextEvent(event) {
 
 // handle postback events (from richmenu postback actions)
 async function handlePostbackEvent(event) {
-  const userId = event.source && event.source.userId;
+  const lineMessagingUserId = event.source && event.source.userId;
   const data = event.postback && event.postback.data ? event.postback.data : '';
-  console.log('LINE postback received', { userId, data });
-  if (!userId) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบ userId' });
+  console.log('LINE postback received', { userId: lineMessagingUserId, data });
+  if (!lineMessagingUserId) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบ userId' });
 
   // if postback is a quick-note trigger, reply with the flex quick-note UI (no user message shown)
   try {
@@ -444,36 +449,34 @@ async function handlePostbackEvent(event) {
   }
   console.log('postback actionValue resolved:', actionValue);
 
-  // find user
-  const user = await User.findOne({ lineUserId: userId });
-  if (!user) {
-    return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ที่เชื่อมกับ LINE ของคุณ โปรดล็อกอินผ่านหน้าเว็บก่อน' });
-  }
+  const { user } = await resolveMessagingUser(lineMessagingUserId);
+  if (!user) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
 
   // handle known postback actions
   // Be strict when detecting the dashboard action to avoid accidental substring matches
-  if (actionValue === 'dashboard' || actionValue === 'open_dashboard' || actionValue === 'open-dashboard') {
-    // create JWT for quick-login and reply with dashboard button
-    const secret = process.env.JWT_SECRET || 'dev-jwt-secret';
-    const token = jwt.sign({ userId: user._id, role: user.role || 'user' }, secret, { expiresIn: '1h' });
-    const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const dashboardUrl = `${frontend}/dashboard?token=${token}`;
-    const message = {
-      type: 'template',
-      altText: 'เปิดหน้า Dashboard',
-      template: {
-        type: 'buttons',
-        text: 'คลิกปุ่มด้านล่างเพื่อไปที่หน้า Dashboard (ล็อกอินเรียบร้อย)',
-        actions: [
-          { type: 'uri', label: 'เปิด Dashboard', uri: dashboardUrl }
-        ]
-      }
-    };
-    return sendReply(event.replyToken, message);
+  if (actionValue === 'web_login' || actionValue === 'web' || actionValue === 'dashboard' || actionValue === 'open_dashboard' || actionValue === 'open-dashboard') {
+    const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+    const rawToken = createSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    try {
+      await LineLoginSession.create({
+        tokenHash,
+        userId: user._id,
+        lineUserId: String(lineMessagingUserId),
+        expiresAt,
+      });
+    } catch (e) {
+      console.error('LineLoginSession create failed', e);
+      return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ระบบสร้างลิงก์เข้าเว็บไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+
+    const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}`;
+    return sendReply(event.replyToken, { type: 'text', text: `แตะลิงก์นี้เพื่อเข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}` });
   }
 
-  if (actionValue === 'summary') {
-    // reply with today's summary (same behavior as text command)
+  if (actionValue === 'summary' || actionValue === 'summary_today') {
     const start = new Date(); start.setHours(0,0,0,0);
     const end = new Date(); end.setHours(23,59,59,999);
     const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
@@ -481,6 +484,38 @@ async function handlePostbackEvent(event) {
     const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
     const reply = `สรุปวันนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
     return sendReply(event.replyToken, { type: 'text', text: reply });
+  }
+
+  if (actionValue === 'summary_month') {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth()+1, 0,23,59,59,999);
+    const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
+    const income = txs.filter(t=>t.type==='income').reduce((s,n)=>s+n.amount,0);
+    const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
+    const reply = `สรุปเดือนนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
+    return sendReply(event.replyToken, { type: 'text', text: reply });
+  }
+
+  if (actionValue === 'help') {
+    const helpText = 'คำสั่งตัวอย่าง:\n- จ่าย 120 ข้าวมันไก่\n- รับ 500 เงินลูกค้า\n- สรุปวันนี้\n- สรุปเดือนนี้\n- export';
+    return sendReply(event.replyToken, { type: 'text', text: helpText });
+  }
+
+  if (actionValue === 'announce' || actionValue === 'ประกาศ') {
+    const profileUrl = 'https://line.me/R/ti/p/@156twxxb';
+    const message = {
+      type: 'template',
+      altText: 'ดูโปรไฟล์ LINE',
+      template: {
+        type: 'buttons',
+        text: 'แตะปุ่มด้านล่างเพื่อเปิดหน้าโปรไฟล์/VOOM',
+        actions: [
+          { type: 'uri', label: 'ดูโปรไฟล์', uri: profileUrl }
+        ]
+      }
+    };
+    return sendReply(event.replyToken, message);
   }
 
   // unknown/unsupported postback: respond minimally for debugging
