@@ -3,6 +3,10 @@ const line = require('@line/bot-sdk');
 const router = express.Router();
 const { User, Transaction, Category, ImportExportLog, LineLoginSession, LineMessagingLinkSession } = require('../models');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
+const { scanImageFile } = require('../utils/ocrScan');
+const { transcribeAudioFile } = require('../utils/transcribeAudio');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -18,6 +22,12 @@ function ensureClient() {
     client = {
       replyMessage: async (replyToken, message) => {
         console.log('LINE reply skipped (no CHANNEL_TOKEN). Reply would be:', replyToken, message);
+      },
+      pushMessage: async (userId, message) => {
+        console.log('LINE push skipped (no CHANNEL_TOKEN). Push would be:', userId, message);
+      },
+      getMessageContent: async () => {
+        throw new Error('LINE CHANNEL_TOKEN not configured');
       },
       getProfile: async (userId) => {
         throw new Error('LINE CHANNEL_TOKEN not configured');
@@ -54,12 +64,32 @@ async function sendReply(replyToken, message) {
   }
 }
 
+async function pushToUser(userId, message) {
+  try {
+    ensureClient();
+    const r = await client.pushMessage(userId, message);
+    console.log('LINE push success', userId, message);
+    return r;
+  } catch (e) {
+    const detail =
+      e?.originalError?.response?.data ||
+      e?.response?.data ||
+      e?.originalError?.response ||
+      e?.response ||
+      null;
+    console.error('LINE push error', detail || e);
+    return null;
+  }
+}
+
 // debug: show whether token was loaded when this module initialized
 console.log('LINE webhook module loaded. CHANNEL_TOKEN present:', CHANNEL_TOKEN ? (CHANNEL_TOKEN.slice(0,8) + '...') : 'no');
 
 // simple parser: returns { type: 'income'|'expense', amount, note }
 function parseTransactionText(text) {
-  const t = text.trim();
+  const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
+  const t = normalizeDigits(text).trim();
+  const tl = t.toLowerCase();
   // commands: help, สรุปวันนี้, สรุปเดือนนี้, export
   if (/^help$/i.test(t) || /^ช่วยเหลือ$/i.test(t)) return { command: 'help' };
   if (/^สรุปวันนี้$/i.test(t)) return { command: 'summary_today' };
@@ -79,14 +109,81 @@ function parseTransactionText(text) {
     return { type, amount, note };
   }
 
+  // Income keyword inference for inputs like: "เงินเดือน 20000", "โบนัส 5000"
+  const incomeKeywords = [
+    'เงินเดือน', 'โบนัส', 'รายได้', 'รายรับ', 'ค่าคอม', 'คอมมิชชั่น',
+    'commission', 'salary', 'bonus', 'income',
+  ];
+  const inferredIncome = incomeKeywords.some((k) => tl.includes(k));
+
   // fallback: try to extract numbers
   const mm = t.match(/([0-9,\.]+)\s*(บาท|฿)?/);
   if (mm) {
     const amount = parseFloat(mm[1].replace(/,/g, '')) || 0;
-    return { type: 'expense', amount, note: t };
+    return { type: inferredIncome ? 'income' : 'expense', amount, note: t };
   }
 
   return { command: 'unknown' };
+}
+
+function classifyCategoryFromNote(note, type) {
+  const raw = String(note || '');
+  const t = raw.toLowerCase();
+  const has = (...keys) => keys.some((k) => t.includes(k));
+
+  if (type === 'income') {
+    if (has('เงินเดือน', 'salary')) return { name: 'เงินเดือน', icon: 'salary' };
+    if (has('โบนัส', 'bonus')) return { name: 'โบนัส', icon: 'gift' };
+    if (has('คืนเงิน', 'refund', 'rebate')) return { name: 'คืนเงิน', icon: 'money' };
+    if (has('ลงทุน', 'หุ้น', 'คริป', 'crypto', 'investment')) return { name: 'ลงทุน', icon: 'money' };
+    return { name: 'รายได้อื่นๆ', icon: 'money' };
+  }
+
+  // expense
+  if (has('ข้าว', 'ก๋วยเตี๋ยว', 'อาหาร', 'ข้าวมันไก่', 'หมูปิ้ง', 'ข้าวเหนียว', 'ส้มตำ', 'ผัด', 'แกง', 'ไก่', 'หมู', 'ปลา')) {
+    return { name: 'อาหาร', icon: 'food' };
+  }
+  if (has('กาแฟ', 'ชา', 'น้ำ', 'น้ำอัดลม', 'โค้ก', 'pepsi', 'coffee', 'cafe')) {
+    return { name: 'เครื่องดื่ม', icon: 'drink' };
+  }
+  if (has('grab', 'bolt', 'แท็กซี่', 'taxi', 'bts', 'mrt', 'รถเมล์', 'bus', 'train', 'เดินทาง', 'ค่าน้ำมัน', 'เติมน้ำมัน', 'parking', 'จอดรถ')) {
+    return { name: 'เดินทาง', icon: 'transport' };
+  }
+  if (has('ค่าไฟ', 'ค่าน้ำ', 'อินเตอร์เน็ต', 'เน็ตทรู', 'ais', 'dtac', 'true', 'wifi', 'โทรศัพท์', 'มือถือ', 'บิล', 'bill')) {
+    return { name: 'บิล/สาธารณูปโภค', icon: 'bills' };
+  }
+  if (has('shopee', 'lazada', '7-11', 'เซเว่น', 'ซื้อของ', 'ช้อป', 'shopping')) {
+    return { name: 'ช้อปปิ้ง', icon: 'shopping' };
+  }
+  if (has('ยา', 'หมอ', 'โรงพยาบาล', 'คลินิก', 'health')) {
+    return { name: 'สุขภาพ', icon: 'health' };
+  }
+
+  return { name: 'อื่นๆ', icon: 'other' };
+}
+
+async function ensureUserCategory({ userId, type, name, icon }) {
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const safeName = String(name || '').trim() || (safeType === 'income' ? 'รายได้อื่นๆ' : 'อื่นๆ');
+  const safeIcon = String(icon || '').trim() || 'other';
+
+  const existing = await Category.findOne({ userId, type: safeType, name: safeName });
+  if (existing) return existing;
+
+  try {
+    return await Category.create({
+      userId,
+      type: safeType,
+      name: safeName,
+      icon: safeIcon,
+      isDefault: false,
+    });
+  } catch (e) {
+    // Unique index race: try again
+    const fallback = await Category.findOne({ userId, type: safeType, name: safeName });
+    if (fallback) return fallback;
+    throw e;
+  }
 }
 
 async function resolveMessagingUser(lineMessagingUserId) {
@@ -367,6 +464,17 @@ async function handleTextEvent(event) {
     console.log('LINE will save transaction for user _id:', String(user?._id || ''), 'lineMessagingUserId:', String(lineMessagingUserId || ''));
     // ensure we save note into the same field existing docs use (`notes`) and keep `note` for compatibility
     const notesText = parsed.note || parsed.notes || '';
+    // auto-categorize from note keywords (create category if missing)
+    let categoryId = null;
+    try {
+      const cat = classifyCategoryFromNote(notesText, parsed.type);
+      if (cat && cat.name) {
+        const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
+        categoryId = doc?._id || null;
+      }
+    } catch (e) {
+      console.warn('LINE auto-categorize failed:', e?.message || e);
+    }
     // save transaction
     const tx = new Transaction({
       userId: user._id,
@@ -374,7 +482,7 @@ async function handleTextEvent(event) {
       amount: parsed.amount,
       notes: notesText,
       note: notesText,
-      categoryId: null,
+      categoryId,
       datetime: new Date(),
       source: 'text',
       rawMessage: event
@@ -389,6 +497,219 @@ async function handleTextEvent(event) {
 
   // unknown
   return sendReply(event.replyToken, { type: 'text', text: 'ขอโทษครับ ผมไม่เข้าใจคำสั่ง พิมพ์ help เพื่อดูคำสั่งตัวอย่าง' });
+}
+
+function bufferFromStream(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (c) => chunks.push(c));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
+function guessImageExt(contentType) {
+  const t = String(contentType || '').toLowerCase();
+  if (t.includes('png')) return '.png';
+  if (t.includes('webp')) return '.webp';
+  if (t.includes('gif')) return '.gif';
+  return '.jpg';
+}
+
+function guessAudioExt(contentType) {
+  const t = String(contentType || '').toLowerCase();
+  if (t.includes('mpeg')) return '.mp3';
+  if (t.includes('wav')) return '.wav';
+  if (t.includes('ogg')) return '.ogg';
+  if (t.includes('opus')) return '.opus';
+  if (t.includes('m4a')) return '.m4a';
+  if (t.includes('mp4')) return '.m4a';
+  if (t.includes('aac')) return '.aac';
+  return '.m4a';
+}
+
+async function handleImageEvent(event) {
+  const lineMessagingUserId = event.source && event.source.userId;
+  const messageId = event.message && event.message.id;
+  if (!lineMessagingUserId || !messageId) {
+    return sendReply(event.replyToken, { type: 'text', text: 'อ่านรูปไม่สำเร็จ (missing user/message id)' });
+  }
+
+  // Ack quickly, then OCR + save transaction asynchronously (replyToken can be used only once).
+  await sendReply(event.replyToken, { type: 'text', text: 'รับรูปแล้ว กำลังอ่านข้อมูลจากรูปให้...' });
+
+  (async () => {
+    try {
+      ensureClient();
+      const { user } = await resolveMessagingUser(lineMessagingUserId);
+      if (!user) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
+        return;
+      }
+
+      const resp = await client.getMessageContent(messageId);
+      // SDKs differ: sometimes returns a stream, sometimes { data, headers }.
+      const stream = (resp && typeof resp.on === 'function')
+        ? resp
+        : (resp && resp.data && typeof resp.data.on === 'function')
+          ? resp.data
+          : null;
+      if (!stream) {
+        throw new Error('Unsupported getMessageContent response');
+      }
+
+      const contentType = (resp && resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || '';
+      const ext = guessImageExt(contentType);
+
+      const uploadDir = path.join(__dirname, '../uploads/line');
+      try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+      const filePath = path.join(uploadDir, `line-${Date.now()}-${messageId}${ext}`);
+
+      const buf = await bufferFromStream(stream);
+      fs.writeFileSync(filePath, buf);
+
+      const { extraction, ocrConfidence } = await scanImageFile(filePath, { cleanupOriginal: true });
+      const amount = extraction?.amount;
+
+      if (!amount || !(Number(amount) > 0)) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: 'อ่านรูปได้ แต่ยังจับ “ยอดเงิน” ไม่เจอ ลองส่งรูปที่ชัดขึ้น/เต็มใบอีกครั้ง' });
+        return;
+      }
+
+      const rawText = String(extraction?.rawText || '').toLowerCase();
+      const looksLikeIncome = /เงินเข้า|received|receive|credit|เข้าบัญชี|รับเงิน/.test(rawText);
+      const type = looksLikeIncome ? 'income' : 'expense';
+
+      let note = 'สลิป/รูปภาพ';
+      if (extraction?.documentType === 'transfer_slip') {
+        note = extraction?.recipient ? `สลิปโอนเงิน ${looksLikeIncome ? 'จาก' : 'ไปยัง'} ${extraction.recipient}` : 'สลิปโอนเงิน';
+      } else if (extraction?.documentType === 'receipt') {
+        note = 'ใบเสร็จ/สลิป';
+      }
+
+      // For now, keep slip transactions in a money-related category for clarity.
+      let categoryId = null;
+      try {
+        const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
+        const catIcon = 'money';
+        const doc = await ensureUserCategory({ userId: user._id, type, name: catName, icon: catIcon });
+        categoryId = doc?._id || null;
+      } catch (e) {
+        console.warn('LINE slip category create failed:', e?.message || e);
+      }
+
+      const tx = new Transaction({
+        userId: user._id,
+        type,
+        amount: Number(amount),
+        notes: note,
+        note,
+        categoryId,
+        datetime: new Date(),
+        source: 'slip',
+        rawMessage: { event, extraction, ocrConfidence },
+      });
+      await tx.save();
+
+      const reply = `${type === 'income' ? 'รับ' : 'จ่าย'} ${Number(amount).toLocaleString()} บาท\n${note}\n(ความมั่นใจ OCR: ${Math.round(Number(ocrConfidence || 0) * 10) / 10}%)`;
+      await pushToUser(lineMessagingUserId, { type: 'text', text: reply });
+    } catch (e) {
+      console.error('handleImageEvent error', e);
+      await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้ง (แนะนำรูปชัด/ไม่เอียง/เต็มใบ)' });
+    }
+  })();
+}
+
+async function handleAudioEvent(event) {
+  const lineMessagingUserId = event.source && event.source.userId;
+  const messageId = event.message && event.message.id;
+  if (!lineMessagingUserId || !messageId) {
+    return sendReply(event.replyToken, { type: 'text', text: 'ถอดเสียงไม่สำเร็จ (missing user/message id)' });
+  }
+
+  // Ack quickly, then transcribe + save transaction asynchronously.
+  await sendReply(event.replyToken, { type: 'text', text: 'รับเสียงแล้ว กำลังถอดเสียงให้...' });
+
+  (async () => {
+    try {
+      ensureClient();
+      const { user } = await resolveMessagingUser(lineMessagingUserId);
+      if (!user) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
+        return;
+      }
+
+      const resp = await client.getMessageContent(messageId);
+      const stream = (resp && typeof resp.on === 'function')
+        ? resp
+        : (resp && resp.data && typeof resp.data.on === 'function')
+          ? resp.data
+          : null;
+      if (!stream) throw new Error('Unsupported getMessageContent response');
+
+      const contentType = (resp && resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || '';
+      const ext = guessAudioExt(contentType);
+
+      const uploadDir = path.join(__dirname, '../uploads/line/audio');
+      try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
+      const filePath = path.join(uploadDir, `line-audio-${Date.now()}-${messageId}${ext}`);
+
+      const buf = await bufferFromStream(stream);
+      fs.writeFileSync(filePath, buf);
+
+      const tr = await transcribeAudioFile({ filePath, mimeType: contentType || 'audio/*', language: 'th' });
+      try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+
+      if (tr?.disabled) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ฟีเจอร์ถอดเสียงยังไม่ถูกเปิด (ต้องตั้งค่า OPENAI_API_KEY ที่ backend)' });
+        return;
+      }
+
+      const transcript = String(tr?.text || '').trim();
+      if (!transcript) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ถอดเสียงไม่เจอข้อความ ลองอัดใหม่ให้ชัดขึ้นอีกนิดนะ' });
+        return;
+      }
+
+      const parsed = parseTransactionText(transcript);
+      if (!(parsed?.type && parsed?.amount)) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน` });
+        return;
+      }
+
+      const notesText = parsed.note || parsed.notes || transcript;
+
+      let categoryId = null;
+      try {
+        const cat = classifyCategoryFromNote(notesText, parsed.type);
+        if (cat && cat.name) {
+          const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
+          categoryId = doc?._id || null;
+        }
+      } catch (e) {
+        console.warn('VOICE auto-categorize failed:', e?.message || e);
+      }
+
+      const tx = new Transaction({
+        userId: user._id,
+        type: parsed.type,
+        amount: parsed.amount,
+        notes: notesText,
+        note: notesText,
+        categoryId,
+        datetime: new Date(),
+        source: 'voice',
+        rawMessage: { event, transcript, stt: { provider: tr.provider, model: tr.model } },
+      });
+      await tx.save();
+
+      const summary = `${parsed.type === 'expense' ? 'จ่าย' : 'รับ'} ${parsed.amount} ${parsed.note || ''}`.trim();
+      await pushToUser(lineMessagingUserId, { type: 'text', text: `บันทึกจากเสียงเรียบร้อย: ${summary}\nได้ยินว่า: "${transcript}"` });
+    } catch (e) {
+      console.error('handleAudioEvent error', e);
+      await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย ถอดเสียงไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+  })();
 }
 
 // handle postback events (from richmenu postback actions)
@@ -603,8 +924,6 @@ function verifySignature(req, res, next) {
 
 // richmenu upload helpers
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const sharp = require('sharp');
 const richUploadDir = path.join(__dirname, '../uploads/richmenu');
 try { fs.mkdirSync(richUploadDir, { recursive: true }); } catch (e) { /* ignore */ }
@@ -659,13 +978,11 @@ router.post('/', verifySignature, async (req, res) => {
     const events = req.body.events || [];
     await Promise.all(events.map(async (ev) => {
       try {
-        if (ev.type === 'message' && ev.message && ev.message.type === 'text') {
-          await handleTextEvent(ev);
-        } else if (ev.type === 'postback') {
-          await handlePostbackEvent(ev);
-        } else {
-          // ignore other events for now
-        }
+        if (ev.type === 'message' && ev.message && ev.message.type === 'text') return handleTextEvent(ev);
+        if (ev.type === 'message' && ev.message && ev.message.type === 'image') return handleImageEvent(ev);
+        if (ev.type === 'message' && ev.message && ev.message.type === 'audio') return handleAudioEvent(ev);
+        if (ev.type === 'postback') return handlePostbackEvent(ev);
+        // ignore other events for now
       } catch (err) {
         console.error('handle event error', err);
       }

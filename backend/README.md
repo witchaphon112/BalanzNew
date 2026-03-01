@@ -11,6 +11,7 @@ ngrok http 5050
 Prereqs:
 - Backend running on `http://localhost:5050`
 - Set `LINE_CHANNEL_ACCESS_TOKEN` in `backend/.env`
+ - (Voice only) Set `OPENAI_API_KEY` in `backend/.env` to enable speech-to-text
 
 ### Option A: Rich menu buttons send visible chat text (simple)
 
