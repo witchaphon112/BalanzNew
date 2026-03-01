@@ -526,27 +526,27 @@ export default function Analytics() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#04161c]">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-400" />
     </div>
   );
 
   return (
-    <main className="fixed inset-0 bg-[#04161c] text-slate-100 overflow-y-auto">
+    <main className="fixed inset-0 bg-[var(--app-bg)] text-[color:var(--app-text)] overflow-y-auto">
       <div className="mx-auto w-full max-w-lg px-4 py-5 pb-24 space-y-4">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-xl font-extrabold text-slate-50">ภาพรวมการเงิน</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-400">ดูกราฟสรุปรายรับ-รายจ่ายแบบเข้าใจง่าย</p>
+          <h1 className="text-xl font-extrabold text-[color:var(--app-text)]">ภาพรวมการเงิน</h1>
+          <p className="mt-1 text-sm font-semibold text-[color:var(--app-muted)]">ดูกราฟสรุปรายรับ-รายจ่ายแบบเข้าใจง่าย</p>
         </div>
 
         {/* Month selector */}
-        <div className="relative z-[1] rounded-3xl border border-white/10 bg-[#0b2730] p-2 shadow-sm">
+        <div className="relative z-[1] rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-2 shadow-sm">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setCurrentMonthIndex(prev => Math.max(0, prev - 1))}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-emerald-200 hover:bg-[var(--app-surface-3)] disabled:opacity-40"
               disabled={currentMonthIndex === 0}
               aria-label="เดือนก่อนหน้า"
             >
@@ -560,18 +560,18 @@ export default function Analytics() {
                 setMonthPickerYear(d.getFullYear());
                 setShowMonthPicker(true);
               }}
-              className="min-w-0 flex-1 cursor-pointer rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-center transition hover:bg-white/10 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+              className="min-w-0 flex-1 cursor-pointer rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-center transition hover:bg-[var(--app-surface-3)] active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
               aria-label="เปิดปฏิทินเลือกเดือน"
               aria-expanded={showMonthPicker}
             >
-              <div className="text-[11px] font-semibold text-slate-400">เดือนที่เลือก</div>
-              <div className="truncate text-sm font-extrabold text-slate-50">{selectedMonthObj.label}</div>
+              <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เดือนที่เลือก</div>
+              <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{selectedMonthObj.label}</div>
             </button>
 
             <button
               type="button"
               onClick={() => setCurrentMonthIndex(prev => Math.min(monthList.length - 1, prev + 1))}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-emerald-200 hover:bg-white/10 disabled:opacity-40"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-emerald-200 hover:bg-[var(--app-surface-3)] disabled:opacity-40"
               disabled={currentMonthIndex === monthList.length - 1}
               aria-label="เดือนถัดไป"
             >
@@ -586,16 +586,16 @@ export default function Analytics() {
             className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
             onClick={(e) => e.target === e.currentTarget && setShowMonthPicker(false)}
           >
-            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
-              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
                 <div>
-                  <div className="text-sm font-extrabold text-slate-50">เลือกเดือน</div>
-                  <div className="text-[11px] font-semibold text-slate-400">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกเดือน</div>
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อดูสรุปของเดือนนั้น</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                   aria-label="ปิด"
                 >
                   <X className="h-5 w-5" />
@@ -619,7 +619,7 @@ export default function Analytics() {
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
-                    <div className="text-sm font-extrabold text-slate-50">{Number(monthPickerYear) + 543}</div>
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">{Number(monthPickerYear) + 543}</div>
                     <div className="mt-0.5 text-[11px] font-semibold text-slate-400">พ.ศ.</div>
                   </div>
 
@@ -655,7 +655,7 @@ export default function Analytics() {
                           'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
                           'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
                           disabled
-                            ? 'border-white/10 bg-white/5 text-slate-500 opacity-50 cursor-not-allowed'
+                            ? 'border-white/10 bg-white/5 text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
                             : isActive
                               ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
                               : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
@@ -701,7 +701,7 @@ export default function Analytics() {
 
         {/* Summary (stack like reference) */}
         <div className="space-y-3">
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายรับ</div>
@@ -713,7 +713,7 @@ export default function Analytics() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายจ่าย</div>
@@ -725,11 +725,11 @@ export default function Analytics() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-[11px] font-semibold tracking-wide text-slate-400">คงเหลือสุทธิ</div>
-                <div className={`mt-1 text-2xl font-extrabold ${balance >= 0 ? 'text-slate-50' : 'text-rose-200'}`}>฿{formatCurrency(balance)}</div>
+                <div className={`mt-1 text-2xl font-extrabold ${balance >= 0 ? 'text-[color:var(--app-text)]' : 'text-rose-200'}`}>฿{formatCurrency(balance)}</div>
               </div>
               <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${balance >= 0 ? 'bg-white/5 text-slate-100 ring-white/10' : 'bg-rose-500/15 text-rose-200 ring-rose-400/20'}`}>
                 <Wallet className="h-6 w-6" />
@@ -765,16 +765,16 @@ export default function Analytics() {
 
         {/* Spending trend */}
         {spendingTrend && (
-          <div className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[#0b2730] p-5 shadow-sm">
+          <div className="relative overflow-hidden rounded-[34px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-sm font-extrabold text-slate-300">ใช้ไปวันนี้</div>
-                <div className="mt-2 text-4xl font-extrabold text-slate-50">฿{formatCurrency(spendingTrend.todaySpend)}</div>
+                <div className="mt-2 text-4xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(spendingTrend.todaySpend)}</div>
               </div>
 
               <div className="shrink-0 text-right">
                 <div className="text-sm font-extrabold text-slate-300">เดือนนี้</div>
-                <div className="mt-2 text-2xl font-extrabold text-slate-50">฿{formatCurrency(spendingTrend.thisMonthExpense)}</div>
+                <div className="mt-2 text-2xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(spendingTrend.thisMonthExpense)}</div>
                 {typeof spendingTrend.pctChange === 'number' && (
                   <div
                     className={[
@@ -920,7 +920,7 @@ export default function Analytics() {
                 </svg>
               </div>
 
-              <div className="mt-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-500">
+              <div className="mt-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
                 {spendingTrend.labels.map((l) => (
                   <div key={l}>{l}</div>
                 ))}
@@ -931,24 +931,24 @@ export default function Analytics() {
 
         {/* Charts */}
         <div className="space-y-3">
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-slate-50">กราฟรายรับ-รายจ่าย</div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">กราฟรายรับ-รายจ่าย</div>
                 <div className="text-xs font-semibold text-slate-400">แตะ/วางเมาส์บนแท่งเพื่อดูรายละเอียด</div>
               </div>
               <div className="inline-flex items-center rounded-full bg-white/5 p-1 ring-1 ring-white/10">
                 <button
                   type="button"
                   onClick={() => setOverviewMode('daily')}
-                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'daily' ? 'bg-white/10 text-slate-50' : 'text-slate-300 hover:text-slate-50'}`}
+                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'daily' ? 'bg-white/10 text-[color:var(--app-text)]' : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]'}`}
                 >
                   รายวัน
                 </button>
                 <button
                   type="button"
                   onClick={() => setOverviewMode('monthly')}
-                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'monthly' ? 'bg-white/10 text-slate-50' : 'text-slate-300 hover:text-slate-50'}`}
+                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'monthly' ? 'bg-white/10 text-[color:var(--app-text)]' : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]'}`}
                 >
                   รวมเดือน
                 </button>
@@ -971,10 +971,10 @@ export default function Analytics() {
             )}
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-slate-50">สัดส่วนรายจ่าย</div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">สัดส่วนรายจ่าย</div>
                 <div className="text-xs font-semibold text-slate-400">แยกตามหมวดหมู่</div>
               </div>
               <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10">
@@ -992,7 +992,7 @@ export default function Analytics() {
                   <Doughnut data={pieData} options={pieChartOptions} />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <div className="text-[11px] font-semibold text-slate-400">รายจ่ายรวม</div>
-                    <div className="mt-1 text-xl font-extrabold text-slate-50">฿{formatCurrency(summary.expense)}</div>
+                    <div className="mt-1 text-xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(summary.expense)}</div>
                   </div>
                 </div>
               )}
@@ -1008,13 +1008,13 @@ export default function Analytics() {
                     <div key={item.name} className="flex items-center justify-between gap-3 rounded-2xl bg-white/5 px-3 py-2 ring-1 ring-white/10">
                       <div className="min-w-0 flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
-                        <div className="truncate text-sm font-bold text-slate-50">{item.name}</div>
+                        <div className="truncate text-sm font-bold text-[color:var(--app-text)]">{item.name}</div>
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
                         <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-extrabold text-slate-300">
                           {pct}%
                         </span>
-                        <div className="text-sm font-extrabold text-slate-50">฿{formatCurrency(item.amount)}</div>
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(item.amount)}</div>
                       </div>
                     </div>
                   );
@@ -1025,9 +1025,9 @@ export default function Analytics() {
         </div>
 
         {/* Recent Transactions (match reference design) */}
-        <div className="rounded-[34px] border border-white/10 bg-[#0b2730] p-6 shadow-[0_20px_70px_-55px_rgba(0,0,0,0.8)]">
+        <div className="rounded-[34px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 shadow-[0_20px_70px_-55px_rgba(0,0,0,0.25)]">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-xl font-extrabold text-slate-50">รายการล่าสุด</div>
+            <div className="text-xl font-extrabold text-[color:var(--app-text)]">รายการล่าสุด</div>
             <button
               type="button"
               onClick={() => setShowTxnFilters((v) => !v)}
@@ -1051,8 +1051,8 @@ export default function Analytics() {
                       className={[
                         'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
                         filterType === 'all'
-                          ? 'bg-white/10 text-slate-50 ring-1 ring-white/10'
-                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                          ? 'bg-white/10 text-[color:var(--app-text)] ring-1 ring-white/10'
+                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
                       ].join(' ')}
                     >
                       ทั้งหมด
@@ -1065,7 +1065,7 @@ export default function Analytics() {
                         'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
                         filterType === 'income'
                           ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
-                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
                       ].join(' ')}
                     >
                       รายรับ
@@ -1078,7 +1078,7 @@ export default function Analytics() {
                         'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
                         filterType === 'expense'
                           ? 'bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20'
-                          : 'text-slate-300 hover:text-slate-50 hover:bg-white/5',
+                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
                       ].join(' ')}
                     >
                       รายจ่าย
@@ -1126,8 +1126,8 @@ export default function Analytics() {
                     </div>
 
                     <div className="min-w-0">
-                      <div className="truncate text-base font-extrabold text-slate-50">{title}</div>
-                      <div className="mt-1 truncate text-sm font-semibold text-slate-500">{sub}</div>
+                      <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{title}</div>
+                      <div className="mt-1 truncate text-sm font-semibold text-[color:var(--app-muted-2)]">{sub}</div>
                     </div>
                   </div>
 
@@ -1135,7 +1135,7 @@ export default function Analytics() {
                     <div className={`text-lg font-extrabold ${isExpense ? 'text-rose-200' : 'text-emerald-300'}`}>
                       {isExpense ? '-' : '+'} ฿{amountText}
                     </div>
-                    <div className="mt-0.5 text-sm font-semibold text-slate-500">
+                    <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted-2)]">
                       {cat?.name || (isExpense ? 'รายจ่าย' : 'รายรับ')}
                     </div>
                   </div>

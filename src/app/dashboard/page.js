@@ -155,6 +155,9 @@ export default function Dashboard() {
     totalExpenses: 0,
     netSavings: 0,
     recentTransactions: [],
+    todayExpenseTotal: 0,
+    currentMonthIncomeTotal: 0,
+    currentMonthExpenseTotal: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -295,6 +298,32 @@ export default function Dashboard() {
         throw new Error((await res.json()).message || 'Failed to fetch transactions');
       }     
       const transactions = await res.json();
+
+      // Always compute "today spend" from ALL transactions (not only the selected month),
+      // so the card stays correct even when viewing past/future months.
+      const todayKey = toBangkokISODateKey(Date.now());
+      const todayExpenseTotal = (Array.isArray(transactions) ? transactions : [])
+        .filter((t) => t?.type === 'expense' && toBangkokISODateKey(t?.date) === todayKey)
+        .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
+
+      // Also compute current-month totals from ALL transactions (for "ต่อวัน" targets).
+      const nowParts = getBangkokDateParts(Date.now());
+      const cmIncome = (Array.isArray(transactions) ? transactions : [])
+        .filter((t) => {
+          if (t?.type !== 'income') return false;
+          if (!nowParts) return false;
+          const p = getBangkokDateParts(t?.date);
+          return !!p && p.year === nowParts.year && p.monthIndex === nowParts.monthIndex;
+        })
+        .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
+      const cmExpense = (Array.isArray(transactions) ? transactions : [])
+        .filter((t) => {
+          if (t?.type !== 'expense') return false;
+          if (!nowParts) return false;
+          const p = getBangkokDateParts(t?.date);
+          return !!p && p.year === nowParts.year && p.monthIndex === nowParts.monthIndex;
+        })
+        .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
       
       const selectedMonthName = selectedMonth.split(' ')[0];
       const selectedYear = selectedMonth.split(' ')[1];
@@ -323,12 +352,15 @@ export default function Dashboard() {
         netSavings: totalIncome - totalExpenses,
         recentTransactions: sortedTransactions.slice(0, 5),
         transactionsAll: filteredTransactions,
+        todayExpenseTotal,
+        currentMonthIncomeTotal: Number(cmIncome) || 0,
+        currentMonthExpenseTotal: Number(cmExpense) || 0,
       });
       setError('');
       
     } catch (error) {
       setError('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + (error.message || 'Error'));
-      setStats({ totalIncome: 0, totalExpenses: 0, netSavings: 0, recentTransactions: [] });
+      setStats({ totalIncome: 0, totalExpenses: 0, netSavings: 0, recentTransactions: [], todayExpenseTotal: 0, currentMonthIncomeTotal: 0, currentMonthExpenseTotal: 0 });
     } finally {
       setLoading(false);
     }
@@ -597,7 +629,9 @@ export default function Dashboard() {
 
   const formatTHB = (value) => {
     const n = Number(value) || 0;
-    return `฿${n.toLocaleString('th-TH')}`;
+    const abs = Math.abs(n);
+    const formatted = abs.toLocaleString('th-TH');
+    return `${n < 0 ? '-' : ''}฿${formatted}`;
   };
 
   const selectedParsed = useMemo(() => parseThaiMonthLabel(selectedMonth), [selectedMonth]);
@@ -615,6 +649,34 @@ export default function Dashboard() {
     return Number(sum) || 0;
   }, [budgetsByMonth, selectedMonth, categories, budgetCategoryTypeById]);
 
+  const currentMonthIncomeBudgetTotal = useMemo(() => {
+    const monthBudgets = budgetsByMonth?.[currentMonthYear] || {};
+    const entries = Object.entries(monthBudgets || {});
+    if (!entries.length) return 0;
+    let sum = 0;
+    for (const [categoryId, total] of entries) {
+      const cat = (categories || []).find((c) => c?._id === categoryId);
+      const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+      if (type && type !== 'income') continue;
+      sum += Number(total) || 0;
+    }
+    return Number(sum) || 0;
+  }, [budgetsByMonth, currentMonthYear, categories, budgetCategoryTypeById]);
+
+  const monthIncomeBudgetTotal = useMemo(() => {
+    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+    const entries = Object.entries(monthBudgets || {});
+    if (!entries.length) return 0;
+    let sum = 0;
+    for (const [categoryId, total] of entries) {
+      const cat = (categories || []).find((c) => c?._id === categoryId);
+      const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+      if (type && type !== 'income') continue;
+      sum += Number(total) || 0;
+    }
+    return Number(sum) || 0;
+  }, [budgetsByMonth, selectedMonth, categories, budgetCategoryTypeById]);
+
   const monthIncomeTotal = useMemo(() => {
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
     return src.filter((t) => t?.type === 'income').reduce((s, t) => s + (Number(t?.amount) || 0), 0);
@@ -625,17 +687,7 @@ export default function Dashboard() {
     return src.filter((t) => t?.type === 'expense').reduce((s, t) => s + (Number(t?.amount) || 0), 0);
   }, [stats.transactionsAll]);
 
-  const todaySpend = useMemo(() => {
-    const parsed = selectedParsed;
-    if (!parsed) return 0;
-    const nowParts = nowBkk;
-    if (!nowParts || nowParts.year !== parsed.year || nowParts.monthIndex !== parsed.monthIndex) return 0;
-    const todayKey = toBangkokISODateKey(Date.now());
-    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
-    return src
-      .filter((t) => t?.type === 'expense' && toBangkokISODateKey(t?.date) === todayKey)
-      .reduce((s, t) => s + (Number(t?.amount) || 0), 0);
-  }, [stats.transactionsAll, selectedParsed, nowBkk]);
+  const todaySpend = useMemo(() => Number(stats?.todayExpenseTotal) || 0, [stats?.todayExpenseTotal]);
 
   const daysInSelectedMonth = useMemo(() => {
     const parsed = selectedParsed;
@@ -645,6 +697,14 @@ export default function Dashboard() {
     return Number.isFinite(n) && n > 0 ? n : 30;
   }, [selectedParsed]);
 
+  const daysInCurrentMonth = useMemo(() => {
+    const p = nowBkk;
+    if (!p) return 30;
+    const d = new Date(p.year, p.monthIndex + 1, 0);
+    const n = d.getDate();
+    return Number.isFinite(n) && n > 0 ? n : 30;
+  }, [nowBkk]);
+
   const daysUntilReset = useMemo(() => {
     const parsed = selectedParsed;
     if (!parsed) return 0;
@@ -653,15 +713,26 @@ export default function Dashboard() {
     return Math.max(0, (Number(daysInSelectedMonth) || 0) - (Number(nowParts.day) || 0) + 1);
   }, [selectedParsed, nowBkk, daysInSelectedMonth]);
 
-  const dailyTarget = useMemo(() => {
-    if (monthExpenseBudgetTotal > 0) return monthExpenseBudgetTotal / Math.max(1, daysInSelectedMonth);
-    return 300;
-  }, [monthExpenseBudgetTotal, daysInSelectedMonth]);
+  const dailyTargetToday = useMemo(() => {
+    const incomeActual = Number(stats?.currentMonthIncomeTotal) || 0;
+    const incomeBudget = Number(currentMonthIncomeBudgetTotal) || 0;
+    const base = incomeActual > 0 ? incomeActual : incomeBudget;
+    if (base > 0) return base / Math.max(1, daysInCurrentMonth);
+    return 0;
+  }, [stats?.currentMonthIncomeTotal, currentMonthIncomeBudgetTotal, daysInCurrentMonth]);
 
   const monthRemaining = useMemo(() => {
-    if (monthExpenseBudgetTotal > 0) return Math.max(0, monthExpenseBudgetTotal - monthExpenseTotal);
-    return Math.max(0, monthIncomeTotal - monthExpenseTotal);
-  }, [monthExpenseBudgetTotal, monthExpenseTotal, monthIncomeTotal]);
+    const incomeActual = Number(monthIncomeTotal) || 0;
+    const expenseActual = Number(monthExpenseTotal) || 0;
+    const incomeBudget = Number(monthIncomeBudgetTotal) || 0;
+    const expenseBudget = Number(monthExpenseBudgetTotal) || 0;
+
+    // Prefer actual income as the base for "remaining this month".
+    // If the user has no income transactions yet, fall back to income budget (if any),
+    // then to expense budget (classic budget mode).
+    const base = incomeActual > 0 ? incomeActual : incomeBudget > 0 ? incomeBudget : expenseBudget;
+    return base - expenseActual;
+  }, [monthExpenseBudgetTotal, monthExpenseTotal, monthIncomeTotal, monthIncomeBudgetTotal]);
 
   const healthAnalysis = useMemo(() => {
     const income = Number(monthIncomeTotal) || 0;
@@ -870,13 +941,13 @@ export default function Dashboard() {
       });
     }
 
-    if (dailyTarget > 0 && todaySpend > dailyTarget * 1.25) {
+    if (isCurrentMonth && dailyTargetToday > 0 && todaySpend > dailyTargetToday * 1.25) {
       push({
         id: `daily_over_${selectedMonth}`,
         tone: 'amber',
         icon: TrendingDownIcon,
         title: 'วันนี้ใช้เกินเป้าที่ตั้งไว้',
-        body: `ใช้ไป ${formatTHB(todaySpend)} จากเป้า ${formatTHB(dailyTarget)}`,
+        body: `ใช้ไป ${formatTHB(todaySpend)} จากเป้า ${formatTHB(dailyTargetToday)}`,
         href: '/transactions',
         cta: 'ดูรายการวันนี้',
       });
@@ -932,7 +1003,7 @@ export default function Dashboard() {
     daysInSelectedMonth,
     daysUntilReset,
     todaySpend,
-    dailyTarget,
+    dailyTargetToday,
     leakItems,
     healthAnalysis,
     selectedMonth,
@@ -1013,12 +1084,12 @@ export default function Dashboard() {
   /* --- JSX Rendering --- */
 
   return (
-    <main className="min-h-[100dvh] bg-[#04161c] text-slate-100">
+    <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
       <div className="mx-auto w-full max-w-lg px-4 py-5 space-y-4">
         {/* Top bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="h-11 w-11 rounded-full bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 flex items-center justify-center shrink-0">
+            <div className="h-11 w-11 rounded-full bg-[var(--app-surface)] shadow-sm shadow-black/10 border border-[color:var(--app-border)] flex items-center justify-center shrink-0">
               {userProfile.profilePic ? (
                 <img
                   src={userProfile.profilePic}
@@ -1033,9 +1104,9 @@ export default function Dashboard() {
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-semibold text-slate-400 truncate">Welcome back</div>
-              <div className="text-lg font-extrabold text-slate-50 truncate">{userProfile.name || 'Balanz'}</div>
-              <div className="text-[11px] font-semibold text-slate-500">{formatCurrentDate()}</div>
+              <div className="text-[12px] font-semibold text-[color:var(--app-muted)] truncate">Welcome back</div>
+              <div className="text-lg font-extrabold text-[color:var(--app-text)] truncate">{userProfile.name || 'Balanz'}</div>
+              <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{formatCurrentDate()}</div>
             </div>
           </div>
 
@@ -1043,7 +1114,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowCurrencyModal(true)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 text-slate-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--app-surface)] shadow-sm shadow-black/10 border border-[color:var(--app-border)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
               aria-label="อัตราแลกเปลี่ยน"
               title="อัตราแลกเปลี่ยน"
             >
@@ -1055,13 +1126,13 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowNotifications(true)}
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0b2730] shadow-sm shadow-black/10 border border-white/10 text-slate-200 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
+              className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--app-surface)] shadow-sm shadow-black/10 border border-[color:var(--app-border)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
               aria-label="การแจ้งเตือน"
               title="การแจ้งเตือน"
             >
               {unreadNotifCount > 0 && (
                 <span
-                  className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-[#04161c]"
+                  className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-[color:var(--app-bg)]"
                   aria-label={`มีการแจ้งเตือนใหม่ ${unreadNotifCount} รายการ`}
                 >
                   {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
@@ -1074,37 +1145,37 @@ export default function Dashboard() {
 
         {/* Month selector */}
         <div className="flex items-center justify-between gap-3">
-          <div className="flex-1 rounded-3xl border border-white/10 bg-[#0b2730] p-2 shadow-sm shadow-black/10">
+          <div className="flex-1 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-2 shadow-sm shadow-black/10">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setCurrentMonthIndex((p) => Math.max(0, p - 1))}
                 disabled={currentMonthIndex === 0}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                 aria-label="เดือนก่อนหน้า"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
 
-	              <button
-	                type="button"
-	                onClick={() => {
-	                  const p = parseThaiMonthLabel(selectedMonth);
-	                  setMonthPickerYear(p?.year || new Date().getFullYear());
-	                  setShowMonthPicker(true);
-	                }}
-	                className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-center hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-	                aria-label="เปิดปฏิทินเลือกเดือน"
-	              >
-	                <div className="text-[11px] font-semibold text-slate-400">เดือนที่เลือก</div>
-	                <div className="truncate text-sm font-extrabold text-slate-50">{selectedMonth}</div>
-	              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const p = parseThaiMonthLabel(selectedMonth);
+                  setMonthPickerYear(p?.year || new Date().getFullYear());
+                  setShowMonthPicker(true);
+                }}
+                className="min-w-0 flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-center hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                aria-label="เปิดปฏิทินเลือกเดือน"
+              >
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เดือนที่เลือก</div>
+                <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{selectedMonth}</div>
+              </button>
 
               <button
                 type="button"
                 onClick={() => setCurrentMonthIndex((p) => Math.min(months.length - 1, p + 1))}
                 disabled={currentMonthIndex === months.length - 1}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                 aria-label="เดือนถัดไป"
               >
                 <ChevronRight className="h-5 w-5" />
@@ -1114,7 +1185,7 @@ export default function Dashboard() {
 
           <Link
             href="/budget"
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 text-sm font-extrabold text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
           >
             <Plus className="h-4 w-4" />
             งบประมาณ
@@ -1132,16 +1203,16 @@ export default function Dashboard() {
             className="fixed inset-0 z-[75] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
             onClick={(e) => e.target === e.currentTarget && setShowMonthPicker(false)}
           >
-            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
-              <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
+              <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
                 <div>
-                  <div className="text-sm font-extrabold text-slate-50">เลือกเดือน</div>
-                  <div className="text-[11px] font-semibold text-slate-400">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกเดือน</div>
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อดูสรุปของเดือนนั้น</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
                   aria-label="ปิด"
                 >
                   <X className="h-5 w-5" />
@@ -1158,17 +1229,17 @@ export default function Dashboard() {
                       if (typeof next === 'number') setMonthPickerYear(next);
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                     aria-label="ปีก่อนหน้า"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
-                    <div className="text-sm font-extrabold text-slate-50">
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">
                       {Number(monthPickerYear) + 543}
                     </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-slate-400">พ.ศ.</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">พ.ศ.</div>
                   </div>
 
                   <button
@@ -1179,7 +1250,7 @@ export default function Dashboard() {
                       if (typeof prev === 'number') setMonthPickerYear(prev);
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) <= 0}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                     aria-label="ปีถัดไป"
                   >
                     <ChevronRight className="h-5 w-5" />
@@ -1203,7 +1274,7 @@ export default function Dashboard() {
                           'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
                           'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
                           disabled
-                            ? 'border-white/10 bg-white/5 text-slate-500 opacity-50 cursor-not-allowed'
+                            ? 'border-white/10 bg-white/5 text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
                             : isActive
                               ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
                               : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
@@ -1246,14 +1317,14 @@ export default function Dashboard() {
             className="fixed inset-0 z-[70] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
             onClick={(e) => e.target === e.currentTarget && setShowNotifications(false)}
           >
-            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-[#0b2730] shadow-2xl shadow-black/40">
+            <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
               <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
                 <div className="flex items-center gap-2">
                   <div className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
                     <Bell className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <div className="text-sm font-extrabold text-slate-50">การแจ้งเตือน</div>
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">การแจ้งเตือน</div>
                     <div className="text-[11px] font-semibold text-slate-400">
                       {unreadNotifCount > 0 ? `ยังไม่อ่าน ${unreadNotifCount} รายการ` : 'ไม่มีรายการที่ยังไม่อ่าน'}
                     </div>
@@ -1298,7 +1369,7 @@ export default function Dashboard() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="truncate text-sm font-extrabold text-slate-50">{n.title}</div>
+                              <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{n.title}</div>
                               <div className="mt-1 text-xs font-semibold text-slate-400">{n.body}</div>
                             </div>
                             {!read && <span className="mt-1 h-2 w-2 rounded-full bg-rose-400" aria-hidden="true" />}
@@ -1377,7 +1448,7 @@ export default function Dashboard() {
         {/* Summary grid (match reference UI) */}
         <div className="grid grid-cols-2 gap-3">
           {/* Financial health */}
-          <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
             <div className="flex items-start justify-between">
               <div className="relative h-14 w-14">
                 {(() => {
@@ -1388,7 +1459,7 @@ export default function Dashboard() {
                   return (
                     <svg viewBox="0 0 56 56" className="h-14 w-14">
                       <g transform="rotate(-90 28 28)">
-                        <circle cx="28" cy="28" r={r} fill="none" stroke="#1F3340" strokeWidth="6" />
+                        <circle cx="28" cy="28" r={r} fill="none" stroke="var(--app-border)" strokeWidth="6" />
                         <circle
                           cx="28"
                           cy="28"
@@ -1400,7 +1471,7 @@ export default function Dashboard() {
                           strokeDasharray={`${dash} ${Math.max(0, circ - dash)}`}
                         />
                       </g>
-                      <text x="28" y="33" textAnchor="middle" fontSize="16" fill="#E2E8F0" fontWeight="800">
+                      <text x="28" y="33" textAnchor="middle" fontSize="16" fill="var(--app-text)" fontWeight="800">
                         {pct}
                       </text>
                     </svg>
@@ -1408,34 +1479,38 @@ export default function Dashboard() {
                 })()}
               </div>
               <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center">
-                <Lightbulb className="h-6 w-6 text-slate-500" aria-hidden="true" />
+                <Lightbulb className="h-6 w-6 text-[color:var(--app-muted-2)]" aria-hidden="true" />
               </div>
             </div>
-            <div className="mt-3 text-base font-extrabold text-slate-50">สุขภาพการเงิน</div>
+            <div className="mt-3 text-base font-extrabold text-[color:var(--app-text)]">สุขภาพการเงิน</div>
             <div className={`mt-1 text-xs font-semibold ${healthAnalysis.tone}`}>{healthAnalysis.label}</div>
             <div className="mt-2 text-[11px] font-semibold text-slate-400">{healthAnalysis.summary}</div>
-            <div className="mt-2 line-clamp-2 text-[11px] font-semibold text-slate-500">{healthAnalysis.hint}</div>
+            <div className="mt-2 line-clamp-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{healthAnalysis.hint}</div>
           </div>
 
           {/* Right column */}
           <div className="grid grid-rows-2 gap-3">
-            <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
               <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
               <div className="mt-1 flex items-end gap-2">
-                <div className="text-2xl font-extrabold text-slate-50">{formatTHB(todaySpend)}</div>
-                <div className="pb-1 text-sm font-semibold text-slate-500">/ {formatTHB(dailyTarget)}</div>
+                <div className="text-2xl font-extrabold text-[color:var(--app-text)]">{formatTHB(todaySpend)}</div>
+                <div className="pb-1 text-sm font-semibold text-[color:var(--app-muted-2)]">
+                  {dailyTargetToday > 0 ? `ใช้ได้ต่อวัน ${formatTHB(dailyTargetToday)}` : 'ยังไม่มีรายรับเดือนนี้'}
+                </div>
               </div>
               <div className="mt-3 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-emerald-400"
-                  style={{ width: `${Math.max(0, Math.min(100, (todaySpend / Math.max(1, dailyTarget)) * 100))}%` }}
+                  style={{ width: `${dailyTargetToday > 0 ? Math.max(0, Math.min(100, (todaySpend / dailyTargetToday) * 100)) : 0}%` }}
                 />
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
               <div className="text-xs font-semibold text-slate-400">คงเหลือเดือนนี้</div>
-              <div className="mt-1 text-3xl font-extrabold text-slate-50">{loading ? '—' : formatTHB(monthRemaining)}</div>
+              <div className={`mt-1 text-3xl font-extrabold ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
+                {loading ? '—' : formatTHB(monthRemaining)}
+              </div>
             </div>
           </div>
         </div>
@@ -1444,7 +1519,7 @@ export default function Dashboard() {
         {leakItems.length > 0 && (
           <>
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-slate-50">จุดรั่วไหล</h2>
+              <h2 className="text-lg font-extrabold text-[color:var(--app-text)]">จุดรั่วไหล</h2>
               <Link href="/analytics" className="text-sm font-extrabold text-sky-300 hover:text-sky-200">
                 ดูทั้งหมด
               </Link>
@@ -1452,11 +1527,11 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-3 gap-3">
               {leakItems.map((it) => (
-                <div key={it.id} className="rounded-3xl border border-white/10 bg-[#0b2730] p-4 shadow-sm shadow-black/10">
+                <div key={it.id} className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
                   <div className="mx-auto h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-rose-200">
                     <div className="scale-90">{renderIcon(it.icon)}</div>
                   </div>
-                  <div className="mt-3 text-center text-sm font-extrabold text-slate-50 truncate">{it.name}</div>
+                  <div className="mt-3 text-center text-sm font-extrabold text-[color:var(--app-text)] truncate">{it.name}</div>
                   <div className="mt-1 text-center text-sm font-extrabold text-rose-300">
                     -{formatTHB(it.amount)}
                   </div>
@@ -1467,10 +1542,10 @@ export default function Dashboard() {
         )}
 
         {/* Budget */}
-        <div className="rounded-3xl border border-white/10 bg-[#0b2730] p-5 shadow-sm shadow-black/10">
+        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm shadow-black/10">
           <div className="flex items-center justify-between">
-            <div className="text-lg font-extrabold text-slate-50">งบประมาณ</div>
-            <div className="text-xs font-semibold text-slate-500">รีเซ็ตใน {daysUntilReset} วัน</div>
+            <div className="text-lg font-extrabold text-[color:var(--app-text)]">งบประมาณ</div>
+            <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
           </div>
 
           {budgetRows.length === 0 ? (
@@ -1491,10 +1566,10 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
-                      <div className="text-sm font-extrabold text-slate-50 truncate">{r.name}</div>
+                      <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
                     </div>
                     <div className="text-sm font-semibold text-slate-200">
-                      {formatTHB(r.spent)} <span className="text-slate-500">/ {formatTHB(r.budget)}</span>
+                      {formatTHB(r.spent)} <span className="text-[color:var(--app-muted-2)]">/ {formatTHB(r.budget)}</span>
                     </div>
                   </div>
                   <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
@@ -1511,14 +1586,14 @@ export default function Dashboard() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="h-8 w-1 rounded-full bg-emerald-400" />
-              <h2 className="text-lg sm:text-xl font-extrabold text-slate-50">ธุรกรรมล่าสุด</h2>
+              <h2 className="text-lg sm:text-xl font-extrabold text-[color:var(--app-text)]">ธุรกรรมล่าสุด</h2>
             </div>
             <Link href="/transactions" className="text-sm font-extrabold text-emerald-300 hover:text-emerald-200">
               ดูทั้งหมด
             </Link>
           </div>
           
-          <div className="mt-3 rounded-3xl border border-white/10 bg-[#0b2730] p-4 sm:p-5 shadow-sm shadow-black/10">
+          <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 sm:p-5 shadow-sm shadow-black/10">
             
             {loading ? (
               <div className="text-center py-10">
@@ -1547,7 +1622,7 @@ export default function Dashboard() {
                     }}
                     role="button"
                     tabIndex={0}
-                    className="group w-full cursor-pointer rounded-3xl border border-white/10 bg-[#071f26] p-4 text-left shadow-sm shadow-black/10 hover:bg-white/5 hover:shadow-md transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                    className="group w-full cursor-pointer rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-3)] p-4 text-left shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] hover:shadow-md transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -1566,7 +1641,7 @@ export default function Dashboard() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="truncate text-sm font-extrabold text-slate-50">
+                              <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
                                 {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
                               </div>
                               <div className="mt-1 truncate text-xs font-semibold text-slate-400">
@@ -1574,7 +1649,7 @@ export default function Dashboard() {
                               </div>
                             </div>
                           </div>
-                          <div className="mt-2 text-[11px] font-semibold text-slate-500">
+                          <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                             {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
                           </div>
                         </div>
@@ -1627,7 +1702,7 @@ export default function Dashboard() {
           className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
           onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
         >
-          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
+          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
             {/* Modal Header */}
             <div className="relative bg-gradient-to-br from-teal-500 via-teal-600 to-teal-700 text-white p-6 overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
@@ -1718,7 +1793,7 @@ export default function Dashboard() {
                     placeholder="0.00"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">฿</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)] font-semibold">฿</span>
                 </div>
               </div>
 
@@ -1794,7 +1869,7 @@ export default function Dashboard() {
           className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
           onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
         >
-          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
+          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
             {/* Modal Header */}
             <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white p-6 overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
@@ -1884,7 +1959,7 @@ export default function Dashboard() {
                     className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 font-semibold">฿</span>
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)] font-semibold">฿</span>
                 </div>
               </div>
 
@@ -1957,14 +2032,14 @@ export default function Dashboard() {
       {/* View Transaction Modal */}
       {showViewModal && viewingTransaction && (
         <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && setShowViewModal(false)}>
-          <div className="bg-[#0b2730] text-slate-100 border border-white/10 rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-white/10 bg-white/5 flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg"
                 style={{ background: viewingTransaction.type === 'income' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}>
                 {renderIcon(viewingTransaction.category?.icon)}
               </div>
               <div>
-                <h3 className="text-lg font-extrabold text-slate-50">{viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}</h3>
+                <h3 className="text-lg font-extrabold text-[color:var(--app-text)]">{viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}</h3>
                 <p className="text-xs text-slate-400 font-semibold">{viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}</p>
               </div>
             </div>

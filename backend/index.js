@@ -119,7 +119,11 @@ app.get('/callback', passport.authenticate('line', {
   // Successful authentication
   // Generate JWT token for the user
   const user = req.user;
-  const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET);
+  const token = jwt.sign(
+    { userId: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
   // Redirect to frontend with token and profilePic as query params
   const profilePic = encodeURIComponent(user.profilePic || '');
   res.redirect(`http://localhost:3000/dashboard?token=${token}&profilePic=${profilePic}`);
