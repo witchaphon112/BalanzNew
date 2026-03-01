@@ -1,5 +1,7 @@
 "use client";
 import { useRef, useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import LoadingMascot from '@/components/LoadingMascot';
 import ExportButton from '../../components/ExportButton';
 import {
   ChevronDown,
@@ -99,9 +101,11 @@ const CategoryIcon = ({ iconName, className = 'w-6 h-6' }) => {
 };
 
 export default function TransactionsPage() {
+  const [mounted, setMounted] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [bootLoading, setBootLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [filterType, setFilterType] = useState('all'); // all, income, expense
   const [searchQuery, setSearchQuery] = useState('');
@@ -132,14 +136,42 @@ export default function TransactionsPage() {
   });
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
       window.location.href = '/login';
       return;
     }
 
-    fetchTransactions(token);
-    fetchCategories(token);
+    let cancelled = false;
+    const loadInitial = async () => {
+      setBootLoading(true);
+      setError('');
+      try {
+        const [tRes, cRes] = await Promise.all([
+          fetch(`${API_BASE}/api/transactions`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API_BASE}/api/categories`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        if (!tRes.ok) throw new Error('Failed to fetch transactions');
+        if (!cRes.ok) throw new Error('Failed to fetch categories');
+        const [tData, cData] = await Promise.all([tRes.json(), cRes.json()]);
+        const sorted = (Array.isArray(tData) ? tData : []).sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (cancelled) return;
+        setTransactions(sorted);
+        setCategories(Array.isArray(cData) ? cData : []);
+      } catch (e) {
+        if (cancelled) return;
+        setError('เกิดข้อผิดพลาด: ' + (e?.message || 'Error'));
+      } finally {
+        if (!cancelled) setBootLoading(false);
+      }
+    };
+
+    loadInitial();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -643,6 +675,33 @@ export default function TransactionsPage() {
     setCalendarMonth(new Date(start.getFullYear(), start.getMonth(), 1));
   };
 
+  const applyDayPreset = (key) => {
+    if (key !== 'today' && key !== 'yesterday') return;
+    setDateRange({ start: '', end: '' });
+    setSelectedMonth('');
+    setDayFilter(key);
+    try { setOpenDropdown(null); } catch {}
+  };
+
+  const setExplicitRange = (nextStart, nextEnd) => {
+    const start = String(nextStart || '');
+    const end = String(nextEnd || '');
+    let s = start;
+    let e = end;
+    if (s && e && e < s) {
+      const tmp = s;
+      s = e;
+      e = tmp;
+    }
+    setDateRange({ start: s, end: e });
+    setDayFilter('all');
+    setSelectedMonth('');
+    if (s) {
+      const d = new Date(`${s}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) setCalendarMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    }
+  };
+
   const onPickDay = (isoKey) => {
     if (!isoKey) return;
     // switching to explicit range => clear old modes
@@ -714,9 +773,9 @@ export default function TransactionsPage() {
                   'relative aspect-square w-full rounded-2xl text-[13px] font-extrabold transition motion-reduce:transition-none',
                   'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
                   'disabled:opacity-35 disabled:cursor-not-allowed',
-                  inRange ? 'bg-emerald-500/10 text-[color:var(--app-text)]' : 'bg-white/0 text-[color:var(--app-text)] hover:bg-white/5',
+                  inRange ? 'bg-emerald-500/10 text-[color:var(--app-text)]' : 'bg-white/0 text-[color:var(--app-text)] hover:bg-[var(--app-surface-2)]',
                   selected ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20 hover:bg-emerald-300' : '',
-                  isToday && !selected ? 'ring-1 ring-sky-400/35 text-sky-100' : '',
+                  isToday && !selected ? 'ring-1 ring-sky-400/35' : '',
                 ].join(' ')}
                 aria-label={`${formatThaiShortDate(key) || key}${isToday ? ' (วันนี้)' : ''}${isFuture ? ' (อนาคต)' : ''}`}
               >
@@ -731,6 +790,14 @@ export default function TransactionsPage() {
       </div>
     );
   };
+
+  if (bootLoading) {
+    return (
+      <main className="min-h-[100dvh] bg-transparent text-[color:var(--app-text)] flex items-center justify-center p-6">
+        <LoadingMascot label="กำลังโหลด..." size={88} />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
@@ -985,8 +1052,10 @@ export default function TransactionsPage() {
                       aria-label="เลือกช่วงเวลา"
                     >
                       {/* Presets */}
-                      <div className="flex gap-2 overflow-x-auto border-b border-white/10 px-3 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex gap-2 overflow-x-auto border-b border-[color:var(--app-border)] px-3 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {[
+                          { key: 'today', label: 'วันนี้' },
+                          { key: 'yesterday', label: 'เมื่อวาน' },
                           { key: 'thisWeek', label: 'สัปดาห์นี้' },
                           { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
                           { key: 'last7', label: '7 วันล่าสุด' },
@@ -997,12 +1066,12 @@ export default function TransactionsPage() {
                           <button
                             key={p.key}
                             type="button"
-                            onClick={() => applyPreset(p.key)}
+                            onClick={() => (p.key === 'today' || p.key === 'yesterday' ? applyDayPreset(p.key) : applyPreset(p.key))}
                             className={[
                               'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
                               p.key === 'reset'
-                                ? 'border-rose-400/20 bg-rose-500/10 text-rose-200 hover:bg-rose-500/15'
-                                : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+                                ? 'border-rose-500/25 bg-rose-500/10 text-[color:var(--app-danger)] hover:bg-rose-500/15'
+                                : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]',
                             ].join(' ')}
                           >
                             {p.label}
@@ -1011,28 +1080,60 @@ export default function TransactionsPage() {
                       </div>
 
                       {/* Selected range summary */}
-                      <div className="border-b border-white/10 px-3 py-2.5">
+                      <div className="border-b border-[color:var(--app-border)] px-3 py-2.5">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] font-semibold text-slate-400">ช่วงที่เลือก</div>
+                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
                           {(dateRange?.start || dateRange?.end) && (
                             <button
                               type="button"
                               onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                              className="text-[11px] font-extrabold text-slate-300 hover:text-slate-100"
+                              className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
                             >
                               ล้าง
                             </button>
                           )}
                         </div>
                         <div className="mt-2 flex items-center gap-2">
-                          <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
+                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
                             {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
                           </div>
                           <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-                          <div className="flex-1 truncate rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-100">
+                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
                             {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
                           </div>
                         </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <label className="block">
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
+                            <input
+                              type="date"
+                              value={dateRange?.start || ''}
+                              onChange={(e) => setExplicitRange(e.target.value, dateRange?.end || '')}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
+                            <input
+                              type="date"
+                              value={dateRange?.end || ''}
+                              min={dateRange?.start || undefined}
+                              onChange={(e) => setExplicitRange(dateRange?.start || '', e.target.value)}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            />
+                          </label>
+                        </div>
+
+                        {dateRange?.start && !dateRange?.end && (
+                          <button
+                            type="button"
+                            onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
+                            className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                          >
+                            ใช้วันเดียว (เริ่ม = สิ้นสุด)
+                          </button>
+                        )}
                       </div>
 
                       {/* Calendar */}
@@ -1041,7 +1142,7 @@ export default function TransactionsPage() {
                           <button
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                             aria-label="เดือนก่อนหน้า"
                           >
                             <ChevronLeft className="h-4 w-4" />
@@ -1050,21 +1151,21 @@ export default function TransactionsPage() {
                             <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
                               {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
                             </div>
-                            <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
                               {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                             aria-label="เดือนถัดไป"
                           >
                             <ChevronRight className="h-4 w-4" />
                           </button>
                         </div>
 
-                        <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 p-3">
+                        <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3">
                           {renderMonth(calendarMonth)}
                         </div>
 
@@ -1072,7 +1173,7 @@ export default function TransactionsPage() {
                           <button
                             type="button"
                             onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                            className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                           >
                             ล้าง
                           </button>
@@ -1281,9 +1382,9 @@ export default function TransactionsPage() {
       </div>
 
       {/* Edit Modal */}
-      {showEditModal && editingTransaction && (
+      {mounted && showEditModal && editingTransaction && createPortal((
         <div
-          className="fixed inset-0 bg-slate-950/30 backdrop-blur-sm z-[9999] animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+88px)] sm:pb-0 overflow-hidden overscroll-contain"
+          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
           onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
         >
           <div
@@ -1444,7 +1545,7 @@ export default function TransactionsPage() {
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
     </main>
   );
 }

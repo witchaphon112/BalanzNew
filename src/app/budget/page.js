@@ -1633,7 +1633,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 type="button"
                 onClick={closeDeleteCategoryModal}
                 disabled={deleteCategoryLoading}
-                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                 aria-label="ปิด"
                 title="ปิด"
               >
@@ -1641,7 +1641,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               </button>
 
               <div className="flex items-center gap-3 pr-12">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-200 ring-1 ring-rose-400/20">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-[color:var(--app-danger)] ring-1 ring-rose-400/20">
                   <Trash2 className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
@@ -1658,8 +1658,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
             <div className="p-5 pb-[calc(env(safe-area-inset-bottom)+24px)] sm:pb-5">
               <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 ring-1 ring-rose-400/10">
-                <div className="text-xs font-extrabold text-rose-200">คำเตือน</div>
-                <div className="mt-1 text-[11px] font-semibold text-rose-100/90">
+                <div className="text-xs font-extrabold text-[color:var(--app-danger)]">คำเตือน</div>
+                <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-text)]">
                   การลบหมวดหมู่ไม่สามารถย้อนกลับได้
                 </div>
               </div>
@@ -1669,7 +1669,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   type="button"
                   onClick={closeDeleteCategoryModal}
                   disabled={deleteCategoryLoading}
-                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10 disabled:opacity-40"
+                  className="py-3 rounded-2xl border border-[color:var(--app-border)] font-extrabold text-[color:var(--app-text)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                 >
                   ยกเลิก
                 </button>
@@ -1731,21 +1731,21 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
             <form onSubmit={handleSaveBudget} className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+32px)] sm:pb-6">
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/5">
+                <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 shadow-sm shadow-black/5">
                   <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">ใช้ไป</div>
-                  <div className="mt-0.5 text-sm font-extrabold text-slate-100">{formatCurrency(editingCategory.spent || 0)}</div>
+                  <div className="mt-0.5 text-sm font-extrabold text-[color:var(--app-text)]">{formatCurrency(editingCategory.spent || 0)}</div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/5">
+                <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 shadow-sm shadow-black/5">
                   <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">คงเหลือ</div>
-                  <div className={['mt-0.5 text-sm font-extrabold', (editingCategory.remaining || 0) < 0 ? 'text-rose-300' : 'text-emerald-200'].join(' ')}>
+                  <div className={['mt-0.5 text-sm font-extrabold', (editingCategory.remaining || 0) < 0 ? 'text-rose-500' : 'text-emerald-500'].join(' ')}>
                     {formatCurrency(editingCategory.remaining || 0)}
                   </div>
                 </div>
               </div>
 
               <div className="mt-5">
-                <label className="block text-xs font-semibold text-slate-300 mb-2">วงเงินที่ต้องการ (บาท)</label>
-                <div className="relative rounded-3xl border border-white/10 bg-white/5 px-4 py-3 shadow-sm ring-1 ring-white/5 focus-within:ring-emerald-400/25">
+                <label className="block text-xs font-semibold text-[color:var(--app-muted)] mb-2">วงเงินที่ต้องการ (บาท)</label>
+                <div className="relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 shadow-sm shadow-black/5 focus-within:ring-2 focus-within:ring-emerald-400/25">
                   <input
                     type="number"
                     className="w-full bg-transparent text-3xl font-extrabold text-[color:var(--app-text)] outline-none placeholder-[color:var(--app-muted-2)]"
@@ -1764,7 +1764,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <button
                   type="button"
                   onClick={() => setEditingCategory(null)}
-                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
+                  className="py-3 rounded-2xl border border-[color:var(--app-border)] font-extrabold text-[color:var(--app-text)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)]"
                 >
                   ยกเลิก
                 </button>
@@ -1780,7 +1780,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 type="button"
                 onClick={() => openDeleteCategoryModal(editingCategory)}
                 disabled={String(editingCategory?.name || '').trim() === 'อื่นๆ'}
-                className="mt-3 w-full rounded-2xl border border-rose-400/20 bg-rose-500/10 py-3 text-rose-100 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
+                className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
               >
                 ลบหมวดนี้
               </button>
@@ -1794,12 +1794,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         const tone = toast.tone || 'info';
         const meta =
           tone === 'success'
-            ? { Icon: CheckCircle2, ring: 'ring-emerald-400/20', border: 'border-emerald-400/25', bg: 'bg-emerald-500/10', text: 'text-emerald-100' }
+            ? { Icon: CheckCircle2, ring: 'ring-emerald-400/20', border: 'border-emerald-400/25', bg: 'bg-emerald-500/10', text: 'text-emerald-600' }
             : tone === 'warning'
-              ? { Icon: AlertTriangle, ring: 'ring-amber-400/20', border: 'border-amber-400/25', bg: 'bg-amber-500/10', text: 'text-amber-100' }
+              ? { Icon: AlertTriangle, ring: 'ring-amber-400/20', border: 'border-amber-400/25', bg: 'bg-amber-500/10', text: 'text-amber-600' }
               : tone === 'error'
-                ? { Icon: AlertTriangle, ring: 'ring-rose-400/20', border: 'border-rose-400/25', bg: 'bg-rose-500/10', text: 'text-rose-100' }
-                : { Icon: Info, ring: 'ring-sky-400/20', border: 'border-sky-400/25', bg: 'bg-sky-500/10', text: 'text-sky-100' };
+                ? { Icon: AlertTriangle, ring: 'ring-rose-400/20', border: 'border-rose-400/25', bg: 'bg-rose-500/10', text: 'text-rose-600' }
+                : { Icon: Info, ring: 'ring-sky-400/20', border: 'border-sky-400/25', bg: 'bg-sky-500/10', text: 'text-sky-600' };
         const IconComp = meta.Icon;
         return (
           <div
@@ -1823,12 +1823,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-extrabold text-[color:var(--app-text)]">แจ้งเตือน</div>
-                  <div className="mt-0.5 text-sm font-semibold text-slate-200 break-words">{toast.message}</div>
+                  <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted)] break-words">{toast.message}</div>
                 </div>
                 <button
                   type="button"
                   onClick={dismissToast}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                   aria-label="ปิดแจ้งเตือน"
                   title="ปิด"
                 >

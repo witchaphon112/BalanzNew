@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import LoadingMascot from '@/components/LoadingMascot';
 import {
   User,
   LogOut,
@@ -124,7 +125,14 @@ export default function Profile() {
           signal: controller.signal,
         });
         if (!res.ok) {
+          const contentType = String(res.headers.get('content-type') || '');
           const text = await res.text().catch(() => '');
+          const looksLikeMissingRoute =
+            contentType.includes('text/html') ||
+            /Cannot\s+GET\s+\/api\/leaderboard\/streak/i.test(text);
+          if (looksLikeMissingRoute) {
+            throw new Error('Backend ยังไม่มี endpoint Leaderboard (ลองรีสตาร์ท server ที่พอร์ต 5050)');
+          }
           throw new Error(text || 'ไม่สามารถโหลดอันดับได้');
         }
         const data = await res.json();
@@ -447,10 +455,7 @@ export default function Profile() {
   if (loading) {
     return (
       <div className="min-h-screen bg-transparent flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-[color:var(--app-muted)] font-medium">กำลังโหลดข้อมูล...</p>
-        </div>
+        <LoadingMascot label="กำลังโหลดข้อมูล..." size={88} />
       </div>
     );
   }
@@ -466,7 +471,7 @@ export default function Profile() {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
-      <div className="mx-auto w-full max-w-sm px-4 pb-24 pt-8">
+      <div className="mx-auto w-full max-w-md px-3 sm:px-4 pb-24 pt-8">
         <div className="rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.25)]">
           <div className="flex items-center gap-4">
             <div className="relative">

@@ -2,6 +2,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import LoadingMascot from '@/components/LoadingMascot';
 import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -527,7 +528,7 @@ export default function Analytics() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-400" />
+      <LoadingMascot label="กำลังโหลด..." size={88} />
     </div>
   );
 

@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon } from 'lucide-react';
 
 import Currency from '../currency/page';
+import LoadingMascot from '@/components/LoadingMascot';
 const CurrencyModalContent = ({ onClose }) => (
   <Currency onClose={onClose} />
 );
@@ -109,6 +111,12 @@ function renderIcon(iconKey) {
 }
 
 export default function Dashboard() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Store JWT token from query string to localStorage (for LINE login)
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -1089,7 +1097,7 @@ export default function Dashboard() {
 
   return (
     <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
-      <div className="mx-auto w-full max-w-lg px-4 py-5 space-y-4">
+      <div className="mx-auto w-full max-w-lg px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] space-y-4">
         {/* Top bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -1601,8 +1609,7 @@ export default function Dashboard() {
             
             {loading ? (
               <div className="text-center py-10">
-                <div className="inline-block w-8 h-8 border-4 border-white/10 border-t-emerald-400 rounded-full animate-spin"></div>
-                <p className="text-slate-400 mt-3 text-sm font-semibold">กำลังโหลด...</p>
+                <LoadingMascot label="กำลังโหลด..." size={72} />
               </div>
             ) : stats.recentTransactions.length === 0 ? (
               <div className="text-center py-10">
@@ -2034,42 +2041,88 @@ export default function Dashboard() {
       )}
 
       {/* View Transaction Modal */}
-      {showViewModal && viewingTransaction && (
-        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-md flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && setShowViewModal(false)}>
-          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/10 bg-white/5 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg"
-                style={{ background: viewingTransaction.type === 'income' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' }}>
-                {renderIcon(viewingTransaction.category?.icon)}
-              </div>
-              <div>
-                <h3 className="text-lg font-extrabold text-[color:var(--app-text)]">{viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}</h3>
-                <p className="text-xs text-slate-400 font-semibold">{viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}</p>
+      {mounted && showViewModal && viewingTransaction && createPortal((
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={(e) => e.target === e.currentTarget && setShowViewModal(false)}
+        >
+          <div
+            className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 overflow-hidden animate-slideUp flex flex-col max-h-[92dvh] sm:max-h-[85dvh]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ดูรายละเอียดธุรกรรม"
+          >
+            <div className="relative border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 pb-4 pt-3 sm:pt-4">
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-black/10 ring-1 ring-black/10 sm:hidden" aria-hidden="true" />
+
+              <button
+                type="button"
+                onClick={() => setShowViewModal(false)}
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                aria-label="ปิด"
+                title="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+
+              <div className="flex items-center gap-3 pr-12">
+                <div
+                  className="h-12 w-12 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0"
+                  style={{
+                    background: viewingTransaction.type === 'income'
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  }}
+                  aria-hidden="true"
+                >
+                  {renderIcon(viewingTransaction.category?.icon)}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">
+                    {viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                  </div>
+                  <h3 className="mt-0.5 truncate text-lg font-extrabold text-[color:var(--app-text)]">
+                    {viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}
+                  </h3>
+                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)] truncate">
+                    {new Date(viewingTransaction.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-400 font-semibold">จำนวนเงิน</span>
-                <span className="text-xl font-extrabold" style={{ color: viewingTransaction.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
-                  {viewingTransaction.type === 'expense' ? '-' : '+'}{viewingTransaction.amount.toLocaleString()} ฿
-                </span>
+
+            <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+24px)] space-y-4">
+              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
+                  <div className="text-2xl font-extrabold" style={{ color: viewingTransaction.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
+                    {viewingTransaction.type === 'expense' ? '-' : '+'}{formatTHB(viewingTransaction.amount)}
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-400 font-semibold">วันที่</span>
-                <span className="text-base font-semibold text-slate-200">{new Date(viewingTransaction.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+
+              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                <div className="text-xs font-semibold text-[color:var(--app-muted)]">หมายเหตุ</div>
+                <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
+                  {String(viewingTransaction.notes || '').trim() ? viewingTransaction.notes : '—'}
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-400 font-semibold">หมายเหตุ</span>
-                <span className="text-base text-slate-200">{viewingTransaction.notes || '-'}</span>
-              </div>
-              
             </div>
-            <div className="p-4 border-t border-white/10 bg-white/5 flex justify-end">
-              <button onClick={() => setShowViewModal(false)} className="py-2 px-6 bg-emerald-500 text-slate-950 font-extrabold rounded-xl hover:brightness-95 transition-all">ปิด</button>
+
+            <div className="border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-4">
+              <button
+                type="button"
+                onClick={() => setShowViewModal(false)}
+                className="w-full rounded-2xl bg-emerald-500 py-3 text-slate-950 font-extrabold hover:brightness-95 transition"
+              >
+                ปิด
+              </button>
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </main>
   );
 }

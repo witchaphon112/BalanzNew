@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 
 const MOCK_RATES = {
@@ -17,6 +18,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export default function Currency({ onClose }) {
   const currencies = useMemo(() => ['THB', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'AUD'], []);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const [amount, setAmount] = useState(0);
   const [currencyFrom, setCurrencyFrom] = useState('THB');
@@ -73,19 +79,23 @@ export default function Currency({ onClose }) {
     setCurrencyTo(currencyFrom);
   };
 
-  return (
+  const overlayClassName = onClose
+    ? 'fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4'
+    : 'fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4';
+
+  const sheetClassName = onClose
+    ? 'relative bg-[var(--app-surface)] text-[color:var(--app-text)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[94dvh] max-h-[94dvh] sm:h-auto sm:max-h-[85dvh] animate-slideUp'
+    : 'relative bg-[var(--app-surface)] text-[color:var(--app-text)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[92dvh] max-h-[92dvh] sm:h-auto sm:max-h-[85dvh] animate-slideUp';
+
+  const modal = (
     <div
-      className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+      className={overlayClassName}
       onClick={(e) => {
         if (!onClose) return;
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div
-        className="relative bg-[var(--app-surface)] text-[color:var(--app-text)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 overflow-hidden border border-[color:var(--app-border)] flex flex-col max-h-[90dvh] sm:max-h-[85dvh] animate-slideUp"
-        role="dialog"
-        aria-modal="true"
-      >
+      <div className={sheetClassName} role="dialog" aria-modal="true">
         {onClose && (
           <button
             type="button"
@@ -244,4 +254,11 @@ export default function Currency({ onClose }) {
       </div>
     </div>
   );
+
+  if (onClose) {
+    if (!mounted) return null;
+    return createPortal(modal, document.body);
+  }
+
+  return modal;
 }
