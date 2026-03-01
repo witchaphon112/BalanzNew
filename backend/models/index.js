@@ -7,4 +7,5 @@ module.exports = {
   ImportExportLog: require('./ImportExportLog'),
   NotificationCount: require('./NotificationCount'),
   LineLoginSession: require('./LineLoginSession'),
+  LineMessagingLinkSession: require('./LineMessagingLinkSession'),
 };

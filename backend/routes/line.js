@@ -1,12 +1,13 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const router = express.Router();
-const { User, Transaction, Category, ImportExportLog, LineLoginSession } = require('../models');
+const { User, Transaction, Category, ImportExportLog, LineLoginSession, LineMessagingLinkSession } = require('../models');
 const jwt = require('jsonwebtoken');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
 const SESSION_TTL_MS = 10 * 60 * 1000;
+const LINK_TTL_MS = 10 * 60 * 1000;
 
 // Create LINE client if token exists; otherwise provide a safe no-op client to avoid startup crash
 let client;
@@ -93,7 +94,7 @@ async function handleTextEvent(event) {
   // normalize: remove invisible/zero-width characters and soft-hyphens, then trim
   const text = rawText.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '').trim();
   const parsed = parseTransactionText(text);
-  const userId = event.source && event.source.userId;
+  const lineMessagingUserId = event.source && event.source.userId;
 
   // Diagnostic logging to help debug why some inputs fall through to unknown
   try {
@@ -113,7 +114,7 @@ async function handleTextEvent(event) {
     console.log('LINE incoming rawText:', rawText);
     console.log('LINE cleaned text:', text);
     console.log('LINE parsed:', parsed);
-    console.log('LINE event.userId:', userId, 'replyToken:', event.replyToken ? 'present' : 'missing');
+    console.log('LINE event.userId:', lineMessagingUserId, 'replyToken:', event.replyToken ? 'present' : 'missing');
   } catch (e) {
     // ignore logging errors
   }
@@ -184,56 +185,47 @@ async function handleTextEvent(event) {
     return sendReply(event.replyToken, message);
   }
 
-  if (!userId) {
+  if (!lineMessagingUserId) {
     // cannot map to user
     return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบ userId จาก LINE' });
   }
 
-  const oauthEmail = `${userId}@line.local`;
-  const [userByLineId, userByOAuthEmail] = await Promise.all([
-    User.findOne({ lineUserId: userId }),
-    User.findOne({ email: oauthEmail }),
+  const [userByMessagingId, userByLegacyLineId] = await Promise.all([
+    User.findOne({ lineMessagingUserId }),
+    // Backwards compat: some installs may have stored messaging userId in lineUserId
+    User.findOne({ lineUserId: lineMessagingUserId }),
   ]);
 
-  // Prefer the LINE OAuth account (email "<lineUserId>@line.local") if it exists,
-  // to keep the web-login user and LINE-bot user consistent.
-  let user = userByOAuthEmail || userByLineId;
-
-  if (userByOAuthEmail && userByLineId && String(userByOAuthEmail._id) !== String(userByLineId._id)) {
-    console.warn('LINE user mapping mismatch: both userByLineId and userByOAuthEmail exist. Preferring OAuth user.', {
-      lineUserId: userId,
-      userByLineId: String(userByLineId._id),
-      userByOAuthEmail: String(userByOAuthEmail._id),
-    });
-    // Try to attach lineUserId to the OAuth user and detach from the older record if needed.
+  // If we found a legacy record that stored Messaging userId in `lineUserId`,
+  // migrate it to the correct field so future lookups are consistent.
+  if (!userByMessagingId && userByLegacyLineId && !userByLegacyLineId.lineMessagingUserId) {
     try {
-      if (!userByOAuthEmail.lineUserId) {
-        userByOAuthEmail.lineUserId = String(userId);
-        await userByOAuthEmail.save();
+      userByLegacyLineId.lineMessagingUserId = String(lineMessagingUserId);
+      const email = String(userByLegacyLineId.email || '');
+      // If this looks like a bot-created placeholder account, detach legacy `lineUserId`
+      // to avoid confusing it with LINE Login (OAuth) ids.
+      if (
+        String(userByLegacyLineId.lineUserId || '') === String(lineMessagingUserId) &&
+        email &&
+        !email.endsWith('@line.local') &&
+        (/^line_/i.test(email) || /^line_msg_/i.test(email))
+      ) {
+        userByLegacyLineId.lineUserId = undefined;
       }
-      if (userByLineId.lineUserId && String(userByLineId.lineUserId) === String(userId) && String(userByLineId._id) !== String(userByOAuthEmail._id)) {
-        userByLineId.lineUserId = undefined;
-        await userByLineId.save();
-      }
+      await userByLegacyLineId.save();
     } catch (e) {
-      // If unique index isn't enforced yet or save fails, continue with the OAuth user anyway.
-    }
-  } else if (user && !user.lineUserId) {
-    // If user was found by oauthEmail, attach lineUserId for faster lookups.
-    try {
-      user.lineUserId = String(userId);
-      await user.save();
-    } catch {
-      // ignore
+      // ignore migration errors
     }
   }
+
+  let user = userByMessagingId || userByLegacyLineId;
 
   if (!user) {
     // Try to upsert user; if unique index on email causes E11000 (existing null email),
     // fall back to creating a user with a placeholder email to avoid duplicate-null collisions.
     let profile = null;
     try {
-      profile = await client.getProfile(userId);
+      profile = await client.getProfile(lineMessagingUserId);
     } catch (e) {
       // profile fetch may fail if CHANNEL_TOKEN not configured or permission denied - continue
     }
@@ -241,16 +233,20 @@ async function handleTextEvent(event) {
     // can cause E11000 on upsert. Instead, attempt an atomic create with a placeholder
     // unique email (based on the LINE userId), then fall back to find.
     try {
-      user = await User.findOne({ lineUserId: userId });
+      user = await User.findOne({ lineMessagingUserId });
       if (!user) {
-        // Use the same email convention as LINE OAuth login to keep a single account.
-        const placeholderEmail = oauthEmail;
+        const placeholderEmail = `line_msg_${lineMessagingUserId}@local`;
         try {
-          user = await User.create({ lineUserId: userId, name: (profile && profile.displayName) ? profile.displayName : '', profilePic: (profile && profile.pictureUrl) ? profile.pictureUrl : '', email: placeholderEmail });
+          user = await User.create({
+            lineMessagingUserId: String(lineMessagingUserId),
+            name: (profile && profile.displayName) ? profile.displayName : '',
+            profilePic: (profile && profile.pictureUrl) ? profile.pictureUrl : '',
+            email: placeholderEmail
+          });
         } catch (createErr) {
           if (createErr && createErr.code === 11000) {
             // race: another process created a user with the same placeholder or a null-email collision
-            user = await User.findOne({ lineUserId: userId });
+            user = await User.findOne({ lineMessagingUserId });
           } else {
             console.error('Failed to create user', createErr);
             throw createErr;
@@ -264,9 +260,9 @@ async function handleTextEvent(event) {
   }
 
   console.log('LINE resolved user mapping:', {
-    lineUserId: String(userId || ''),
-    userByLineId: userByLineId ? String(userByLineId._id) : null,
-    userByOAuthEmail: userByOAuthEmail ? String(userByOAuthEmail._id) : null,
+    lineMessagingUserId: String(lineMessagingUserId || ''),
+    userByMessagingId: userByMessagingId ? String(userByMessagingId._id) : null,
+    userByLegacyLineId: userByLegacyLineId ? String(userByLegacyLineId._id) : null,
     selectedUserId: user ? String(user._id) : null,
     selectedEmail: user?.email || null,
   });
@@ -276,7 +272,28 @@ async function handleTextEvent(event) {
   if (isWhoAmI) {
     return sendReply(event.replyToken, {
       type: 'text',
-      text: `บัญชีที่ผูกกับ LINE นี้\nuserId: ${String(user?._id || '-')}\nemail: ${String(user?.email || '-')}`,
+      text: `บัญชีที่ผูกกับแชท LINE นี้\nuserId: ${String(user?._id || '-')}\nemail: ${String(user?.email || '-')}\nlineMessagingUserId: ${String(lineMessagingUserId || '-')}`,
+    });
+  }
+
+  // Link flow: generate short code to connect this LINE chat to the current web account.
+  const isLink = /^\s*(เชื่อมบัญชี|เชื่อมเว็บ|link)\s*$/i.test(text);
+  if (isLink) {
+    const code = createLinkCode();
+    const codeHash = hashLinkCode(code);
+    const expiresAt = new Date(Date.now() + LINK_TTL_MS);
+    try {
+      await LineMessagingLinkSession.create({ codeHash, lineMessagingUserId: String(lineMessagingUserId), expiresAt });
+    } catch (e) {
+      console.error('LineMessagingLinkSession create failed', e);
+      return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ระบบสร้างโค้ดเชื่อมบัญชีไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+
+    const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const linkUrl = `${frontend}/profile?linkCode=${encodeURIComponent(code)}`;
+    return sendReply(event.replyToken, {
+      type: 'text',
+      text: `โค้ดเชื่อมบัญชี: ${code} (หมดอายุ 10 นาที)\n\nเปิดเว็บแล้วกดลิงก์นี้เพื่อเชื่อมอัตโนมัติ:\n${linkUrl}\n\nหรือไปหน้าโปรไฟล์แล้วกรอกโค้ดนี้ก็ได้`,
     });
   }
 
@@ -293,7 +310,7 @@ async function handleTextEvent(event) {
       await LineLoginSession.create({
         tokenHash,
         userId: user._id,
-        lineUserId: String(userId),
+        lineUserId: String(lineMessagingUserId),
         expiresAt,
       });
     } catch (e) {
@@ -342,7 +359,7 @@ async function handleTextEvent(event) {
 
   if (parsed.type && parsed.amount) {
     console.log('Parsed transaction:', parsed);
-    console.log('LINE will save transaction for user _id:', String(user?._id || ''), 'lineUserId:', String(userId || ''));
+    console.log('LINE will save transaction for user _id:', String(user?._id || ''), 'lineMessagingUserId:', String(lineMessagingUserId || ''));
     // ensure we save note into the same field existing docs use (`notes`) and keep `note` for compatibility
     const notesText = parsed.note || parsed.notes || '';
     // save transaction
@@ -517,6 +534,14 @@ function createSessionToken() {
 function hashSessionToken(token) {
   const secret = process.env.SESSION_TOKEN_SECRET || process.env.JWT_SECRET || CHANNEL_SECRET || 'dev-session-secret';
   return crypto.createHmac('sha256', String(secret)).update(String(token)).digest('hex');
+}
+
+function createLinkCode() {
+  return String(Math.floor(Math.random() * 900000) + 100000);
+}
+
+function hashLinkCode(code) {
+  return hashSessionToken(code);
 }
 
 function verifySignature(req, res, next) {

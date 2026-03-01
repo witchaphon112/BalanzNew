@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingMascot from '@/components/LoadingMascot';
 import {
   User,
@@ -57,6 +57,7 @@ const shiftBangkokISODateKey = (isoKey, deltaDays) => {
 
 export default function Profile() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState({ name: '', email: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -229,6 +230,55 @@ export default function Profile() {
     };
     fetchUser();
   }, []);
+
+  // Auto-link LINE chat (Messaging API) to this web account when arriving with ?linkCode=xxxxxx
+  useEffect(() => {
+    const code = searchParams?.get('linkCode');
+    if (!code) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const run = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('กรุณาเข้าสู่ระบบก่อนเชื่อมบัญชี');
+
+        setError('');
+        setSuccess('กำลังเชื่อม LINE...');
+        const res = await fetch(`${API_BASE}/api/auth/link-line-messaging`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ code }),
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || 'เชื่อมบัญชีไม่สำเร็จ');
+
+        if (!cancelled) {
+          setSuccess('เชื่อม LINE สำเร็จ');
+          setTimeout(() => setSuccess(''), 3000);
+          // remove linkCode from URL
+          try { router.replace('/profile'); } catch {}
+        }
+      } catch (e) {
+        if (!cancelled && e?.name !== 'AbortError') {
+          setError(e?.message ? String(e.message) : 'เชื่อมบัญชีไม่สำเร็จ');
+          setSuccess('');
+          try { router.replace('/profile'); } catch {}
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [searchParams, router]);
 
   const refreshUsageStats = useCallback(async (signal) => {
     const token = localStorage.getItem('token');

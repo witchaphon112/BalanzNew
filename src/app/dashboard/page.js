@@ -310,17 +310,18 @@ export default function Dashboard() {
         throw new Error((await res.json()).message || 'Failed to fetch transactions');
       }     
       const transactions = await res.json();
+      const allTransactions = Array.isArray(transactions) ? transactions : [];
 
       // Always compute "today spend" from ALL transactions (not only the selected month),
       // so the card stays correct even when viewing past/future months.
       const todayKey = toBangkokISODateKey(Date.now());
-      const todayExpenseTotal = (Array.isArray(transactions) ? transactions : [])
+      const todayExpenseTotal = allTransactions
         .filter((t) => t?.type === 'expense' && toBangkokISODateKey(t?.date) === todayKey)
         .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
 
       // Also compute current-month totals from ALL transactions (for "ต่อวัน" targets).
       const nowParts = getBangkokDateParts(Date.now());
-      const cmIncome = (Array.isArray(transactions) ? transactions : [])
+      const cmIncome = allTransactions
         .filter((t) => {
           if (t?.type !== 'income') return false;
           if (!nowParts) return false;
@@ -328,7 +329,7 @@ export default function Dashboard() {
           return !!p && p.year === nowParts.year && p.monthIndex === nowParts.monthIndex;
         })
         .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
-      const cmExpense = (Array.isArray(transactions) ? transactions : [])
+      const cmExpense = allTransactions
         .filter((t) => {
           if (t?.type !== 'expense') return false;
           if (!nowParts) return false;
@@ -340,7 +341,7 @@ export default function Dashboard() {
       const selectedMonthName = selectedMonth.split(' ')[0];
       const selectedYear = selectedMonth.split(' ')[1];
 
-      const filteredTransactions = transactions.filter(t => {
+      const filteredTransactions = allTransactions.filter(t => {
         const p = getBangkokDateParts(t?.date);
         if (!p) return false;
         const tMonthIndex = p.monthIndex;
@@ -348,9 +349,11 @@ export default function Dashboard() {
         return MONTH_NAMES_TH[tMonthIndex] === selectedMonthName && String(tYearBuddhist) === String(selectedYear);
       });
 
-      const sortedTransactions = filteredTransactions.sort(
-        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-      );
+      const sortedRecentAll = [...allTransactions].sort((a, b) => {
+        const ad = a?.date || a?.datetime || a?.createdAt || 0;
+        const bd = b?.date || b?.datetime || b?.createdAt || 0;
+        return new Date(bd) - new Date(ad);
+      });
       const totalIncome = filteredTransactions
         .filter((t) => t.type === 'income')
         .reduce((sum, t) => sum + t.amount, 0);
@@ -362,7 +365,7 @@ export default function Dashboard() {
         totalIncome,
         totalExpenses,
         netSavings: totalIncome - totalExpenses,
-        recentTransactions: sortedTransactions.slice(0, 5),
+        recentTransactions: sortedRecentAll.slice(0, 5),
         transactionsAll: filteredTransactions,
         todayExpenseTotal,
         currentMonthIncomeTotal: Number(cmIncome) || 0,
@@ -1644,8 +1647,8 @@ export default function Dashboard() {
                 <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                 </svg>
-                <p className="text-slate-200 text-sm font-extrabold">ไม่มีธุรกรรมในเดือนนี้</p>
-                <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการ หรือเปลี่ยนช่วงเดือน</p>
+                <p className="text-slate-200 text-sm font-extrabold">ยังไม่มีธุรกรรม</p>
+                <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการใหม่ แล้วกลับมาดูอีกครั้ง</p>
               </div>
             ) : (
               <div className="space-y-3">
