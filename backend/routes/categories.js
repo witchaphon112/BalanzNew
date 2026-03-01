@@ -67,7 +67,9 @@ router.delete('/:categoryId', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'คุณไม่มีสิทธิ์ลบหมวดหมู่นี้' });
     }
 
-    await Category.deleteOne({ _id: categoryId });
+    if ((category.name || '').trim() === 'อื่นๆ') {
+      return res.status(400).json({ message: 'ไม่สามารถลบหมวด "อื่นๆ" ได้' });
+    }
 
     let otherCategory = await Category.findOne({ name: 'อื่นๆ', type: category.type, userId: req.user.userId });
     if (!otherCategory) {
@@ -80,15 +82,15 @@ router.delete('/:categoryId', authMiddleware, async (req, res) => {
       await otherCategory.save();
     }
 
-    const relatedTransactions = await Transaction.find({ category: category._id, userId: req.user.userId });
-    if (relatedTransactions.length > 0) {
-      await Transaction.updateMany(
-        { category: category._id, userId: req.user.userId },
-        { category: otherCategory._id }
-      );
-    }
+    // Re-assign related transactions to "อื่นๆ" before deleting the category
+    await Transaction.updateMany(
+      { categoryId: category._id, userId: req.user.userId },
+      { categoryId: otherCategory._id }
+    );
 
-    res.json({ message: 'ลบหมวดหมู่เรียบร้อย' });
+    await Category.deleteOne({ _id: categoryId });
+
+    res.json({ message: 'ลบหมวดหมู่เรียบร้อย', deletedId: categoryId, reassignedTo: otherCategory._id });
   } catch (error) {
     console.error("Delete category error:", error);
     res.status(500).json({ message: 'Server error: ' + error.message });

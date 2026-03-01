@@ -78,11 +78,9 @@ export default function Profile() {
   });
   const [usageStatsUpdatedAt, setUsageStatsUpdatedAt] = useState(0);
 
-  const rankingData = [
-    { name: 'Witchaphon y.', days: 42 },
-    { name: 'Somchai', days: 28 },
-    { name: 'Nipa', days: 15 },
-  ];
+  const [rankingData, setRankingData] = useState([]);
+  const [rankingLoading, setRankingLoading] = useState(false);
+  const [rankingError, setRankingError] = useState('');
 
   // Local feature settings (stored in localStorage)
   const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'autocat' | 'payments' | 'categories'
@@ -109,6 +107,48 @@ export default function Profile() {
       setTheme('dark');
     }
   }, []);
+
+  useEffect(() => {
+    if (!rankingOpen) return;
+    let cancelled = false;
+    const controller = new AbortController();
+    const fetchRanking = async () => {
+      try {
+        setRankingLoading(true);
+        setRankingError('');
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('กรุณาเข้าสู่ระบบ');
+
+        const res = await fetch(`${API_BASE}/api/leaderboard/streak?limit=10`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(text || 'ไม่สามารถโหลดอันดับได้');
+        }
+        const data = await res.json();
+        const list = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
+        const mapped = list.map((u) => ({
+          name: u?.name || 'ผู้ใช้งาน',
+          days: Number(u?.days ?? u?.streakDays) || 0,
+        }));
+        if (!cancelled) setRankingData(mapped);
+      } catch (err) {
+        if (!cancelled && err?.name !== 'AbortError') {
+          setRankingError(err?.message ? String(err.message) : 'ไม่สามารถโหลดอันดับได้');
+          setRankingData([]);
+        }
+      } finally {
+        if (!cancelled) setRankingLoading(false);
+      }
+    };
+    fetchRanking();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [rankingOpen]);
 
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark';
@@ -672,61 +712,77 @@ export default function Profile() {
             </div>
 
             <div className="mt-4">
-              <div className="flex items-center justify-center">
-                <svg viewBox="0 -10 220 150" className="w-full h-40">
-                  <defs>
-                    <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#86EFAC" />
-                      <stop offset="100%" stopColor="#4ADE80" />
-                    </linearGradient>
-                    <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#FB7185" />
-                      <stop offset="100%" stopColor="#F97316" />
-                    </linearGradient>
-                    <linearGradient id="g3" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#93C5FD" />
-                      <stop offset="100%" stopColor="#60A5FA" />
-                    </linearGradient>
-                  </defs>
+              {!rankingLoading && rankingData.length >= 3 ? (
+                <div className="flex items-center justify-center">
+                  <svg viewBox="0 -10 220 150" className="w-full h-40">
+                    <defs>
+                      <linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#86EFAC" />
+                        <stop offset="100%" stopColor="#4ADE80" />
+                      </linearGradient>
+                      <linearGradient id="g2" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#FB7185" />
+                        <stop offset="100%" stopColor="#F97316" />
+                      </linearGradient>
+                      <linearGradient id="g3" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="#93C5FD" />
+                        <stop offset="100%" stopColor="#60A5FA" />
+                      </linearGradient>
+                    </defs>
 
-                  {(() => {
-                    const positions = [40, 96, 162];
-                    const widths = [28, 40, 28];
-                    const maxBarHeight = 92;
-                    const maxDays = Math.max(...rankingData.map(r => r.days));
-                    const grads = ['g1', 'g2', 'g3'];
-                    const sorted = [...rankingData].sort((a, b) => b.days - a.days);
-                    const orderForPositions = [sorted[2], sorted[0], sorted[1]];
+                    {(() => {
+                      const positions = [40, 96, 162];
+                      const widths = [28, 40, 28];
+                      const maxBarHeight = 92;
+                      const grads = ['g1', 'g2', 'g3'];
+                      const sorted = [...rankingData].sort((a, b) => b.days - a.days);
+                      const maxDays = Math.max(1, ...sorted.map((r) => r.days || 0));
+                      const orderForPositions = [sorted[2], sorted[0], sorted[1]].filter(Boolean);
 
-                    return orderForPositions.map((r, i) => {
-                      const h = Math.round((r.days / maxDays) * maxBarHeight);
-                      const x = positions[i];
-                      const w = widths[i];
-                      const y = 118 - h;
-                      const cx = x + w / 2;
-                      const badgeY = y - 18;
-                      const rankIndex = sorted.findIndex(s => s.name === r.name);
-                      return (
-                        <g key={i}>
-                          <rect x={x} y={y} width={w} height={h} rx="8" fill={`url(#${grads[i]})`} />
-                          {(() => {
-                            const badgeFill = rankIndex === 0 ? '#FFF1F2' : rankIndex === 1 ? '#EFF6FF' : '#ECFDF5';
-                            const badgeStroke = rankIndex === 0 ? '#FECACA' : rankIndex === 1 ? '#BFDBFE' : '#BBF7D0';
-                            const badgeTextColor = rankIndex === 0 ? '#BE123C' : rankIndex === 1 ? '#1E40AF' : '#065F46';
-                            return (
-                              <>
-                                <circle cx={cx} cy={badgeY} r="12" fill={badgeFill} stroke={badgeStroke} strokeWidth="0.6" />
-                                <text x={cx} y={badgeY + 4} fontSize="10" textAnchor="middle" fill={badgeTextColor} fontWeight="600">{rankIndex + 1}</text>
-                              </>
-                            );
-                          })()}
-                          <text x={cx} y="134" fontSize="11" textAnchor="middle" fill="var(--app-muted)">{r.name.split(' ')[0]}</text>
-                        </g>
-                      );
-                    });
-                  })()}
-                </svg>
-              </div>
+                      return orderForPositions.map((r, i) => {
+                        const h = Math.round(((r.days || 0) / maxDays) * maxBarHeight);
+                        const x = positions[i];
+                        const w = widths[i];
+                        const y = 118 - h;
+                        const cx = x + w / 2;
+                        const badgeY = y - 18;
+                        const rankIndex = sorted.findIndex(s => s.name === r.name);
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={y} width={w} height={h} rx="8" fill={`url(#${grads[i]})`} />
+                            {(() => {
+                              const badgeFill = rankIndex === 0 ? '#FFF1F2' : rankIndex === 1 ? '#EFF6FF' : '#ECFDF5';
+                              const badgeStroke = rankIndex === 0 ? '#FECACA' : rankIndex === 1 ? '#BFDBFE' : '#BBF7D0';
+                              const badgeTextColor = rankIndex === 0 ? '#BE123C' : rankIndex === 1 ? '#1E40AF' : '#065F46';
+                              return (
+                                <>
+                                  <circle cx={cx} cy={badgeY} r="12" fill={badgeFill} stroke={badgeStroke} strokeWidth="0.6" />
+                                  <text x={cx} y={badgeY + 4} fontSize="10" textAnchor="middle" fill={badgeTextColor} fontWeight="600">{rankIndex + 1}</text>
+                                </>
+                              );
+                            })()}
+                            <text x={cx} y="134" fontSize="11" textAnchor="middle" fill="var(--app-muted)">{String(r.name || '').split(' ')[0]}</text>
+                          </g>
+                        );
+                      });
+                    })()}
+                  </svg>
+                </div>
+              ) : null}
+
+              {rankingLoading ? (
+                <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 text-sm font-semibold text-[color:var(--app-muted)]">
+                  กำลังโหลดอันดับ...
+                </div>
+              ) : rankingError ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm font-semibold text-rose-200">
+                  {rankingError}
+                </div>
+              ) : rankingData.length === 0 ? (
+                <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 text-sm font-semibold text-[color:var(--app-muted)]">
+                  ยังไม่มีข้อมูลอันดับ
+                </div>
+              ) : null}
 
               <div className="mt-4 space-y-3">
                 {(() => {

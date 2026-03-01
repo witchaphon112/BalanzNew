@@ -17,6 +17,7 @@ const notificationsRouter = require('./routes/notifications');
 const ocrRoutes = require('./routes/ocr'); // OCR routes
 const lineWebhookRouter = require('./routes/line');
 const debugRoutes = require('./routes/debug');
+const leaderboardRoutes = require('./routes/leaderboard');
 const app = express();
 // LINE Login configuration
 passport.use(new LineStrategy({
@@ -144,6 +145,7 @@ app.use('/api/ocr', ocrRoutes); // OCR routes
 app.use('/uploads', express.static('uploads')); // Serve uploaded files
 // Dev debug endpoints
 app.use('/api/debug', debugRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 
 // LINE Messaging API webhook
 app.use('/webhooks/line', lineWebhookRouter);

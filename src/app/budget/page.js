@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Utensils,
   Coffee,
@@ -20,6 +21,8 @@ import {
   Music,
   Dumbbell,
   MoreHorizontal,
+  Search,
+  Trash2,
   CheckCircle2,
   AlertTriangle,
   Info,
@@ -145,6 +148,7 @@ const POPULAR_CATEGORY_PRESETS = {
 export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const normalizedInitialType = initialType === 'income' ? 'income' : 'expense';
   // --- State ---
+  const [mounted, setMounted] = useState(false);
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets] = useState({}); // Map: { "Month Year": { categoryId: amount } }
   const [monthlyBudget, setMonthlyBudget] = useState({}); // Map: { "Month Year": totalAmount }
@@ -170,10 +174,16 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   useEffect(() => {
     setSelectedType(normalizedInitialType);
   }, [normalizedInitialType]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   // Modal State for Editing
   const [editingCategory, setEditingCategory] = useState(null); // The category object being edited
   const [editAmount, setEditAmount] = useState('');
+  const [deleteCategory, setDeleteCategory] = useState(null);
+  const [deleteCategoryLoading, setDeleteCategoryLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('');
@@ -593,6 +603,88 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     setEditAmount(category.budget === 0 ? '' : category.budget.toString());
   };
 
+  const openDeleteCategoryModal = (category) => {
+    if (!category) return;
+    if (String(category?.name || '').trim() === 'อื่นๆ') {
+      showToast('warning', 'ไม่สามารถลบหมวด "อื่นๆ" ได้');
+      return;
+    }
+    setIsSortOpen(false);
+    setIsSettingsOpen(false);
+    setShowAddModal(false);
+    setEditingCategory(null);
+    setDeleteCategory(category);
+  };
+
+  const closeDeleteCategoryModal = () => {
+    if (deleteCategoryLoading) return;
+    setDeleteCategory(null);
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deleteCategory?._id) return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+      showToast('warning', 'กรุณาเข้าสู่ระบบ');
+      return;
+    }
+
+    setDeleteCategoryLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/categories/${deleteCategory._id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'ไม่สามารถลบหมวดได้');
+      }
+
+      let payload = null;
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+
+      const deletedId = deleteCategory._id;
+      const reassignedTo = payload?.reassignedTo || null;
+
+      setCategories((prev) => (Array.isArray(prev) ? prev.filter((c) => c && c._id !== deletedId) : []));
+      setBudgets((prev) => {
+        const next = { ...(prev || {}) };
+        for (const m of Object.keys(next)) {
+          const monthMap = next[m];
+          if (!monthMap || typeof monthMap !== 'object') continue;
+          if (Object.prototype.hasOwnProperty.call(monthMap, deletedId)) {
+            const { [deletedId]: _removed, ...rest } = monthMap;
+            next[m] = rest;
+          }
+        }
+        return next;
+      });
+      if (reassignedTo) {
+        setTransactions((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          return list.map((t) => {
+            if (!t) return t;
+            const catVal = t.category && typeof t.category === 'object' ? t.category._id : t.category;
+            if (String(catVal || '') !== String(deletedId)) return t;
+            return { ...t, category: reassignedTo };
+          });
+        });
+      }
+
+      setDeleteCategory(null);
+      showToast('success', 'ลบหมวดเรียบร้อยแล้ว');
+    } catch (err) {
+      console.error('Delete category error', err);
+      showToast('error', 'ไม่สามารถลบหมวดได้: ' + (err.message || 'ข้อผิดพลาด'));
+    } finally {
+      setDeleteCategoryLoading(false);
+    }
+  };
+
   const handleSaveBudget = async (e) => {
     e.preventDefault();
     const token = localStorage.getItem('token');
@@ -668,6 +760,33 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
   const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
   const budgetedItemCount = (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
+  const [categoryQuery, setCategoryQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'budgeted' | 'unbudgeted' | 'over'
+
+  const filteredCategories = useMemo(() => {
+    const list = Array.isArray(processedData.items) ? processedData.items : [];
+    const q = String(categoryQuery || '').trim();
+    let out = list;
+    if (q) {
+      const qLower = q.toLowerCase();
+      out = out.filter((c) => String(c?.name || '').toLowerCase().includes(qLower));
+    }
+    switch (categoryFilter) {
+      case 'budgeted':
+        out = out.filter((c) => (Number(c?.budget) || 0) > 0);
+        break;
+      case 'unbudgeted':
+        out = out.filter((c) => (Number(c?.budget) || 0) <= 0);
+        break;
+      case 'over':
+        out = out.filter((c) => Boolean(c?.isOverBudget) && (Number(c?.budget) || 0) > 0);
+        break;
+      case 'all':
+      default:
+        break;
+    }
+    return out;
+  }, [processedData.items, categoryQuery, categoryFilter]);
 
   const handleClose = () => {
     if (typeof onClose === 'function') onClose();
@@ -675,10 +794,10 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex h-[100dvh] min-h-0 flex-col overflow-y-auto [-webkit-overflow-scrolling:touch] bg-[var(--app-bg)] text-[color:var(--app-text)] font-sans">
+    <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-y-auto [-webkit-overflow-scrolling:touch] bg-[var(--app-bg)] text-[color:var(--app-text)] font-sans">
       {/* Top / Sticky header (removed sticky wrapper) */}
       <>
-	        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+12px)]">
+	        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+20px)]">
           {/* Title row */}
           <div className="relative flex items-center justify-center">
             <div className="text-center">
@@ -687,17 +806,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
 
             <div className="absolute right-0 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={openSettings}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                aria-label="ตั้งค่า"
-                title="ตั้งค่า"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H21M10 12H21M10 18H21M3 6h.01M3 12h.01M3 18h.01" />
-                </svg>
-              </button>
             </div>
           </div>
 
@@ -921,9 +1029,9 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       </>
 
       {/* Settings Modal */}
-      {isSettingsOpen && (
+      {mounted && isSettingsOpen && createPortal((
         <div
-          className="fixed inset-0 z-[52] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+88px)] sm:pb-4"
+          className="fixed inset-0 z-[52] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
           onClick={(e) => e.target === e.currentTarget && setIsSettingsOpen(false)}
         >
           <div
@@ -1064,7 +1172,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Category list */}
       <div>
@@ -1073,7 +1181,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         <div className="mb-3 flex items-center justify-between">
           <div className="text-lg font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
           <div className="inline-flex items-center rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs font-extrabold text-slate-200">
-            {budgetedItemCount || processedData.items.length} รายการ
+            {filteredCategories.length}/{processedData.items.length} รายการ
           </div>
         </div>
 
@@ -1103,7 +1211,92 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
           ) : (
             <div className="space-y-3">
-              {processedData.items.map((cat) => {
+              {/* Filter */}
+              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm shadow-black/10">
+                <div className="relative">
+                  <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)]">
+                    <Search className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <input
+                    value={categoryQuery}
+                    onChange={(e) => setCategoryQuery(e.target.value)}
+                    placeholder="ค้นหาหมวดหมู่…"
+                    className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-10 pr-10 text-sm font-extrabold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                  />
+                  {String(categoryQuery || '').trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => setCategoryQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      aria-label="ล้างคำค้นหา"
+                      title="ล้าง"
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    { key: 'all', label: 'ทั้งหมด' },
+                    { key: 'budgeted', label: 'ตั้งงบแล้ว' },
+                    { key: 'unbudgeted', label: 'ยังไม่ตั้งงบ' },
+                    { key: 'over', label: 'เกินงบ' },
+                  ].map((opt) => {
+                    const active = categoryFilter === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setCategoryFilter(opt.key)}
+                        className={[
+                          'rounded-2xl px-3 py-2 text-xs font-extrabold transition border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                          active
+                            ? 'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25 focus:ring-emerald-300/30'
+                            : 'border-white/10 bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 focus:ring-emerald-400/20',
+                        ].join(' ')}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                  {budgetedItemCount > 0 ? `ตั้งงบแล้ว ${budgetedItemCount} หมวด` : 'ยังไม่มีหมวดที่ตั้งงบ'}
+                </div>
+              </div>
+
+              {filteredCategories.length === 0 ? (
+                <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 text-center shadow-sm shadow-black/10">
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-xl">
+                    🔎
+                  </div>
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">ไม่พบหมวดที่ตรงกับตัวกรอง</div>
+                  <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">ลองค้นหาใหม่ หรือกดล้างตัวกรอง</div>
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoryQuery('');
+                        setCategoryFilter('all');
+                      }}
+                      className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-xs font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                    >
+                      ล้างตัวกรอง
+                    </button>
+                    <button
+                      type="button"
+                      onClick={openAddCategoryModal}
+                      className="flex-1 py-2.5 rounded-2xl bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                    >
+                      เพิ่มหมวด
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {filteredCategories.map((cat) => {
                 const pct = cat.budget > 0 ? Math.round((cat.spent / cat.budget) * 100) : 0;
                 const progress = cat.budget > 0 ? clamp01(cat.spent / cat.budget) : 0;
                 const over = cat.isOverBudget && cat.budget > 0;
@@ -1144,20 +1337,22 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-end gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(cat);
-                          }}
-                          className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                        >
-                          แก้ไข
-                        </button>
-                        <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
-                      </div>
-                    </div>
+	                      <div className="shrink-0 flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+	                          <button
+	                            type="button"
+	                            onClick={(e) => {
+	                              e.stopPropagation();
+	                              openEditModal(cat);
+	                            }}
+	                            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                          >
+	                            แก้ไข
+	                          </button>
+                          </div>
+	                        <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
+	                      </div>
+	                    </div>
 
                     <div className="mt-3">
                       <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
@@ -1206,7 +1401,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       </div>
 
       {/* Add Category Modal */}
-      {showAddModal && (
+      {mounted && showAddModal && createPortal((
         <div
           className="fixed inset-0 z-[90] flex items-stretch sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
           onClick={(e) => e.target === e.currentTarget && closeAddCategoryModal()}
@@ -1418,10 +1613,82 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </form>
           </div>
         </div>
-      )}
+      ), document.body)}
+
+      {/* Delete Category Confirm Modal */}
+      {mounted && deleteCategory && createPortal((
+        <div
+          className="fixed inset-0 z-[85] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+          onClick={(e) => e.target === e.currentTarget && closeDeleteCategoryModal()}
+        >
+          <div
+            className="bg-[var(--app-surface)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ยืนยันการลบหมวดหมู่"
+          >
+            <div className="relative px-5 pb-4 pt-[calc(env(safe-area-inset-top)+14px)] sm:pt-4 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)]">
+              <button
+                type="button"
+                onClick={closeDeleteCategoryModal}
+                disabled={deleteCategoryLoading}
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                aria-label="ปิด"
+                title="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+
+              <div className="flex items-center gap-3 pr-12">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-200 ring-1 ring-rose-400/20">
+                  <Trash2 className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">ลบหมวดหมู่</div>
+                  <div className="mt-0.5 truncate text-lg font-extrabold text-[color:var(--app-text)]">
+                    {deleteCategory.name}
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
+                    รายการที่เกี่ยวข้องจะถูกย้ายไป “อื่นๆ”
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5 pb-[calc(env(safe-area-inset-bottom)+24px)] sm:pb-5">
+              <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 ring-1 ring-rose-400/10">
+                <div className="text-xs font-extrabold text-rose-200">คำเตือน</div>
+                <div className="mt-1 text-[11px] font-semibold text-rose-100/90">
+                  การลบหมวดหมู่ไม่สามารถย้อนกลับได้
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={closeDeleteCategoryModal}
+                  disabled={deleteCategoryLoading}
+                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10 disabled:opacity-40"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteCategory}
+                  disabled={deleteCategoryLoading}
+                  className="py-3 rounded-2xl bg-rose-500 text-white font-extrabold shadow-lg shadow-rose-500/20 hover:brightness-95 disabled:opacity-50"
+                >
+                  {deleteCategoryLoading ? 'กำลังลบ...' : 'ลบหมวด'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
 
       {/* 4. Edit Budget Bottom Sheet / Modal */}
-        {editingCategory && (
+        {mounted && editingCategory && createPortal((
         <div
           className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
           onClick={() => setEditingCategory(null)}
@@ -1508,13 +1775,22 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   บันทึก
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => openDeleteCategoryModal(editingCategory)}
+                disabled={String(editingCategory?.name || '').trim() === 'อื่นๆ'}
+                className="mt-3 w-full rounded-2xl border border-rose-400/20 bg-rose-500/10 py-3 text-rose-100 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
+              >
+                ลบหมวดนี้
+              </button>
             </form>
           </div>
         </div>
-        )}
+        ), document.body)}
 
       {/* Toast */}
-      {toast && (() => {
+      {mounted && toast && createPortal((() => {
         const tone = toast.tone || 'info';
         const meta =
           tone === 'success'
@@ -1562,7 +1838,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             </div>
           </div>
         );
-      })()}
+      })(), document.body)}
     </div>
   );
 }
