@@ -23,7 +23,7 @@ const debugRoutes = require('./routes/debug');
 const leaderboardRoutes = require('./routes/leaderboard');
 const app = express();
 
-async function findBotPlaceholderCandidate({ displayName, excludeUserId } = {}) {
+async function findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId } = {}) {
   if (!displayName) return null;
 
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -32,10 +32,12 @@ async function findBotPlaceholderCandidate({ displayName, excludeUserId } = {}) 
     lineUserId: { $exists: false },
     lineMessagingUserId: { $exists: true, $ne: '' },
     name: displayName,
+    profilePic: profilePic ? String(profilePic) : undefined,
     email: { $regex: /^line_msg_.*@local$/i },
     createdAt: { $gte: since },
   };
   if (!q._id) delete q._id;
+  if (!q.profilePic) delete q.profilePic;
 
   // Multiple placeholder users with the same displayName can exist (tests / retries).
   // Only auto-select when the choice is unambiguous:
@@ -96,16 +98,9 @@ async function autoUnifyMessagingUserOnLineLogin({ oauthUser, lineId, displayNam
   if (!oauthUser || !lineId || !displayName) return oauthUser;
   if (oauthUser.lineMessagingUserId) return oauthUser;
 
-  const candidate = await findBotPlaceholderCandidate({ displayName, excludeUserId: oauthUser._id });
+  const candidate = await findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId: oauthUser._id });
   if (!candidate) return oauthUser;
   if (candidate.lineUserId) return oauthUser;
-
-  // Extra safety: only auto-unify if the candidate was actually used (has tx)
-  // or was created very recently.
-  const candidateTxCount = await Transaction.countDocuments({ userId: candidate._id }).catch(() => 0);
-  const candidateAgeMs = candidate.createdAt ? (Date.now() - new Date(candidate.createdAt).getTime()) : Number.POSITIVE_INFINITY;
-  const isFresh = Number.isFinite(candidateAgeMs) && candidateAgeMs <= 6 * 60 * 60 * 1000;
-  if ((Number(candidateTxCount) || 0) === 0 && !isFresh) return oauthUser;
 
   const oauthCounts = await countUserData(oauthUser._id);
   const oauthHasAny = (oauthCounts.txCount + oauthCounts.catCount + oauthCounts.budCount) > 0;
