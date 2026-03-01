@@ -1468,13 +1468,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       {/* Category list */}
       <div>
         <div className="mx-auto w-full max-w-lg p-4">
-        {/* Categories header */}
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-lg font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
-          <div className="inline-flex items-center rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs font-extrabold text-slate-200">
-            {filteredCategories.length}/{processedData.items.length} รายการ
-          </div>
-        </div>
+        
 
         {isLoading ? (
           <div className="space-y-3">
@@ -1883,8 +1877,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                     ถ้าใส่จำนวนเงิน ระบบจะสร้างรายการรายรับให้ทันทีในเดือนที่เลือก
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <div className="col-span-1">
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <div>
                       <label className="block text-[11px] font-semibold text-slate-300 mb-1">จำนวนเงิน</label>
                       <input
                         type="number"
@@ -1897,15 +1891,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                       <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                         ยอดเงิน: <span className="font-extrabold text-slate-200">{formatCurrency(Number(newIncomeAmount) || 0)}</span>
                       </div>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">โน้ต (ถ้ามี)</label>
-                      <input
-                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                        value={newIncomeNote}
-                        onChange={(e) => setNewIncomeNote(e.target.value)}
-                        placeholder="เช่น เงินเดือนรอบนี้"
-                      />
                     </div>
                   </div>
                 </div>
@@ -2079,8 +2064,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     เพิ่มยอดเข้ามาได้เรื่อย ๆ (ระบบจะบวกสะสมจากรายการที่บันทึก)
                   </div>
 
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <div className="col-span-1">
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <div>
                       <label className="block text-[11px] font-semibold text-slate-300 mb-1">เพิ่มอีก</label>
                       <input
                         type="number"
@@ -2093,15 +2078,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                       <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                         ยอดตอนนี้: <span className="font-extrabold text-slate-200">{formatCurrency(editingIncomeStats.received || 0)}</span>
                       </div>
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">โน้ต (ถ้ามี)</label>
-                      <input
-                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                        value={incomeQuickNote}
-                        onChange={(e) => setIncomeQuickNote(e.target.value)}
-                        placeholder="เช่น เงินเดือนรอบนี้"
-                      />
                     </div>
                   </div>
 

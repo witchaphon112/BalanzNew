@@ -86,6 +86,234 @@ async function pushToUser(userId, message) {
 // debug: show whether token was loaded when this module initialized
 console.log('LINE webhook module loaded. CHANNEL_TOKEN present:', CHANNEL_TOKEN ? (CHANNEL_TOKEN.slice(0,8) + '...') : 'no');
 
+function formatThb(amount) {
+  const n = Number(amount) || 0;
+  return `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`;
+}
+
+function formatThaiDateTime(input) {
+  try {
+    const d = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+function pickCategoryIconDisplay(categoryIcon) {
+  const raw = String(categoryIcon || '').trim();
+  if (!raw) return { kind: 'emoji', value: '🤖' };
+  // If user stored an emoji in DB, show it directly.
+  if (!/^[a-z0-9_ -]+$/i.test(raw) && raw.length <= 8) return { kind: 'emoji', value: raw };
+  return { kind: 'emoji', value: '🤖' };
+}
+
+function buildRecordedSuccessFlexMessage({
+  txId,
+  type,
+  amount,
+  note,
+  categoryName,
+  categoryIcon,
+  when,
+  sourceLabel,
+}) {
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const typeLabel = safeType === 'income' ? 'รายรับ' : 'รายจ่าย';
+  const typePill = safeType === 'income'
+    ? { bg: '#D1FAE5', text: '#047857' }
+    : { bg: '#FCE7E7', text: '#DC2626' };
+
+  const safeAmount = Number(amount) || 0;
+  const safeNote = String(note || '').trim() || '-';
+  const safeCategory = String(categoryName || '').trim() || 'ไม่ระบุ';
+  const isCategoryUnknown = safeCategory === 'ไม่ระบุ';
+  const whenText = formatThaiDateTime(when) || '';
+  const safeSource = String(sourceLabel || '').trim();
+
+  const iconDisplay = pickCategoryIconDisplay(categoryIcon);
+
+  return {
+    type: 'flex',
+    altText: 'บันทึกสำเร็จ',
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#ECFDF5' },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'horizontal',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            flex: 1,
+            contents: [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                spacing: 'sm',
+                contents: [
+                  { type: 'text', text: 'บันทึกสำเร็จ', weight: 'bold', size: 'xl', color: '#0F172A', flex: 0 },
+                  {
+                    type: 'box',
+                    layout: 'vertical',
+                    width: '22px',
+                    height: '22px',
+                    cornerRadius: '999px',
+                    backgroundColor: '#22C55E',
+                    contents: [{ type: 'text', text: '✓', align: 'center', gravity: 'center', color: '#FFFFFF', size: 'sm', weight: 'bold' }],
+                  },
+                ],
+              },
+              {
+                type: 'text',
+                text: 'อย่าลืมตรวจสอบรายละเอียด',
+                size: 'sm',
+                color: '#64748B',
+                margin: 'sm',
+                wrap: true,
+              },
+            ],
+          },
+          
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        paddingAll: '18px',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            alignItems: 'center',
+            contents: [
+              {
+                type: 'box',
+                layout: 'vertical',
+                backgroundColor: typePill.bg,
+                cornerRadius: '999px',
+                paddingAll: '6px',
+                paddingStart: '14px',
+                paddingEnd: '14px',
+                flex: 0,
+                contents: [
+                  { type: 'text', text: typeLabel, size: 'sm', weight: 'bold', color: typePill.text, align: 'center' },
+                ],
+              },
+              { type: 'text', text: `- ${isCategoryUnknown ? 'ไม่ระบุ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
+              {
+                type: 'text',
+                text: '↗',
+                size: 'lg',
+                color: '#94A3B8',
+                flex: 0,
+                action: { type: 'postback', label: 'open', data: 'action=web_login' },
+              },
+            ],
+          },
+
+          ...(whenText
+            ? [
+                {
+                  type: 'text',
+                  text: whenText,
+                  size: 'sm',
+                  color: '#94A3B8',
+                  margin: 'md',
+                },
+              ]
+            : []),
+
+          {
+            type: 'text',
+            text: safeNote,
+            size: 'lg',
+            weight: 'bold',
+            color: '#0F172A',
+            wrap: true,
+            margin: 'md',
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            alignItems: 'center',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: formatThb(safeAmount), size: 'xl', weight: 'bold', color: '#22C55E', flex: 1, align: 'end' },
+            ],
+          },
+
+          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
+
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: `รวมหมวด ${isCategoryUnknown ? 'ไม่ระบุ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
+              { type: 'text', text: formatThb(safeAmount), size: 'md', weight: 'bold', color: '#22C55E', flex: 0 },
+            ],
+          },
+
+          {
+            type: 'box',
+            layout: 'vertical',
+            margin: 'md',
+            contents: [
+              
+                         
+            ],
+          },
+
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#FEF3C7',
+            cornerRadius: '14px',
+            paddingAll: '14px',
+            margin: 'md',
+            contents: [
+              {
+                type: 'text',
+                text: '💡 ระบบช่วยจัดหมวดให้อัตโนมัติ',
+                size: 'sm',
+                color: '#92400E',
+                wrap: true,
+              },
+            ],
+          },
+
+          ...(safeSource
+            ? [
+                {
+                  type: 'text',
+                  text: `ที่มา: ${safeSource}`,
+                  size: 'xs',
+                  color: '#CBD5E1',
+                  wrap: true,
+                },
+              ]
+            : []),
+        ],
+      },
+    },
+  };
+}
+
 // simple parser: returns { type: 'income'|'expense', amount, note }
 function parseTransactionText(text) {
   const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
@@ -531,11 +759,30 @@ async function handleTextEvent(event) {
       rawMessage: event
     });
     await tx.save();
-    const summary = `${parsed.type === 'expense' ? 'จ่าย' : 'รับ'} ${parsed.amount} ${parsed.note || ''}`.trim();
-    const when = new Date().toLocaleString();
-    const baseReply = `บันทึกเรียบร้อย: ${summary}\nได้รับยอด ${parsed.amount} บาท สำหรับ: ${parsed.note || '-'}\nบันทึกเมื่อ: ${when}`;
-    const replyText = `${baseReply}`;
-    return sendReply(event.replyToken, { type: 'text', text: replyText });
+    let categoryName = '';
+    let categoryIcon = '';
+    try {
+      if (categoryId) {
+        const catDoc = await Category.findById(categoryId).select('name icon').lean();
+        categoryName = String(catDoc?.name || '').trim();
+        categoryIcon = String(catDoc?.icon || '').trim();
+      }
+    } catch {
+      // ignore
+    }
+
+    const flexMessage = buildRecordedSuccessFlexMessage({
+      txId: tx?._id,
+      type: parsed.type,
+      amount: parsed.amount,
+      note: notesText,
+      categoryName,
+      categoryIcon,
+      when: tx?.datetime || new Date(),
+      sourceLabel: 'ข้อความ',
+    });
+
+    return sendReply(event.replyToken, flexMessage);
   }
 
   // unknown
@@ -669,8 +916,30 @@ async function handleImageEvent(event) {
       });
       await tx.save();
 
-      const reply = `${type === 'income' ? 'รับ' : 'จ่าย'} ${Number(amount).toLocaleString()} บาท\n${note}\n(ความมั่นใจ OCR: ${Math.round(Number(ocrConfidence || 0) * 10) / 10}%)`;
-      await pushToUser(lineMessagingUserId, { type: 'text', text: reply });
+      let categoryName = '';
+      let categoryIcon = '';
+      try {
+        if (categoryId) {
+          const catDoc = await Category.findById(categoryId).select('name icon').lean();
+          categoryName = String(catDoc?.name || '').trim();
+          categoryIcon = String(catDoc?.icon || '').trim();
+        }
+      } catch {
+        // ignore
+      }
+
+      const flexMessage = buildRecordedSuccessFlexMessage({
+        txId: tx?._id,
+        type,
+        amount: Number(amount),
+        note,
+        categoryName,
+        categoryIcon,
+        when: tx?.datetime || new Date(),
+        sourceLabel: 'รูปภาพ (OCR)',
+      });
+
+      await pushToUser(lineMessagingUserId, flexMessage);
     } catch (e) {
       console.error('handleImageEvent error', e);
       await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้ง (แนะนำรูปชัด/ไม่เอียง/เต็มใบ)' });
@@ -782,10 +1051,33 @@ async function handleAudioEvent(event) {
         },
       });
       await tx.save();
+      let categoryName = '';
+      let categoryIcon = '';
+      try {
+        if (categoryId) {
+          const catDoc = await Category.findById(categoryId).select('name icon').lean();
+          categoryName = String(catDoc?.name || '').trim();
+          categoryIcon = String(catDoc?.icon || '').trim();
+        }
+      } catch {
+        // ignore
+      }
 
-      const summary = `${parsed.type === 'expense' ? 'จ่าย' : 'รับ'} ${parsed.amount} ${parsed.note || ''}`.trim();
-      const linkLine = keepAudio ? `\nไฟล์เสียง: ${audioUrl}` : '';
-      await pushToUser(lineMessagingUserId, { type: 'text', text: `บันทึกจากเสียงเรียบร้อย: ${summary}\nได้ยินว่า: "${transcript}"${linkLine}` });
+      const flexMessage = buildRecordedSuccessFlexMessage({
+        txId: tx?._id,
+        type: parsed.type,
+        amount: parsed.amount,
+        note: notesText,
+        categoryName,
+        categoryIcon,
+        when: tx?.datetime || new Date(),
+        sourceLabel: 'เสียง (ถอดเสียง)',
+      });
+      await pushToUser(lineMessagingUserId, flexMessage);
+
+      if (keepAudio) {
+        await pushToUser(lineMessagingUserId, { type: 'text', text: `ไฟล์เสียง: ${audioUrl}` });
+      }
     } catch (e) {
       console.error('handleAudioEvent error', e);
       await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย ถอดเสียงไม่สำเร็จ ลองใหม่อีกครั้ง' });
@@ -902,6 +1194,58 @@ async function handlePostbackEvent(event) {
   if (actionValue === 'help') {
     const helpText = 'คำสั่งตัวอย่าง:\n- จ่าย 120 ข้าวมันไก่\n- รับ 500 เงินลูกค้า\n- สรุปวันนี้\n- สรุปเดือนนี้\n- export';
     return sendReply(event.replyToken, { type: 'text', text: helpText });
+  }
+
+  if (actionValue === 'txn_delete') {
+    let txnId = '';
+    try {
+      const params = new URLSearchParams(String(data || ''));
+      txnId = String(params.get('id') || '').trim();
+    } catch {
+      txnId = '';
+    }
+
+    if (!txnId) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบรหัสรายการที่ต้องการลบ' });
+
+    const tx = await Transaction.findOne({ _id: txnId, userId: user._id }).select('type amount note notes datetime').lean();
+    if (!tx) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบรายการนี้ หรือคุณไม่มีสิทธิ์ลบ' });
+
+    const noteText = String(tx?.notes || tx?.note || '').trim() || '-';
+    const whenText = formatThaiDateTime(tx?.datetime) || '';
+    const text = `ต้องการลบรายการนี้ใช่ไหม?\n${tx.type === 'income' ? 'รายรับ' : 'รายจ่าย'} ${formatThb(tx.amount)}\n${noteText}${whenText ? `\n${whenText}` : ''}`;
+
+    return sendReply(event.replyToken, {
+      type: 'template',
+      altText: 'ยืนยันการลบรายการ',
+      template: {
+        type: 'confirm',
+        text,
+        actions: [
+          { type: 'postback', label: 'ยืนยันลบ', data: `action=txn_delete_confirm&id=${encodeURIComponent(String(txnId))}` },
+          { type: 'postback', label: 'ยกเลิก', data: 'action=txn_delete_cancel' },
+        ],
+      },
+    });
+  }
+
+  if (actionValue === 'txn_delete_cancel') {
+    return sendReply(event.replyToken, { type: 'text', text: 'ยกเลิกการลบแล้ว' });
+  }
+
+  if (actionValue === 'txn_delete_confirm') {
+    let txnId = '';
+    try {
+      const params = new URLSearchParams(String(data || ''));
+      txnId = String(params.get('id') || '').trim();
+    } catch {
+      txnId = '';
+    }
+    if (!txnId) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบรหัสรายการที่ต้องการลบ' });
+
+    const deleted = await Transaction.findOneAndDelete({ _id: txnId, userId: user._id }).lean();
+    if (!deleted) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบรายการนี้ หรือถูกลบไปแล้ว' });
+
+    return sendReply(event.replyToken, { type: 'text', text: 'ลบรายการเรียบร้อยแล้ว' });
   }
 
   if (actionValue === 'announce' || actionValue === 'ประกาศ') {
