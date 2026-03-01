@@ -876,11 +876,63 @@ export default function Dashboard() {
       parts.push(`รายจ่าย ${Math.round(expenseRatio * 100)}% ของรายรับ`);
     }
 
+    const txs = Array.isArray(stats?.transactionsAll) ? stats.transactionsAll : [];
+    let topExpense = null;
+    if (txs.length) {
+      const map = new Map();
+      for (const t of txs) {
+        if (!t || t.type !== 'expense') continue;
+        const amt = Number(t.amount) || 0;
+        if (amt <= 0) continue;
+        const id = String(t.category?._id || t.category || '_none');
+        const name = String(t.category?.name || 'ไม่ระบุ');
+        const prev = map.get(id) || { id, name, amount: 0 };
+        prev.amount += amt;
+        map.set(id, prev);
+      }
+      const arr = Array.from(map.values()).sort((a, b) => b.amount - a.amount);
+      if (arr[0] && arr[0].amount > 0) {
+        topExpense = {
+          name: arr[0].name,
+          amount: arr[0].amount,
+          pct: expense > 0 ? arr[0].amount / expense : 0,
+        };
+      }
+    }
+
     let hint = '';
-    if (!hasBudget) hint = 'แนะนำ: ตั้งงบประมาณรายเดือนเพื่อประเมินได้แม่นขึ้น';
-    else if (income > 0 && Number.isFinite(savingsRate) && savingsRate < 0.1) hint = 'แนะนำ: พยายามเหลือออมอย่างน้อย 10%';
-    else if (hasBudget && expense > budgetTotal) hint = 'แนะนำ: ลดรายจ่ายหรือปรับงบให้เหมาะกับเดือนนี้';
-    else hint = 'ดูแนวโน้มรายจ่ายและจุดรั่วไหลเพื่อปรับพฤติกรรม';
+    if (!hasBudget) {
+      if (income <= 0 && expense <= 0) {
+        hint = 'เริ่มจากจดรายรับ/รายจ่ายสัก 5–10 รายการ แล้วระบบจะวิเคราะห์แม่นขึ้น';
+      } else if (income <= 0 && expense > 0) {
+        hint = 'เดือนนี้ยังไม่มีรายรับ แต่มีรายจ่าย แนะนำให้บันทึกรายรับเพื่อให้ภาพรวมแม่นขึ้น';
+      } else if (income > 0 && expense <= 0) {
+        hint = 'มีรายรับแล้ว แต่ยังไม่มีรายจ่าย ลองจดรายจ่ายประจำวันเพื่อให้วิเคราะห์ครบถ้วน';
+      } else if (score >= 80) {
+        const saved = income - expense;
+        hint = `ดีมาก เหลือออม ${formatTHB(saved)} • แนะนำ: ตั้งงบ “3 หมวดหลัก” เพื่อคุมต่อเนื่อง${topExpense ? ` (หมวดที่ใช้เยอะสุด: ${topExpense.name} ~${Math.round(topExpense.pct * 100)}%)` : ''}`;
+      } else if (score >= 60) {
+        hint = `แนะนำ: ตั้งงบหมวดที่ใช้เยอะสุดก่อน${topExpense ? ` (${topExpense.name})` : ''} แล้วค่อยเพิ่มหมวดอื่นทีละนิด`;
+      } else if (score >= 40) {
+        hint = `แนะนำ: ลดรายจ่ายหมวดหลัก${topExpense ? ` (${topExpense.name})` : ''} และตั้งงบรายเดือนเพื่อคุมไม่ให้ไหล`;
+      } else {
+        hint = `แนะนำ: รายจ่ายสูงเมื่อเทียบรายรับ ลองลดหมวดที่ใช้เยอะ${topExpense ? ` (${topExpense.name})` : ''} และเพิ่มรายรับให้เหลือออม`;
+      }
+    } else if (income > 0 && Number.isFinite(savingsRate) && savingsRate < 0.1) {
+      hint = `แนะนำ: พยายามเหลือออมอย่างน้อย 10% (ตอนนี้ออม ${Math.round((Number.isFinite(savingsRate) ? savingsRate : 0) * 100)}%)`;
+    } else if (expense > budgetTotal) {
+      hint = `แนะนำ: เกินงบแล้ว ${formatTHB(expense - budgetTotal)} ลองลดรายจ่ายหรือปรับงบให้เหมาะกับเดือนนี้`;
+    } else if (isCurrentMonth && expectedSpendSoFar && expectedSpendSoFar > 0 && expense / expectedSpendSoFar >= 1.15) {
+      const nowParts = nowBkk;
+      const remainingDays = nowParts ? Math.max(1, daysInSelectedMonth - (Number(nowParts.day) || 1) + 1) : 1;
+      const remainingBudget = budgetTotal - expense;
+      const perDay = remainingBudget / remainingDays;
+      hint = `แนะนำ: ใช้เร็วกว่าแผน ลองคุมให้อยู่ที่ ~${formatTHB(perDay)} ต่อวัน (เพื่อไม่ให้เกินงบ)`;
+    } else if (score >= 80) {
+      hint = 'คุมการเงินได้ดีมาก รักษาวินัย และทบทวนงบหมวดที่ใช้บ่อยเป็นระยะ';
+    } else {
+      hint = 'ดูแนวโน้มรายจ่ายและจุดรั่วไหล แล้วปรับงบ/พฤติกรรมให้เหมาะกับเดือนนี้';
+    }
 
     return {
       score,
@@ -890,7 +942,7 @@ export default function Dashboard() {
       summary: parts.join(' • '),
       hint,
     };
-  }, [monthIncomeTotal, monthExpenseTotal, monthExpenseBudgetTotal, selectedParsed, daysInSelectedMonth, nowBkk]);
+  }, [monthIncomeTotal, monthExpenseTotal, monthExpenseBudgetTotal, selectedParsed, daysInSelectedMonth, nowBkk, stats.transactionsAll]);
 
   const leakItems = useMemo(() => {
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
@@ -1913,7 +1965,7 @@ export default function Dashboard() {
         >
           <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
             {/* Modal Header */}
-            <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white p-6 overflow-hidden">
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 p-6 overflow-hidden">
               <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
               <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
               
@@ -1926,7 +1978,7 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold">แก้ไขรายการ</h2>
-                    <p className="text-white/80 text-sm">อัปเดตข้อมูลธุรกรรม</p>
+                    <p className="text-slate-950/70 text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
                   </div>
                 </div>
                 <button
@@ -2061,7 +2113,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
                 >
                   บันทึก
                 </button>

@@ -335,7 +335,7 @@ function parseTransactionText(text) {
     const note = (m[3] || '').trim();
     const amount = parseFloat(amountStr.replace(/,/g, '')) || 0;
     const type = /^(รับ|r|เรีัย|ร)$/i.test(verb) ? 'income' : 'expense';
-    return { type, amount, note };
+    return { type, amount, note, typeExplicit: true };
   }
 
   // Income keyword inference for inputs like: "เงินเดือน 20000", "โบนัส 5000"
@@ -349,7 +349,7 @@ function parseTransactionText(text) {
   const mm = t.match(/([0-9,\.]+)\s*(บาท|฿)?/);
   if (mm) {
     const amount = parseFloat(mm[1].replace(/,/g, '')) || 0;
-    return { type: inferredIncome ? 'income' : 'expense', amount, note: t };
+    return { type: inferredIncome ? 'income' : 'expense', amount, note: t, typeExplicit: false };
   }
 
   return { command: 'unknown' };
@@ -369,7 +369,7 @@ function classifyCategoryFromNote(note, type) {
   }
 
   // expense
-  if (has('ข้าว', 'ก๋วยเตี๋ยว', 'อาหาร', 'ข้าวมันไก่', 'หมูปิ้ง', 'ข้าวเหนียว', 'ส้มตำ', 'ผัด', 'แกง', 'ไก่', 'หมู', 'ปลา')) {
+  if (has('ข้าว', 'ก๋วยเตี๋ยว', 'อาหาร', 'ข้าวมันไก่', 'หมูปิ้ง', 'ข้าวเหนียว', 'ส้มตำ', 'ผัด', 'แกง', 'ไก่', 'หมู', 'ปลา', 'กะเพรา', 'กระเพรา')) {
     return { name: 'อาหาร', icon: 'food' };
   }
   if (has('กาแฟ', 'ชา', 'น้ำ', 'น้ำอัดลม', 'โค้ก', 'pepsi', 'coffee', 'cafe')) {
@@ -389,6 +389,50 @@ function classifyCategoryFromNote(note, type) {
   }
 
   return null;
+}
+
+function normalizeThaiForMatch(text) {
+  const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
+  return normalizeDigits(String(text || ''))
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+    // remove numbers/currency tokens for matching category names
+    .replace(/[0-9]/g, '')
+    .replace(/บาท|฿/g, '')
+    // keep Thai/English letters; drop punctuation/spaces
+    .replace(/[^a-z\u0E00-\u0E7F]+/g, '');
+}
+
+async function findBestUserCategoryMatch({ userId, noteText, preferredType }) {
+  if (!userId) return null;
+  const needle = normalizeThaiForMatch(noteText);
+  if (!needle) return null;
+
+  const safePreferredType = preferredType === 'income' || preferredType === 'expense' ? preferredType : '';
+  const cats = await Category.find({
+    userId,
+    ...(safePreferredType ? { type: safePreferredType } : { type: { $in: ['income', 'expense'] } }),
+  })
+    .select({ _id: 1, name: 1, type: 1 })
+    .lean()
+    .catch(() => []);
+
+  let best = null;
+  let bestScore = 0;
+  for (const c of cats || []) {
+    const name = String(c?.name || '').trim();
+    if (!name) continue;
+    const norm = normalizeThaiForMatch(name);
+    if (!norm) continue;
+    const hit = needle.includes(norm) || norm.includes(needle);
+    if (!hit) continue;
+    const score = norm.length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best;
 }
 
 async function ensureUserCategory({ userId, type, name, icon }) {
@@ -737,11 +781,27 @@ async function handleTextEvent(event) {
     const notesText = parsed.note || parsed.notes || '';
     // auto-categorize from note keywords (create category if missing)
     let categoryId = null;
+    // 1) Prefer matching an existing user-defined category name (works for custom income categories)
     try {
-      const cat = classifyCategoryFromNote(notesText, parsed.type);
-      if (cat && cat.name) {
-        const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
-        categoryId = doc?._id || null;
+      const preferredType = parsed?.typeExplicit ? parsed.type : '';
+      const matched = await findBestUserCategoryMatch({ userId: user._id, noteText: notesText, preferredType });
+      if (matched?._id) {
+        categoryId = matched._id;
+        // Only override the parsed type when the user didn't explicitly say "จ่าย/รับ".
+        if (!parsed?.typeExplicit && (matched?.type === 'income' || matched?.type === 'expense')) parsed.type = matched.type;
+      }
+    } catch (e) {
+      console.warn('LINE category name match failed:', e?.message || e);
+    }
+
+    // 2) Otherwise, auto-categorize from keywords
+    try {
+      if (!categoryId) {
+        const cat = classifyCategoryFromNote(notesText, parsed.type);
+        if (cat && cat.name) {
+          const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
+          categoryId = doc?._id || null;
+        }
       }
     } catch (e) {
       console.warn('LINE auto-categorize failed:', e?.message || e);

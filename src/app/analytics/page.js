@@ -342,7 +342,7 @@ export default function Analytics() {
     filteredTransactions
       .filter(t => t.type === 'expense')
       .forEach(t => {
-        const catName = t.category?.name || 'Uncategorized';
+        const catName = t.category?.name || 'อื่นๆ';
         map[catName] = (map[catName] || 0) + (t.amount || 0);
       });
     return map;
