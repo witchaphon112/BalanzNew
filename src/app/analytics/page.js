@@ -745,7 +745,7 @@ export default function Analytics() {
           <div className="absolute -right-2 -top-2 h-24 w-24 rounded-[32px] bg-white/15" aria-hidden="true" />
 
           <div className="relative z-10">
-            <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">คะแนนสุขภาพการเงิน</div>
+            <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">คะแนนสุขภาพการเงิน(การออมเงิน)</div>
             <div className="mt-2 flex items-baseline gap-2">
               <div className="text-4xl font-extrabold">{healthScore}</div>
               <div className="text-sm font-extrabold text-slate-950/70">/ 100</div>
