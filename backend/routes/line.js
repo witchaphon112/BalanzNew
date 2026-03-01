@@ -492,7 +492,7 @@ async function handleTextEvent(event) {
     const summary = `${parsed.type === 'expense' ? 'จ่าย' : 'รับ'} ${parsed.amount} ${parsed.note || ''}`.trim();
     const when = new Date().toLocaleString();
     const baseReply = `บันทึกเรียบร้อย: ${summary}\nได้รับยอด ${parsed.amount} บาท สำหรับ: ${parsed.note || '-'}\nบันทึกเมื่อ: ${when}`;
-    const replyText = `${baseReply} (test)`;
+    const replyText = `${baseReply}`;
     return sendReply(event.replyToken, { type: 'text', text: replyText });
   }
 
