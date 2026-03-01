@@ -25,21 +25,62 @@ function safeUnlink(filePath) {
   }
 }
 
-// Preprocess image for better OCR
-async function preprocessImage(inputPath, outputPath) {
+function sanitizeForPath(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+// Preprocess image for better OCR (single variant)
+async function preprocessImageVariant(inputPath, outputPath, variant) {
   try {
-    await sharp(inputPath)
-      .resize(2000, null, { withoutEnlargement: false, fit: 'inside' })
-      .grayscale()
-      .normalize()
-      .sharpen()
-      .threshold(180)
-      .toFile(outputPath);
+    const v = String(variant || 'bw-170');
+    let img = sharp(inputPath).rotate(); // honor EXIF orientation
+
+    // Make text larger for OCR. Most phone screenshots are small.
+    img = img.resize(2400, null, { withoutEnlargement: false, fit: 'inside' });
+
+    // Common baseline for Thai slips/screenshots.
+    img = img.grayscale().normalize();
+
+    if (v === 'gray') {
+      // Keep grayscale (no hard threshold) - helps on colorful backgrounds.
+      img = img.median(3).sharpen();
+    } else if (v === 'bw-160') {
+      img = img.median(3).sharpen().threshold(160);
+    } else {
+      // Default: slightly softer threshold than before.
+      img = img.median(3).sharpen().threshold(170);
+    }
+
+    await img.toFile(outputPath);
     return outputPath;
   } catch (error) {
     console.error('Image preprocessing error:', error);
     return inputPath;
   }
+}
+
+async function preprocessImageVariants(inputPath, baseOutputPath) {
+  const baseDir = path.dirname(baseOutputPath);
+  const baseName = path.basename(baseOutputPath, path.extname(baseOutputPath));
+  try {
+    fs.mkdirSync(baseDir, { recursive: true });
+  } catch {
+    // ignore
+  }
+
+  const variants = ['bw-170', 'gray', 'bw-160'];
+  const out = [];
+  for (const v of variants) {
+    const outPath = path.join(baseDir, `${baseName}-${sanitizeForPath(v)}.png`);
+    const p = await preprocessImageVariant(inputPath, outPath, v);
+    out.push({ variant: v, path: p });
+  }
+  return out;
 }
 
 // Detect bank from text
@@ -65,6 +106,17 @@ function extractAmount(text, lines) {
   const safeLines = Array.isArray(lines) ? lines : [];
   const fullText = String(text || '');
 
+  const parseAmountFromText = (s) => {
+    const str = String(s || '');
+    const m = str.match(/(\d{1,9}(?:[,\s]\d{3})*(?:\.\d{1,2})?)(?:\s*(?:บาท|thb))?/i);
+    if (!m) return null;
+    const normalized = String(m[1]).replace(/[,\s]/g, '');
+    const num = Number.parseFloat(normalized);
+    if (!Number.isFinite(num)) return null;
+    if (num <= 0 || num > 10000000) return null;
+    return { raw: normalized, num };
+  };
+
   // Method 1: Look for amount keywords
   for (let i = 0; i < safeLines.length; i++) {
     const line = safeLines[i];
@@ -74,47 +126,38 @@ function extractAmount(text, lines) {
     const hasExcludeKeyword = excludeKeywords.some((k) => lowerLine.includes(k));
 
     if (hasAmountKeyword && !hasExcludeKeyword) {
-      const amountMatch = String(line || '').match(/(\d{1,7}(?:[,\s]\d{3})*(?:\.\d{2})?)/);
-      if (amountMatch) {
-        const amount = amountMatch[1].replace(/[,\s]/g, '');
-        const numAmount = parseFloat(amount);
-        if (numAmount > 0 && numAmount <= 10000000) {
-          foundAmount = amount;
-          confidence = 0.9;
-          break;
-        }
+      const amountHit = parseAmountFromText(line);
+      if (amountHit) {
+        foundAmount = amountHit.raw;
+        confidence = 0.92;
+        break;
       }
 
       for (let j = i + 1; j < Math.min(i + 4, safeLines.length); j++) {
         const nextLine = safeLines[j];
         const nextLower = String(nextLine || '').toLowerCase();
         if (excludeKeywords.some((k) => nextLower.includes(k))) continue;
-        const nextMatch = String(nextLine || '').match(/^\s*(\d{1,7}(?:[,\s]\d{3})*(?:\.\d{2})?)\s*$/);
-        if (nextMatch) {
-          const amount = nextMatch[1].replace(/[,\s]/g, '');
-          const numAmount = parseFloat(amount);
-          if (numAmount > 0 && numAmount <= 10000000) {
-            foundAmount = amount;
-            confidence = 0.85;
-            break;
-          }
+        const nextHit = parseAmountFromText(nextLine);
+        if (nextHit) {
+          foundAmount = nextHit.raw;
+          confidence = 0.9;
+          break;
         }
       }
       if (foundAmount) break;
     }
   }
 
-  // Method 2: Find standalone decimal numbers
+  // Method 2: Find standalone decimal numbers (or with currency)
   if (!foundAmount) {
     for (const line of safeLines) {
       const trimmed = String(line || '').trim();
-      const match = trimmed.match(/^(\d{1,7}(?:[,\s]\d{3})*\.\d{2})$/);
+      const match = trimmed.match(/^(\d{1,9}(?:[,\s]\d{3})*(?:\.\d{1,2})?)(?:\s*(?:บาท|thb))$/i);
       if (match) {
-        const amount = match[1].replace(/[,\s]/g, '');
-        const numAmount = parseFloat(amount);
-        if (numAmount > 0 && numAmount <= 10000000) {
-          foundAmount = amount;
-          confidence = 0.7;
+        const hit = parseAmountFromText(trimmed);
+        if (hit) {
+          foundAmount = hit.raw;
+          confidence = 0.78;
           break;
         }
       }
@@ -123,10 +166,10 @@ function extractAmount(text, lines) {
 
   // Method 3: Find largest reasonable number
   if (!foundAmount) {
-    const allNumbers = fullText.match(/\b(\d{1,7}(?:[,\s]\d{3})*\.\d{2})\b/g);
+    const allNumbers = fullText.match(/\b(\d{1,9}(?:[,\s]\d{3})*(?:\.\d{1,2})?)\b/g);
     if (allNumbers) {
       const amounts = allNumbers
-        .map((n) => ({ original: n, value: parseFloat(String(n).replace(/[,\s]/g, '')) }))
+        .map((n) => ({ original: n, value: Number.parseFloat(String(n).replace(/[,\s]/g, '')) }))
         .filter((n) => n.value > 0 && n.value < 1000000)
         .sort((a, b) => b.value - a.value);
       if (amounts.length > 0) {
@@ -137,6 +180,19 @@ function extractAmount(text, lines) {
   }
 
   return { amount: foundAmount, confidence };
+}
+
+function extractMemo(_text, lines) {
+  const safeLines = Array.isArray(lines) ? lines : [];
+  const keys = ['บันทึกช่วยจำ', 'หมายเหตุ', 'โน้ต', 'note', 'memo'];
+  for (const line of safeLines) {
+    const s = String(line || '').trim();
+    const lower = s.toLowerCase();
+    if (!keys.some((k) => lower.includes(String(k).toLowerCase()))) continue;
+    const m = s.match(/(?:บันทึกช่วยจำ|หมายเหตุ|โน้ต|note|memo)\s*[:：]?\s*(.+)$/i);
+    if (m && String(m[1] || '').trim()) return String(m[1]).trim();
+  }
+  return null;
 }
 
 function extractDate(_text, lines) {
@@ -189,61 +245,88 @@ function extractRecipient(_text, lines) {
   return null;
 }
 
-async function scanImageFile(originalPath, { cleanupOriginal = true } = {}) {
-  const startTime = Date.now();
-  const processedPath = originalPath.replace(/\.[^.]+$/, '-processed.png');
-
-  await preprocessImage(originalPath, processedPath);
-
-  const { data } = await Tesseract.recognize(processedPath, 'tha+eng', {
+async function runOcr(imagePath) {
+  const { data } = await Tesseract.recognize(imagePath, 'tha+eng', {
     tessedit_pageseg_mode: Tesseract.PSM.AUTO,
     preserve_interword_spaces: '1',
   });
+  return data || {};
+}
 
-  const text = data.text || '';
-  const lines = String(text).split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-  const fullText = String(text).toLowerCase();
+async function scanImageFile(originalPath, { cleanupOriginal = true } = {}) {
+  const startTime = Date.now();
+  const baseProcessedPath = originalPath.replace(/\.[^.]+$/, '-processed.png');
+  const processedVariants = await preprocessImageVariants(originalPath, baseProcessedPath);
 
-  const transferKeywords = ['โอนเงิน', 'transfer', 'successful', 'สำเร็จ', 'จากบัญชี', 'ไปยังบัญชี'];
-  const receiptKeywords = ['total', 'ยอดรวม', 'vat', 'receipt', 'ใบเสร็จ', 'tax'];
-  const isTransferSlip = transferKeywords.some((k) => fullText.includes(k));
-  const isReceipt = receiptKeywords.some((k) => fullText.includes(k));
+  let best = null;
+  for (const v of processedVariants) {
+    const data = await runOcr(v.path);
+    const text = data.text || '';
+    const lines = String(text).split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const fullText = String(text).toLowerCase();
 
-  const bank = detectBank(text);
-  const { amount, confidence: amountConfidence } = extractAmount(text, lines);
-  const date = extractDate(text, lines);
-  const time = extractTime(text, lines);
-  const recipient = isTransferSlip ? extractRecipient(text, lines) : null;
+    const transferKeywords = ['โอนเงิน', 'transfer', 'successful', 'สำเร็จ', 'จากบัญชี', 'ไปยังบัญชี', 'promptpay', 'พร้อมเพย์'];
+    const receiptKeywords = ['total', 'ยอดรวม', 'vat', 'receipt', 'ใบเสร็จ', 'tax'];
+    const isTransferSlip = transferKeywords.some((k) => fullText.includes(k));
+    const isReceipt = receiptKeywords.some((k) => fullText.includes(k));
+
+    const bank = detectBank(text);
+    const { amount, confidence: amountConfidence } = extractAmount(text, lines);
+    const date = extractDate(text, lines);
+    const time = extractTime(text, lines);
+    const memo = extractMemo(text, lines);
+    const recipient = isTransferSlip ? extractRecipient(text, lines) : null;
+
+    let documentType = 'unknown';
+    if (isTransferSlip) documentType = 'transfer_slip';
+    else if (isReceipt) documentType = 'receipt';
+
+    const extraction = {
+      documentType,
+      bank: bank ? { code: bank.code, name: bank.fullName, color: bank.color } : null,
+      amount: amount ? Number.parseFloat(amount) : null,
+      amountConfidence,
+      date,
+      time,
+      memo,
+      recipient,
+      rawText: text,
+      lineCount: lines.length,
+      processingTimeMs: 0, // set at end
+      _preprocessVariant: v.variant,
+    };
+
+    const ocrConfidence = Number(data.confidence) || 0;
+    const hasAmount = Number(extraction.amount) > 0;
+    const score =
+      ocrConfidence +
+      (amountConfidence || 0) * 50 +
+      (hasAmount ? 20 : 0) +
+      (extraction.date ? 5 : 0) +
+      (extraction.time ? 3 : 0) +
+      (extraction.memo ? 3 : 0);
+
+    if (!best || score > best.score) {
+      best = { score, extraction, ocrConfidence, tesseractVersion: Tesseract.version, rawData: data };
+    }
+
+    // Early exit: confident amount found.
+    if (hasAmount && (amountConfidence || 0) >= 0.88) break;
+  }
+
   const processingTime = Date.now() - startTime;
+  if (best && best.extraction) best.extraction.processingTimeMs = processingTime;
 
-  let documentType = 'unknown';
-  if (isTransferSlip) documentType = 'transfer_slip';
-  else if (isReceipt) documentType = 'receipt';
-
-  const extraction = {
-    documentType,
-    bank: bank ? { code: bank.code, name: bank.fullName, color: bank.color } : null,
-    amount: amount ? parseFloat(amount) : null,
-    amountConfidence,
-    date,
-    time,
-    recipient,
-    rawText: text,
-    lineCount: lines.length,
-    processingTimeMs: processingTime,
-  };
-
-  safeUnlink(processedPath);
+  for (const v of processedVariants) safeUnlink(v.path);
   if (cleanupOriginal) safeUnlink(originalPath);
 
   return {
-    extraction,
-    ocrConfidence: data.confidence,
-    tesseractVersion: Tesseract.version,
+    extraction: best ? best.extraction : { documentType: 'unknown', bank: null, amount: null, amountConfidence: 0, date: null, time: null, memo: null, recipient: null, rawText: '', lineCount: 0, processingTimeMs: processingTime },
+    ocrConfidence: best ? best.ocrConfidence : 0,
+    tesseractVersion: best ? best.tesseractVersion : Tesseract.version,
   };
 }
 
 module.exports = {
   scanImageFile,
 };
-

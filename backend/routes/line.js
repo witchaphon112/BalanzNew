@@ -936,6 +936,8 @@ async function handleImageEvent(event) {
       } else if (extraction?.documentType === 'receipt') {
         note = 'ใบเสร็จ/สลิป';
       }
+      const memo = String(extraction?.memo || '').trim();
+      if (memo) note = `${note} • ${memo}`;
 
       let categoryId = null;
 
