@@ -1,6 +1,9 @@
 // Quick test to simulate a LINE webhook POST locally
 const http = require('http');
 
+const textArg = process.argv.slice(2).join(' ').trim();
+const messageText = textArg || 'จดรายการ';
+
 const payload = {
   "destination": "U766438f1b89fa56e78316a60155e6a93",
   "events": [{
@@ -8,7 +11,7 @@ const payload = {
     "message": {
       "type": "text",
       "id": "598999691896029374",
-      "text": "จดรายการ"
+      "text": messageText
     },
     "webhookEventId": "01KGA0TMGAA6S8GDWRJM8A31VW",
     "deliveryContext": { "isRedelivery": false },
@@ -26,7 +29,7 @@ const postData = JSON.stringify(payload);
 
 const options = {
   hostname: 'localhost',
-  port: 5050,
+  port: Number(process.env.PORT) || 5050,
   path: '/webhooks/line',
   method: 'POST',
   headers: {

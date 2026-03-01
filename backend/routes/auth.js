@@ -95,25 +95,27 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Get user profile
-router.get('/me', authMiddleware, async (req, res) => {
-  console.log('Fetching user for ID:', req.user.userId);
-  try {
-    const user = await User.findById(req.user.userId).select('-password');
-    if (!user) {
-      console.log('User not found for ID:', req.user.userId);
-      return res.status(404).json({ message: 'User not found' });
-    }
-    res.json({
-      name: user.name,
-      email: user.email,
-      profilePic: user.profilePic || ''
-    });
-  } catch (error) {
-    console.error('Profile fetch error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+	// Get user profile
+	router.get('/me', authMiddleware, async (req, res) => {
+	  console.log('Fetching user for ID:', req.user.userId);
+	  try {
+	    const user = await User.findById(req.user.userId).select('-password');
+	    if (!user) {
+	      console.log('User not found for ID:', req.user.userId);
+	      return res.status(404).json({ message: 'User not found' });
+	    }
+	    res.json({
+	      id: user._id,
+	      name: user.name,
+	      email: user.email,
+	      profilePic: user.profilePic || '',
+	      lineUserId: user.lineUserId || ''
+	    });
+	  } catch (error) {
+	    console.error('Profile fetch error:', error);
+	    res.status(500).json({ message: 'Server error' });
+	  }
+	});
 
 // Update user profile
 router.put('/me', authMiddleware, async (req, res) => {

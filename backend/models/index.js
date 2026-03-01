@@ -6,4 +6,5 @@ module.exports = {
   Budget: require('./Budget'),
   ImportExportLog: require('./ImportExportLog'),
   NotificationCount: require('./NotificationCount'),
+  LineLoginSession: require('./LineLoginSession'),
 };

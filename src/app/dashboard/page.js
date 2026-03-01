@@ -380,6 +380,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     const token = localStorage.getItem('token');
+    let refreshTimer = null;
+    let refreshInFlight = false;
 
     const safeJson = async (res) => {
       try {
@@ -455,11 +457,37 @@ export default function Dashboard() {
         return;
     }
 
-    fetchStats();
-    fetchCategories();
-    fetchBudgets();
+    const refreshAll = () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      Promise.allSettled([fetchStats(), fetchCategories(), fetchBudgets()])
+        .finally(() => { refreshInFlight = false; });
+    };
+
+    const scheduleRefresh = () => {
+      try {
+        if (refreshTimer) clearTimeout(refreshTimer);
+      } catch {}
+      refreshTimer = setTimeout(() => refreshAll(), 120);
+    };
+
+    refreshAll();
+
+    const onFocus = () => scheduleRefresh();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') scheduleRefresh();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
     
-    return () => {};
+    return () => {
+      try {
+        if (refreshTimer) clearTimeout(refreshTimer);
+      } catch {}
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [selectedMonth]);
 
   // Fetch profile from backend (LINE user is linked to our User model)

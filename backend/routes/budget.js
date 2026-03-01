@@ -34,7 +34,11 @@ router.get('/', authMiddleware, async (req, res) => {
 // Get total budgets grouped by month for user
 router.get('/total', authMiddleware, async (req, res) => {
   try {
-    const userId = mongoose.Types.ObjectId(req.user.userId);
+    const rawUserId = req?.user?.userId;
+    if (!mongoose.isValidObjectId(rawUserId)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+    const userId = new mongoose.Types.ObjectId(String(rawUserId));
     // Use a defensive aggregation: coerce total (or legacy amount) to double and sum that.
     const agg = await Budget.aggregate([
       { $match: { userId } },

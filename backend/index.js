@@ -7,8 +7,10 @@ const User = require('./models/User');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
-// Load environment variables as early as possible so required modules can read them
-dotenv.config();
+const path = require('path');
+// Load environment variables as early as possible so required modules can read them.
+// Use an explicit path so starting the server from the repo root still loads `backend/.env`.
+dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || path.join(__dirname, '.env') });
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const categoryRoutes = require('./routes/categories'); // เปลี่ยนจาก Categories
@@ -99,7 +101,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 // Preserve raw body for LINE signature verification middleware
-app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString(); } }));
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 // Session and Passport middleware
 app.use(session({
