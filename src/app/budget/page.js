@@ -1649,9 +1649,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   <div className="mt-0.5 truncate text-lg font-extrabold text-[color:var(--app-text)]">
                     {deleteCategory.name}
                   </div>
-                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
-                    รายการที่เกี่ยวข้องจะถูกย้ายไป “อื่นๆ”
-                  </div>
+                 
                 </div>
               </div>
             </div>
