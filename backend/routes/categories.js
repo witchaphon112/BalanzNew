@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const Category = require('../models/Categories');
 const Transaction = require('../models/Transaction');
+const Budget = require('../models/Budget');
 const router = express.Router();
 
 const authMiddleware = (req, res, next) => {
@@ -67,30 +68,25 @@ router.delete('/:categoryId', authMiddleware, async (req, res) => {
       return res.status(403).json({ message: 'คุณไม่มีสิทธิ์ลบหมวดหมู่นี้' });
     }
 
-    if ((category.name || '').trim() === 'อื่นๆ') {
-      return res.status(400).json({ message: 'ไม่สามารถลบหมวด "อื่นๆ" ได้' });
-    }
-
-    let otherCategory = await Category.findOne({ name: 'อื่นๆ', type: category.type, userId: req.user.userId });
-    if (!otherCategory) {
-      otherCategory = new Category({
-        name: 'อื่นๆ',
-        icon: '🌐',
-        type: category.type,
-        userId: req.user.userId,
-      });
-      await otherCategory.save();
-    }
-
-    // Re-assign related transactions to "อื่นๆ" before deleting the category
+    // Detach related data instead of forcing a fallback category.
+    // Transactions will show as "ไม่ระบุหมวด" on the UI and can be recategorized later.
     await Transaction.updateMany(
       { categoryId: category._id, userId: req.user.userId },
-      { categoryId: otherCategory._id }
+      { $set: { categoryId: null } }
     );
+
+    // Remove budgets tied to this category to avoid orphan budgets.
+    await Budget.deleteMany({
+      userId: req.user.userId,
+      $or: [
+        { category: category._id },
+        { categoryId: category._id },
+      ],
+    }).catch(() => {});
 
     await Category.deleteOne({ _id: categoryId });
 
-    res.json({ message: 'ลบหมวดหมู่เรียบร้อย', deletedId: categoryId, reassignedTo: otherCategory._id });
+    res.json({ message: 'ลบหมวดหมู่เรียบร้อย', deletedId: categoryId, reassignedTo: null });
   } catch (error) {
     console.error("Delete category error:", error);
     res.status(500).json({ message: 'Server error: ' + error.message });

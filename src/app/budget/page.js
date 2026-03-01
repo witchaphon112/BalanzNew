@@ -21,6 +21,7 @@ import {
   Music,
   Dumbbell,
   MoreHorizontal,
+  Plus,
   Search,
   Trash2,
   CheckCircle2,
@@ -141,7 +142,6 @@ const POPULAR_CATEGORY_PRESETS = {
     { name: 'รายได้เสริม', icon: 'work' },
     { name: 'ลงทุน', icon: 'money' },
     { name: 'คืนเงิน', icon: 'money' },
-    { name: 'อื่นๆ', icon: 'other' },
   ],
 };
 
@@ -614,10 +614,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
   const openDeleteCategoryModal = (category) => {
     if (!category) return;
-    if (String(category?.name || '').trim() === 'อื่นๆ') {
-      showToast('warning', 'ไม่สามารถลบหมวด "อื่นๆ" ได้');
-      return;
-    }
     setIsSortOpen(false);
     setIsSettingsOpen(false);
     setShowAddModal(false);
@@ -814,8 +810,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               <div className="text-lg font-extrabold text-[color:var(--app-text)]">งบที่ตั้งไว้</div>
             </div>
 
-            <div className="absolute right-0 flex items-center gap-2">
-            </div>
           </div>
 
           {/* Month tabs */}
@@ -1216,7 +1210,17 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 🗂️
               </div>
               <div className="text-base font-extrabold text-[color:var(--app-text)]">ยังไม่มีหมวด{typeLabel}</div>
-              <div className="mt-1 text-sm font-semibold text-[color:var(--app-muted)]">กดปุ่ม “เพิ่มงบ” ด้านบนเพื่อเพิ่มหมวดใหม่</div>
+              <div className="mt-1 text-sm font-semibold text-[color:var(--app-muted)]">กดปุ่ม “เพิ่มหมวด” เพื่อเพิ่มหมวดใหม่</div>
+              <div className="mt-5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={openAddCategoryModal}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                >
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                  เพิ่มหมวด{typeLabel}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1786,7 +1790,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               <button
                 type="button"
                 onClick={() => openDeleteCategoryModal(editingCategory)}
-                disabled={String(editingCategory?.name || '').trim() === 'อื่นๆ'}
                 className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
               >
                 ลบหมวดนี้

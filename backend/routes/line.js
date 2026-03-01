@@ -136,7 +136,7 @@ function classifyCategoryFromNote(note, type) {
     if (has('โบนัส', 'bonus')) return { name: 'โบนัส', icon: 'gift' };
     if (has('คืนเงิน', 'refund', 'rebate')) return { name: 'คืนเงิน', icon: 'money' };
     if (has('ลงทุน', 'หุ้น', 'คริป', 'crypto', 'investment')) return { name: 'ลงทุน', icon: 'money' };
-    return { name: 'รายได้อื่นๆ', icon: 'money' };
+    return null;
   }
 
   // expense
@@ -159,12 +159,13 @@ function classifyCategoryFromNote(note, type) {
     return { name: 'สุขภาพ', icon: 'health' };
   }
 
-  return { name: 'อื่นๆ', icon: 'other' };
+  return null;
 }
 
 async function ensureUserCategory({ userId, type, name, icon }) {
   const safeType = type === 'income' ? 'income' : 'expense';
-  const safeName = String(name || '').trim() || (safeType === 'income' ? 'รายได้อื่นๆ' : 'อื่นๆ');
+  const safeName = String(name || '').trim();
+  if (!safeName) return null;
   const safeIcon = String(icon || '').trim() || 'other';
 
   const existing = await Category.findOne({ userId, type: safeType, name: safeName });
