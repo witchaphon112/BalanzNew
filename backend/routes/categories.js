@@ -55,6 +55,49 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
+// Update category (name/icon)
+router.put('/:categoryId', authMiddleware, async (req, res) => {
+  const { categoryId } = req.params;
+  const rawName = req.body?.name;
+  const rawIcon = req.body?.icon;
+
+  const name = typeof rawName === 'string' ? rawName.trim() : '';
+  const icon = typeof rawIcon === 'string' ? rawIcon.trim() : '';
+
+  if (!name) {
+    return res.status(400).json({ message: 'กรุณาระบุชื่อหมวดหมู่' });
+  }
+
+  try {
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({ message: 'ไม่พบหมวดหมู่ในระบบ' });
+    }
+
+    if (category.userId.toString() !== req.user.userId) {
+      return res.status(403).json({ message: 'คุณไม่มีสิทธิ์แก้ไขหมวดหมู่นี้' });
+    }
+
+    const sameType = category.type;
+    const existingCategory = await Category.findOne({
+      _id: { $ne: category._id },
+      userId: req.user.userId,
+      type: sameType,
+      name,
+    });
+    if (existingCategory) {
+      return res.status(400).json({ message: 'หมวดหมู่นี้มีอยู่แล้วในประเภทนี้' });
+    }
+
+    category.name = name;
+    if (icon) category.icon = icon;
+    await category.save();
+    res.json(category);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error: ' + error.message });
+  }
+});
+
 // Delete category
 router.delete('/:categoryId', authMiddleware, async (req, res) => {
   const { categoryId } = req.params;

@@ -75,6 +75,20 @@ const parseThaiMonthLabel = (label) => {
   return { monthIndex: monthIdx, year: buddhistYear - 543 };
 };
 
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const dateStringForSelectedMonth = (selectedMonthLabel) => {
+  const parsed = parseThaiMonthLabel(selectedMonthLabel);
+  const now = new Date();
+  if (!parsed) {
+    return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  }
+  const { year, monthIndex } = parsed;
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const day = Math.min(Math.max(1, now.getDate()), Math.max(1, daysInMonth || 1));
+  return `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+};
+
 const buildSmoothSvgPath = (points) => {
   if (!Array.isArray(points) || points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
@@ -190,11 +204,20 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   // Modal State for Editing
   const [editingCategory, setEditingCategory] = useState(null); // The category object being edited
   const [editAmount, setEditAmount] = useState('');
+  const [editingCategoryMeta, setEditingCategoryMeta] = useState(null); // Edit name/icon
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryIcon, setEditCategoryIcon] = useState('');
+  const [editCategoryLoading, setEditCategoryLoading] = useState(false);
+  const [incomeQuickAmount, setIncomeQuickAmount] = useState('');
+  const [incomeQuickNote, setIncomeQuickNote] = useState('');
+  const [incomeQuickLoading, setIncomeQuickLoading] = useState(false);
   const [deleteCategory, setDeleteCategory] = useState(null);
   const [deleteCategoryLoading, setDeleteCategoryLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('');
+  const [newIncomeAmount, setNewIncomeAmount] = useState('');
+  const [newIncomeNote, setNewIncomeNote] = useState('');
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
   const iconOptions = ['food', 'drink', 'shopping', 'transport', 'home', 'bills', 'health', 'education', 'tech', 'pet', 'game', 'music', 'gift', 'salary', 'work', 'money', 'love', 'other'];
   const [toast, setToast] = useState(null); // { id, tone: 'success'|'error'|'info'|'warning', message }
@@ -675,23 +698,147 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         // noop
       }
     }, [budgets, categories, selectedMonth]);
-	  const openEditModal = (category) => {
-      if (selectedType !== 'expense') {
-        showToast('info', 'รายรับไม่ต้องตั้งงบ');
-        return;
-      }
-	    setEditingCategory(category);
-	    setEditAmount(category.budget === 0 ? '' : category.budget.toString());
-	  };
+		  const openEditModal = (category) => {
+	      if (selectedType !== 'expense') {
+	        showToast('info', 'รายรับไม่ต้องตั้งงบ');
+	        return;
+	      }
+		    setEditingCategory(category);
+		    setEditAmount(category.budget === 0 ? '' : category.budget.toString());
+		  };
 
-  const openDeleteCategoryModal = (category) => {
-    if (!category) return;
-    setIsSortOpen(false);
-    setIsSettingsOpen(false);
-    setShowAddModal(false);
-    setEditingCategory(null);
-    setDeleteCategory(category);
-  };
+      const openEditCategoryMetaModal = (category) => {
+        if (!category?._id) return;
+        setIsSortOpen(false);
+        setIsSettingsOpen(false);
+        setShowAddModal(false);
+        setEditingCategory(null);
+        setDeleteCategory(null);
+        setEditCategoryName(String(category?.name || ''));
+        setEditCategoryIcon(String(category?.icon || ''));
+        setIncomeQuickAmount('');
+        setIncomeQuickNote('');
+        setEditingCategoryMeta(category);
+      };
+
+      const closeEditCategoryMetaModal = () => {
+        if (editCategoryLoading) return;
+        if (incomeQuickLoading) return;
+        setEditingCategoryMeta(null);
+      };
+
+      const handleSaveCategoryMeta = async (e) => {
+        e?.preventDefault?.();
+        if (!editingCategoryMeta?._id) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+          showToast('warning', 'กรุณาเข้าสู่ระบบ');
+          return;
+        }
+
+        const name = String(editCategoryName || '').trim();
+        const icon = String(editCategoryIcon || '').trim();
+        if (!name) {
+          showToast('warning', 'กรุณาระบุชื่อหมวดหมู่');
+          return;
+        }
+
+        setEditCategoryLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/api/categories/${editingCategoryMeta._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name, icon }),
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || 'ไม่สามารถแก้ไขหมวดได้');
+          }
+
+          let updated = null;
+          try {
+            updated = await res.json();
+          } catch {
+            updated = null;
+          }
+
+          setCategories((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            return list.map((c) => (c && String(c._id) === String(editingCategoryMeta._id) ? { ...c, ...(updated || { name, icon }) } : c));
+          });
+          setEditingCategoryMeta((prev) => {
+            if (!prev || String(prev._id) !== String(editingCategoryMeta._id)) return prev;
+            return { ...prev, ...(updated || { name, icon }) };
+          });
+
+          setEditingCategoryMeta(null);
+          showToast('success', 'แก้ไขหมวดเรียบร้อยแล้ว');
+        } catch (err) {
+          console.error('Update category error', err);
+          showToast('error', 'ไม่สามารถแก้ไขหมวดได้: ' + (err.message || 'ข้อผิดพลาด'));
+        } finally {
+          setEditCategoryLoading(false);
+        }
+      };
+
+      const handleAddIncomeToCategory = async (e) => {
+        e?.preventDefault?.();
+        if (!editingCategoryMeta?._id) return;
+        const token = localStorage.getItem('token');
+        if (!token) {
+          showToast('warning', 'กรุณาเข้าสู่ระบบ');
+          return;
+        }
+
+        const amountNum = Number(incomeQuickAmount);
+        if (!Number.isFinite(amountNum) || amountNum <= 0) {
+          showToast('warning', 'กรุณาใส่จำนวนเงินที่ถูกต้อง');
+          return;
+        }
+
+        setIncomeQuickLoading(true);
+        try {
+          const payload = {
+            amount: amountNum,
+            type: 'income',
+            category: editingCategoryMeta._id,
+            date: dateStringForSelectedMonth(selectedMonth),
+            notes: String(incomeQuickNote || '').trim() || String(editingCategoryMeta?.name || ''),
+          };
+
+          const res = await fetch(`${API_BASE}/api/transactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || 'ไม่สามารถบันทึกรายรับได้');
+          }
+          const created = await res.json();
+          setTransactions((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            return [...list, created];
+          });
+          showToast('success', 'เพิ่มรายรับเรียบร้อยแล้ว');
+        } catch (err) {
+          console.error('Add income error', err);
+          showToast('error', 'เพิ่มรายรับไม่สำเร็จ: ' + (err.message || 'ข้อผิดพลาด'));
+        } finally {
+          setIncomeQuickLoading(false);
+        }
+      };
+
+	  const openDeleteCategoryModal = (category) => {
+	    if (!category) return;
+	    setIsSortOpen(false);
+	    setIsSettingsOpen(false);
+	    setShowAddModal(false);
+	    setEditingCategory(null);
+      setEditingCategoryMeta(null);
+	    setDeleteCategory(category);
+	  };
 
   const closeDeleteCategoryModal = () => {
     if (deleteCategoryLoading) return;
@@ -826,6 +973,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     setEditingCategory(null);
     setNewCategoryName('');
     setNewCategoryIcon('');
+    setNewIncomeAmount('');
+    setNewIncomeNote('');
     setShowAddModal(true);
   };
 
@@ -833,6 +982,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     setShowAddModal(false);
     setNewCategoryName('');
     setNewCategoryIcon('');
+    setNewIncomeAmount('');
+    setNewIncomeNote('');
   };
 
 	  const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
@@ -876,6 +1027,23 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     }
     return out;
   }, [processedData.items, categoryQuery, categoryFilter, isIncomeMode]);
+
+  const editingIncomeStats = useMemo(() => {
+    const catId = editingCategoryMeta?._id;
+    if (!catId) return { received: 0, txCount: 0 };
+    let received = 0;
+    let txCount = 0;
+    for (const t of transactions || []) {
+      if (!t || t.type !== 'income') continue;
+      if (monthLabelFromDate(t.date) !== selectedMonth) continue;
+      const catVal = t.category && typeof t.category === 'object' ? t.category?._id : t.category;
+      if (String(catVal || '') !== String(catId)) continue;
+      const amt = Number(t.amount) || 0;
+      if (amt > 0) received += amt;
+      txCount += 1;
+    }
+    return { received, txCount };
+  }, [editingCategoryMeta?._id, transactions, selectedMonth]);
 
   const handleClose = () => {
     if (typeof onClose === 'function') onClose();
@@ -1507,18 +1675,18 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                                 >
                                   แก้ไข
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openDeleteCategoryModal(cat);
-                                  }}
-                                  className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-extrabold text-rose-300 hover:bg-rose-500/15 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
-                                >
-                                  ลบ
-                                </button>
-                              )}
+	                              ) : (
+	                                <button
+	                                  type="button"
+	                                  onClick={(e) => {
+	                                    e.stopPropagation();
+	                                    openEditCategoryMetaModal(cat);
+	                                  }}
+	                                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                                >
+	                                  แก้ไข
+	                                </button>
+	                              )}
 	                          </div>
                           {!isIncomeMode ? (
 	                          <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
@@ -1641,6 +1809,33 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     if (list.some(c => c && c._id === created._id)) return list;
                     return [...list, created];
                   });
+
+                  // Optional: add an income transaction right after creating an income category.
+                  const amountNum = Number(newIncomeAmount);
+                  if (selectedType === 'income' && Number.isFinite(amountNum) && amountNum > 0) {
+                    try {
+                      const txnRes = await fetch(`${API_BASE}/api/transactions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({
+                          amount: amountNum,
+                          type: 'income',
+                          category: created._id,
+                          date: dateStringForSelectedMonth(selectedMonth),
+                          notes: String(newIncomeNote || '').trim() || String(created?.name || ''),
+                        }),
+                      });
+                      if (txnRes.ok) {
+                        const txn = await txnRes.json();
+                        setTransactions((prevT) => {
+                          const listT = Array.isArray(prevT) ? prevT : [];
+                          return [...listT, txn];
+                        });
+                      }
+                    } catch {
+                      // ignore (category creation succeeded)
+                    }
+                  }
                 } else {
                   const headers = { Authorization: `Bearer ${token}` };
                   const catRes = await fetch(`${API_BASE}/api/categories`, { headers });
@@ -1653,6 +1848,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 setShowAddModal(false);
                 setNewCategoryName('');
                 setNewCategoryIcon('');
+                setNewIncomeAmount('');
+                setNewIncomeNote('');
                 showToast('success', 'สร้างหมวดเรียบร้อยแล้ว');
               } catch (err) {
                 console.error('Create category error', err);
@@ -1679,6 +1876,40 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 </div>
                 <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">พิมพ์ชื่อหมวด หรือเลือกจากตัวอย่างด้านล่าง</div>
               </div>
+
+              {selectedType === 'income' ? (
+                <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-sm shadow-black/10">
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">ใส่รายรับเข้าหมวดนี้เลย (ไม่บังคับ)</div>
+                  <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                    ถ้าใส่จำนวนเงิน ระบบจะสร้างรายการรายรับให้ทันทีในเดือนที่เลือก
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="col-span-1">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">จำนวนเงิน</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        value={newIncomeAmount}
+                        onChange={(e) => setNewIncomeAmount(e.target.value)}
+                      />
+                      <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                        ยอดเงิน: <span className="font-extrabold text-slate-200">{formatCurrency(Number(newIncomeAmount) || 0)}</span>
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">โน้ต (ถ้ามี)</label>
+                      <input
+                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        value={newIncomeNote}
+                        onChange={(e) => setNewIncomeNote(e.target.value)}
+                        placeholder="เช่น เงินเดือนรอบนี้"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-5">
                 <div className="text-sm font-extrabold text-[color:var(--app-text)]">ตัวอย่างยอดฮิต</div>
@@ -1786,6 +2017,192 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   </span>
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Edit Category (name/icon) Modal */}
+      {mounted && editingCategoryMeta && createPortal((
+        <div
+          className="fixed inset-0 z-[89] flex items-stretch sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+          onClick={(e) => e.target === e.currentTarget && closeEditCategoryMetaModal()}
+        >
+          <div
+            className="bg-[var(--app-surface)] w-full max-w-none rounded-none sm:max-w-md sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[100dvh] sm:h-auto sm:max-h-[85dvh]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] sm:pt-4 overflow-hidden">
+              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
+
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={closeEditCategoryMetaModal}
+                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
+                  aria-label="ปิด"
+                  title="ปิด"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+
+                <div className="mx-auto max-w-[78%] text-center">
+                  <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">แก้ไขหมวด{typeLabel}</div>
+                  <h3 className="mt-1 truncate text-lg font-extrabold">{editingCategoryMeta?.name || 'แก้ไขหมวด'}</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-950/70">เปลี่ยนชื่อ หรือไอคอน</p>
+                </div>
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleSaveCategoryMeta}
+              className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+96px)] sm:pb-6"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">ชื่อหมวด{typeLabel}</label>
+                <input
+                  className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  value={editCategoryName}
+                  onChange={(e) => setEditCategoryName(e.target.value)}
+                  required
+                  placeholder={selectedType === 'expense' ? 'เช่น ค่าอาหารกลางวัน' : 'เช่น เงินเดือน'}
+                />
+              </div>
+
+              {selectedType === 'income' ? (
+                <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-sm shadow-black/10">
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">เพิ่มรายรับเข้าหมวดนี้</div>
+                  <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                    เพิ่มยอดเข้ามาได้เรื่อย ๆ (ระบบจะบวกสะสมจากรายการที่บันทึก)
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <div className="col-span-1">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">เพิ่มอีก</label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        value={incomeQuickAmount}
+                        onChange={(e) => setIncomeQuickAmount(e.target.value)}
+                      />
+                      <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                        ยอดตอนนี้: <span className="font-extrabold text-slate-200">{formatCurrency(editingIncomeStats.received || 0)}</span>
+                      </div>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">โน้ต (ถ้ามี)</label>
+                      <input
+                        className="w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        value={incomeQuickNote}
+                        onChange={(e) => setIncomeQuickNote(e.target.value)}
+                        placeholder="เช่น เงินเดือนรอบนี้"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAddIncomeToCategory}
+                    disabled={incomeQuickLoading || editCategoryLoading}
+                    className="mt-3 w-full rounded-2xl bg-emerald-500 py-3 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 disabled:opacity-50"
+                  >
+                    {incomeQuickLoading ? 'กำลังเพิ่ม...' : 'เพิ่มรายรับ'}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-xs font-semibold text-slate-300">เลือกไอคอน</label>
+                  {editCategoryIcon?.trim() ? (
+                    <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                      เลือกแล้ว:{' '}
+                      <span className="font-extrabold text-slate-200">{editCategoryIcon}</span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">ยังไม่ได้เลือก</div>
+                  )}
+                </div>
+
+                <div className="mt-3 grid grid-cols-6 gap-2">
+                  {iconOptions.map((ic) => (
+                    <button
+                      key={`edit-${ic}`}
+                      type="button"
+                      onClick={() => setEditCategoryIcon(ic)}
+                      className={[
+                        'h-11 w-11 rounded-2xl border shadow-sm flex items-center justify-center transition',
+                        'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                        editCategoryIcon === ic
+                          ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
+                          : 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'
+                      ].join(' ')}
+                      aria-label={`เลือกไอคอน ${ic}`}
+                    >
+                      <CategoryIcon iconKey={ic} className="w-5 h-5" />
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEditCategoryIcon('')}
+                    className={[
+                      'col-span-2 h-11 rounded-2xl border shadow-sm flex items-center justify-center text-sm font-extrabold transition',
+                      'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                      editCategoryIcon === ''
+                        ? 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
+                        : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10'
+                    ].join(' ')}
+                  >
+                    ล้าง
+                  </button>
+                </div>
+
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-slate-300 mb-2">ไอคอน (กำหนดเอง)</label>
+                  <input
+                    className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 py-3 px-4 text-sm font-extrabold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                    value={editCategoryIcon}
+                    onChange={(e) => setEditCategoryIcon(e.target.value)}
+                    placeholder="พิมพ์คีย์ไอคอน (เช่น food, shopping) หรือใส่ Emoji ก็ได้"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={closeEditCategoryMetaModal}
+                  disabled={editCategoryLoading}
+                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10 disabled:opacity-40"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={editCategoryLoading || !String(editCategoryName || '').trim()}
+                  className="py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 disabled:opacity-50"
+                >
+                  {editCategoryLoading ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const cat = editingCategoryMeta;
+                  setEditingCategoryMeta(null);
+                  openDeleteCategoryModal(cat);
+                }}
+                disabled={editCategoryLoading}
+                className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
+              >
+                ลบหมวดนี้
+              </button>
             </form>
           </div>
         </div>
