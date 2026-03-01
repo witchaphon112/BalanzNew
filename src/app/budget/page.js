@@ -174,12 +174,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   // Modal State for Editing
   const [editingCategory, setEditingCategory] = useState(null); // The category object being edited
   const [editAmount, setEditAmount] = useState('');
-  const [showQuickBudgetModal, setShowQuickBudgetModal] = useState(false);
-  const [quickBudgetCategoryId, setQuickBudgetCategoryId] = useState('');
-  const [quickBudgetAmount, setQuickBudgetAmount] = useState('');
-  const [quickBudgetLoading, setQuickBudgetLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [resumeQuickBudgetAfterAdd, setResumeQuickBudgetAfterAdd] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryIcon, setNewCategoryIcon] = useState('');
   const [addCategoryLoading, setAddCategoryLoading] = useState(false);
@@ -651,36 +646,28 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const openSettings = () => {
     setIsSortOpen(false);
     setEditingCategory(null);
-    setShowQuickBudgetModal(false);
     setShowAddModal(false);
-    setResumeQuickBudgetAfterAdd(false);
     setTempMonthIndex(currentMonthIndex);
     setIsSettingsOpen(true);
+  };
+
+  const openAddCategoryModal = () => {
+    setIsSortOpen(false);
+    setIsSettingsOpen(false);
+    setEditingCategory(null);
+    setNewCategoryName('');
+    setNewCategoryIcon('');
+    setShowAddModal(true);
   };
 
   const closeAddCategoryModal = () => {
     setShowAddModal(false);
     setNewCategoryName('');
     setNewCategoryIcon('');
-    if (resumeQuickBudgetAfterAdd) {
-      setResumeQuickBudgetAfterAdd(false);
-      setShowQuickBudgetModal(true);
-    }
   };
 
   const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
   const budgetedItemCount = (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
-
-  const openQuickBudget = () => {
-    setIsSortOpen(false);
-    setIsSettingsOpen(false);
-    setEditingCategory(null);
-    setShowAddModal(false);
-    const firstCat = (categories || []).find(c => c.type === selectedType);
-    setQuickBudgetCategoryId(firstCat?._id || '');
-    setQuickBudgetAmount('');
-    setShowQuickBudgetModal(true);
-  };
 
   const handleClose = () => {
     if (typeof onClose === 'function') onClose();
@@ -709,17 +696,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               >
                 <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H21M10 12H21M10 18H21M3 6h.01M3 12h.01M3 18h.01" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                onClick={openQuickBudget}
-                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-300/40"
-                aria-label="เพิ่มงบ"
-                title="เพิ่มงบ"
-              >
-                <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                 </svg>
               </button>
             </div>
@@ -1010,7 +986,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 onChange={(e) => setTempMonthIndex(parseInt(e.target.value, 10))}
               >
                 {months.map((m, idx) => (
-                  <option key={m} value={idx} className="text-slate-900">{m}</option>
+                  <option key={m} value={idx} className="bg-slate-950 text-slate-100">{m}</option>
                 ))}
               </select>
 
@@ -1169,12 +1145,12 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
 	              <button
 	                type="button"
-	                onClick={openQuickBudget}
+	                onClick={openAddCategoryModal}
 	                className={[
 	                  'w-full cursor-pointer rounded-3xl border border-dashed border-white/20 bg-white/0 p-5 text-left',
 	                  'transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
 	                ].join(' ')}
-	                aria-label={`เพิ่มงบ${typeLabel}`}
+	                aria-label={`เพิ่มหมวด${typeLabel}`}
 	              >
                 <div className="flex items-center gap-4">
                   <div className="h-12 w-12 rounded-2xl border border-dashed border-white/20 bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-200">
@@ -1183,8 +1159,8 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                     </svg>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-base font-extrabold text-[color:var(--app-text)]">เพิ่มงบ{typeLabel}</div>
-                    <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">แตะเพื่อเพิ่มงบให้หมวด</div>
+                    <div className="text-base font-extrabold text-[color:var(--app-text)]">เพิ่มหมวด{typeLabel}</div>
+                    <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">แตะเพื่อเพิ่มหมวดใหม่</div>
                   </div>
                 </div>
               </button>
@@ -1199,16 +1175,16 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       {/* Add Category Modal */}
       {showAddModal && (
         <div
-          className="fixed inset-0 z-[55] flex items-stretch justify-center bg-slate-950/45 backdrop-blur-sm p-0"
+          className="fixed inset-0 z-[90] flex items-stretch sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
           onClick={(e) => e.target === e.currentTarget && closeAddCategoryModal()}
         >
 	          <div
-	            className="bg-[var(--app-surface)] w-full max-w-none rounded-none shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[100dvh]"
+	            className="bg-[var(--app-surface)] w-full max-w-none rounded-none sm:max-w-md sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[100dvh] sm:h-auto sm:max-h-[85dvh]"
 	            onClick={(e) => e.stopPropagation()}
 	            role="dialog"
 	            aria-modal="true"
 	          >
-            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] overflow-hidden">
+            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] sm:pt-4 overflow-hidden">
               <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
               <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
 
@@ -1274,19 +1250,13 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 setNewCategoryName('');
                 setNewCategoryIcon('');
                 showToast('success', 'สร้างหมวดเรียบร้อยแล้ว');
-
-                if (resumeQuickBudgetAfterAdd) {
-                  setResumeQuickBudgetAfterAdd(false);
-                  if (created && created._id) setQuickBudgetCategoryId(created._id);
-                  setShowQuickBudgetModal(true);
-                }
               } catch (err) {
                 console.error('Create category error', err);
                 showToast('error', 'ไม่สามารถสร้างหมวดได้: ' + (err.message || 'ข้อผิดพลาด'));
               } finally {
                 setAddCategoryLoading(false);
               }
-		            }} className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+96px)]">
+		            }} className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+96px)] sm:pb-6">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-2">ตั้งชื่อหมวด{typeLabel}</label>
                 <div className="relative">
@@ -1410,157 +1380,6 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
                     </svg>
                   </span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Add Budget Modal */}
-	      {showQuickBudgetModal && (
-	        <div
-	          className="fixed inset-0 z-[58] flex items-stretch justify-center bg-slate-950/45 backdrop-blur-sm p-0"
-	          onClick={(e) => e.target === e.currentTarget && setShowQuickBudgetModal(false)}
-	        >
-	          <div
-	            className="bg-[var(--app-surface)] w-full max-w-none rounded-none shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col h-[100dvh]"
-	            onClick={(e) => e.stopPropagation()}
-	            role="dialog"
-	            aria-modal="true"
-	          >
-            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+16px)] overflow-hidden">
-              <div className="absolute top-0 right-0 w-28 h-28 bg-white/10 rounded-full -mr-14 -mt-14" aria-hidden="true" />
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
-
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickBudgetModal(false)}
-                  className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/20 hover:bg-white/25 transition"
-                  aria-label="ปิด"
-                  title="ปิด"
-                >
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-
-                <div className="mx-auto max-w-[78%] text-center">
-                  <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">{selectedMonth}</div>
-                  <h3 className="mt-1 truncate text-lg font-extrabold">เพิ่มงบ{typeLabel}</h3>
-                </div>
-              </div>
-            </div>
-
-	            <form
-	              onSubmit={async (e) => {
-                e.preventDefault();
-                const token = localStorage.getItem('token');
-                if (!token) {
-                  showToast('warning', 'กรุณาเข้าสู่ระบบ');
-                  return;
-                }
-                if (!quickBudgetCategoryId) {
-                  showToast('warning', 'กรุณาเลือกหมวด');
-                  return;
-                }
-
-                const total = parseFloat(quickBudgetAmount) || 0;
-                try {
-                  setQuickBudgetLoading(true);
-                  const res = await fetch(`${API_BASE}/api/budgets`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ category: quickBudgetCategoryId, month: selectedMonth, total }),
-                  });
-                  if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(text || 'Failed to save budget');
-                  }
-                  const saved = await res.json();
-                  const savedMonth = saved.month || selectedMonth;
-                  const savedCatId = typeof saved.category === 'object' ? saved.category._id : saved.category;
-                  const savedTotal = saved.total != null ? saved.total : total;
-                  setBudgets(prev => ({
-                    ...prev,
-                    [savedMonth]: {
-                      ...(prev[savedMonth] || {}),
-                      [savedCatId]: savedTotal
-                    }
-                  }));
-                  setShowQuickBudgetModal(false);
-                  showToast('success', 'บันทึกงบแล้ว');
-                } catch (err) {
-                  console.error('Quick add budget error', err);
-                  showToast('error', 'ไม่สามารถบันทึกงบได้: ' + (err.message || 'ข้อผิดพลาดจากเซิร์ฟเวอร์'));
-                } finally {
-                  setQuickBudgetLoading(false);
-                }
-              }}
-	              className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+96px)]"
-	            >
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2">หมวด</label>
-                <select
-                  className="w-full h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  value={quickBudgetCategoryId}
-                  onChange={(e) => setQuickBudgetCategoryId(e.target.value)}
-                >
-                  <option value="" disabled className="text-slate-900">เลือกหมวด</option>
-                  {(categories || [])
-                    .filter(c => c.type === selectedType)
-                    .map(c => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setResumeQuickBudgetAfterAdd(true);
-                    setShowQuickBudgetModal(false);
-                    setShowAddModal(true);
-                  }}
-                  className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm font-extrabold text-emerald-200 shadow-sm hover:bg-emerald-500/15"
-                >
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-white/10 border border-white/10 text-slate-100">+</span>
-                  เพิ่มหมวดใหม่
-                </button>
-              </div>
-
-              <div className="mt-5">
-                <label className="block text-xs font-semibold text-slate-300 mb-2">วงเงิน (บาท)</label>
-                <div className="relative rounded-3xl border border-white/10 bg-white/5 px-4 py-3 shadow-sm">
-                  <input
-                    type="number"
-                    className="w-full bg-transparent text-3xl font-extrabold text-[color:var(--app-text)] outline-none placeholder-[color:var(--app-muted-2)]"
-                    placeholder="0"
-                    value={quickBudgetAmount}
-                    onChange={(e) => setQuickBudgetAmount(e.target.value)}
-                    inputMode="numeric"
-                    min="0"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-extrabold text-[color:var(--app-muted-2)]">THB</span>
-                </div>
-              </div>
-
-              <div className="mt-6 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowQuickBudgetModal(false)}
-                  className="py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  disabled={quickBudgetLoading}
-                  className="py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 disabled:opacity-50"
-                >
-                  {quickBudgetLoading ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
               </div>
             </form>
