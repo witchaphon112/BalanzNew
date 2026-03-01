@@ -11,7 +11,10 @@ ngrok http 5050
 Prereqs:
 - Backend running on `http://localhost:5050`
 - Set `LINE_CHANNEL_ACCESS_TOKEN` in `backend/.env`
- - (Voice only) Set `OPENAI_API_KEY` in `backend/.env` to enable speech-to-text
+- (Voice) Choose ONE speech-to-text provider:
+  - OpenAI: set `OPENAI_API_KEY` in `backend/.env`
+  - Free (local): install `ffmpeg` + `whisper.cpp` and set `STT_PROVIDER=whispercpp` + `WHISPER_CPP_MODEL=/path/to/model.gguf`
+- (Voice optional) Set `KEEP_LINE_AUDIO=0` to delete audio after transcription (default keeps a playable file under `/uploads/line/audio/...`)
 
 ### Option A: Rich menu buttons send visible chat text (simple)
 

@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 const { Blob } = require('buffer');
+const { execFileSync, spawnSync } = require('child_process');
 
 function safeJson(text) {
   try {
@@ -10,10 +13,108 @@ function safeJson(text) {
   }
 }
 
+function fileExists(p) {
+  try {
+    return Boolean(p) && fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
+
+function canExecute(bin, args = ['--help']) {
+  if (!bin) return false;
+  try {
+    const r = spawnSync(bin, args, { stdio: 'ignore' });
+    return r.status === 0 || r.status === 1;
+  } catch {
+    return false;
+  }
+}
+
+function pickWhisperCppBinary() {
+  const fromEnv = String(process.env.WHISPER_CPP_BIN || '').trim();
+  if (fromEnv) return fromEnv;
+  const candidates = ['whisper-cli', 'main'];
+  for (const c of candidates) {
+    if (canExecute(c)) return c;
+  }
+  return '';
+}
+
+function pickFfmpegBinary() {
+  const fromEnv = String(process.env.FFMPEG_BIN || '').trim();
+  if (fromEnv) return fromEnv;
+  return 'ffmpeg';
+}
+
+async function transcribeWithWhisperCpp({ filePath, mimeType, language = 'th' } = {}) {
+  const bin = pickWhisperCppBinary();
+  const modelPath = String(process.env.WHISPER_CPP_MODEL || '').trim();
+
+  if (!bin) {
+    return {
+      text: '',
+      provider: 'whisper.cpp',
+      disabled: true,
+      disabledReason: 'missing_whispercpp_bin',
+      hint: 'Install whisper.cpp (whisper-cli) and set WHISPER_CPP_MODEL to a gguf model path.',
+    };
+  }
+  if (!modelPath || !fileExists(modelPath)) {
+    return {
+      text: '',
+      provider: 'whisper.cpp',
+      disabled: true,
+      disabledReason: 'missing_whispercpp_model',
+      hint: 'Set WHISPER_CPP_MODEL=/path/to/model.gguf (download a whisper.cpp gguf model first).',
+    };
+  }
+
+  const ffmpeg = pickFfmpegBinary();
+  if (!canExecute(ffmpeg, ['-version'])) {
+    return {
+      text: '',
+      provider: 'whisper.cpp',
+      disabled: true,
+      disabledReason: 'missing_ffmpeg',
+      hint: 'Install ffmpeg (required to convert LINE audio to 16k mono wav).',
+    };
+  }
+
+  const tmpDir = os.tmpdir();
+  const id = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+  const wavPath = path.join(tmpDir, `stt-${id}.wav`);
+  const outBase = path.join(tmpDir, `stt-${id}`);
+
+  try {
+    // Convert to 16kHz mono PCM wav for best compatibility with whisper.cpp
+    execFileSync(ffmpeg, ['-y', '-i', filePath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavPath], {
+      stdio: 'ignore',
+    });
+
+    // whisper.cpp CLI (common flags): -m model -f input.wav -l th -otxt -of outBase
+    execFileSync(bin, ['-m', modelPath, '-f', wavPath, '-l', language || 'th', '-otxt', '-of', outBase], {
+      stdio: 'ignore',
+    });
+
+    const outTxt1 = `${outBase}.txt`;
+    const outTxt2 = `${outBase}.wav.txt`;
+    const outTxt = fileExists(outTxt1) ? outTxt1 : (fileExists(outTxt2) ? outTxt2 : '');
+    if (!outTxt) throw new Error('whisper.cpp did not produce a .txt output');
+
+    const text = String(fs.readFileSync(outTxt, 'utf8') || '').trim();
+    return { text, provider: 'whisper.cpp', model: path.basename(modelPath) };
+  } finally {
+    try { if (fileExists(wavPath)) fs.unlinkSync(wavPath); } catch {}
+    try { if (fileExists(`${outBase}.txt`)) fs.unlinkSync(`${outBase}.txt`); } catch {}
+    try { if (fileExists(`${outBase}.wav.txt`)) fs.unlinkSync(`${outBase}.wav.txt`); } catch {}
+  }
+}
+
 async function transcribeWithOpenAI({ filePath, mimeType, language = 'th' } = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return { text: '', provider: 'openai', disabled: true };
+    return { text: '', provider: 'openai', disabled: true, disabledReason: 'missing_openai_api_key' };
   }
 
   const model = process.env.OPENAI_TRANSCRIBE_MODEL || 'whisper-1';
@@ -53,9 +154,29 @@ async function transcribeWithOpenAI({ filePath, mimeType, language = 'th' } = {}
 }
 
 async function transcribeAudioFile({ filePath, mimeType, language } = {}) {
-  // For now we support a single provider behind a stable interface.
-  return transcribeWithOpenAI({ filePath, mimeType, language });
+  const provider = String(process.env.STT_PROVIDER || '').trim().toLowerCase(); // 'openai'|'whispercpp'|'auto'
+
+  if (provider === 'whispercpp' || provider === 'whisper.cpp') {
+    return transcribeWithWhisperCpp({ filePath, mimeType, language });
+  }
+  if (provider === 'openai') {
+    return transcribeWithOpenAI({ filePath, mimeType, language });
+  }
+
+  // auto (default): prefer OpenAI if configured; otherwise try whisper.cpp if installed.
+  const openai = await transcribeWithOpenAI({ filePath, mimeType, language });
+  if (!openai?.disabled) return openai;
+
+  const local = await transcribeWithWhisperCpp({ filePath, mimeType, language });
+  if (!local?.disabled) return local;
+
+  return {
+    text: '',
+    provider: 'auto',
+    disabled: true,
+    disabledReason: 'no_stt_provider',
+    hint: 'Set OPENAI_API_KEY, or install whisper.cpp + ffmpeg and set WHISPER_CPP_MODEL.',
+  };
 }
 
 module.exports = { transcribeAudioFile };
-

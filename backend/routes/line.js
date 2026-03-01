@@ -630,13 +630,28 @@ async function handleImageEvent(event) {
         note = 'ใบเสร็จ/สลิป';
       }
 
-      // For now, keep slip transactions in a money-related category for clarity.
       let categoryId = null;
+
+      // Auto-categorize from OCR text (e.g. merchant/items like "อาหาร") when possible.
       try {
-        const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
-        const catIcon = 'money';
-        const doc = await ensureUserCategory({ userId: user._id, type, name: catName, icon: catIcon });
-        categoryId = doc?._id || null;
+        const categoryHintText = [note, extraction?.rawText || ''].filter(Boolean).join('\n');
+        const cat = classifyCategoryFromNote(categoryHintText, type);
+        if (cat && cat.name) {
+          const doc = await ensureUserCategory({ userId: user._id, type, name: cat.name, icon: cat.icon });
+          categoryId = doc?._id || null;
+        }
+      } catch (e) {
+        console.warn('LINE slip auto-categorize failed:', e?.message || e);
+      }
+
+      // Fallback: keep transfer slips in a money-related category for clarity.
+      try {
+        if (!categoryId && extraction?.documentType === 'transfer_slip') {
+          const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
+          const catIcon = 'money';
+          const doc = await ensureUserCategory({ userId: user._id, type, name: catName, icon: catIcon });
+          categoryId = doc?._id || null;
+        }
       } catch (e) {
         console.warn('LINE slip category create failed:', e?.message || e);
       }
@@ -695,16 +710,28 @@ async function handleAudioEvent(event) {
 
       const uploadDir = path.join(__dirname, '../uploads/line/audio');
       try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
-      const filePath = path.join(uploadDir, `line-audio-${Date.now()}-${messageId}${ext}`);
+      const fileName = `line-audio-${Date.now()}-${messageId}${ext}`;
+      const filePath = path.join(uploadDir, fileName);
 
       const buf = await bufferFromStream(stream);
       fs.writeFileSync(filePath, buf);
 
+      const keepAudio = String(process.env.KEEP_LINE_AUDIO || '1') !== '0';
+      const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+      const audioUrl = `${backendBase}/uploads/line/audio/${encodeURIComponent(fileName)}`;
+      const durationMs = Number(event?.message?.duration ?? 0) || 0;
+
       const tr = await transcribeAudioFile({ filePath, mimeType: contentType || 'audio/*', language: 'th' });
-      try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+      if (!keepAudio) {
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+      }
 
       if (tr?.disabled) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ฟีเจอร์ถอดเสียงยังไม่ถูกเปิด (ต้องตั้งค่า OPENAI_API_KEY ที่ backend)' });
+        const hint = tr?.hint ? `\nวิธีเปิดใช้งาน: ${String(tr.hint)}` : '';
+        const msg = keepAudio
+          ? `บันทึกเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้\nไฟล์เสียง: ${audioUrl}${hint}`
+          : `ถอดเสียงยังไม่พร้อมใช้งาน${hint}`;
+        await pushToUser(lineMessagingUserId, { type: 'text', text: msg });
         return;
       }
 
@@ -716,7 +743,8 @@ async function handleAudioEvent(event) {
 
       const parsed = parseTransactionText(transcript);
       if (!(parsed?.type && parsed?.amount)) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน` });
+        const extra = keepAudio ? `\nไฟล์เสียง: ${audioUrl}` : '';
+        await pushToUser(lineMessagingUserId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน${extra}` });
         return;
       }
 
@@ -742,12 +770,22 @@ async function handleAudioEvent(event) {
         categoryId,
         datetime: new Date(),
         source: 'voice',
-        rawMessage: { event, transcript, stt: { provider: tr.provider, model: tr.model } },
+        rawMessage: {
+          event,
+          transcript,
+          stt: { provider: tr.provider, model: tr.model },
+          audio: {
+            url: keepAudio ? audioUrl : '',
+            contentType: String(contentType || ''),
+            durationMs,
+          },
+        },
       });
       await tx.save();
 
       const summary = `${parsed.type === 'expense' ? 'จ่าย' : 'รับ'} ${parsed.amount} ${parsed.note || ''}`.trim();
-      await pushToUser(lineMessagingUserId, { type: 'text', text: `บันทึกจากเสียงเรียบร้อย: ${summary}\nได้ยินว่า: "${transcript}"` });
+      const linkLine = keepAudio ? `\nไฟล์เสียง: ${audioUrl}` : '';
+      await pushToUser(lineMessagingUserId, { type: 'text', text: `บันทึกจากเสียงเรียบร้อย: ${summary}\nได้ยินว่า: "${transcript}"${linkLine}` });
     } catch (e) {
       console.error('handleAudioEvent error', e);
       await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย ถอดเสียงไม่สำเร็จ ลองใหม่อีกครั้ง' });

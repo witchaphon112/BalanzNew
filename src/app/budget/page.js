@@ -484,68 +484,136 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     }
   }, [sortBy, sortPrefReady]);
 
-    // --- Process Data for Display ---
-    // Combine Categories + Budgets + Transactions for the selected month
-	    const processedData = useMemo(() => {
-	    const currentMonthTrans = transactions.filter(t => {
-	      if (t.type !== selectedType) return false;
-	      return monthLabelFromDate(t.date) === selectedMonth;
-	    });
-    let totalBudget = 0;
-    let totalSpent = 0;
-    const list = categories
-      .filter(c => c.type === selectedType)
-      .map(cat => {
-      const budgetAmount = budgets[selectedMonth]?.[cat._id] || 0;
-      const spentAmount = currentMonthTrans
-        .filter(t => {
-          const catVal = t.category && typeof t.category === 'object' ? t.category._id : t.category;
-          return catVal === cat._id;
-        })
-        .reduce((sum, t) => sum + (t.amount || 0), 0);
-      totalBudget += budgetAmount;
-      totalSpent += spentAmount;
-      const percent = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100 : 0;
-      return {
-        ...cat,
-        budget: budgetAmount,
-        spent: spentAmount,
-        remaining: budgetAmount - spentAmount,
-        percent,
-        isOverBudget: spentAmount > budgetAmount
-      };
-    });
-    const collator = new Intl.Collator('th-TH', { sensitivity: 'base', numeric: true });
-    const sortedItems = [...list].sort((a, b) => {
-      switch (sortBy) {
-        case 'budget_asc':
-          return a.budget - b.budget;
-        case 'name_asc':
-          return collator.compare(a.name || '', b.name || '');
-        case 'name_desc':
-          return collator.compare(b.name || '', a.name || '');
-        case 'spent_desc':
-          return b.spent - a.spent;
-        case 'remaining_desc':
-          return b.remaining - a.remaining;
-        case 'budget_desc':
-        default:
-          return b.budget - a.budget;
-      }
-    });
-    // งบรวมต่อเดือน (monthlyBudget) จะถูกใช้ใน summary card
-    const overallMonthly = monthlyBudget[selectedMonth] ?? 0;
-    return {
-      items: sortedItems,
-      summary: {
-        totalBudget,
-        totalSpent,
-        remaining: totalBudget - totalSpent,
-        monthly: totalBudget,
-        overallMonthly
-      }
-	    };
-	    }, [categories, budgets, transactions, selectedMonth, monthlyBudget, selectedType, sortBy]);
+	    // --- Process Data for Display ---
+	    // Combine Categories + Budgets + Transactions for the selected month
+		    const processedData = useMemo(() => {
+		    const currentMonthTrans = (transactions || []).filter(t => {
+		      if (t?.type !== selectedType) return false;
+		      return monthLabelFromDate(t?.date) === selectedMonth;
+		    });
+
+        const collator = new Intl.Collator('th-TH', { sensitivity: 'base', numeric: true });
+
+        // Income mode: no budgets; just show received totals per category.
+        if (selectedType === 'income') {
+          let totalReceived = 0;
+          let txCount = 0;
+
+          const list = (categories || [])
+            .filter(c => c?.type === 'income')
+            .map(cat => {
+              let receivedAmount = 0;
+              let receivedCount = 0;
+              for (const t of currentMonthTrans) {
+                const catVal = t?.category && typeof t.category === 'object' ? t.category?._id : t?.category;
+                if (String(catVal || '') !== String(cat?._id || '')) continue;
+                const amt = Number(t?.amount) || 0;
+                if (amt > 0) receivedAmount += amt;
+                receivedCount += 1;
+              }
+              totalReceived += receivedAmount;
+              txCount += receivedCount;
+              return {
+                ...cat,
+                received: receivedAmount,
+                txCount: receivedCount,
+                // Keep fields for shared UI safety (expense mode uses these).
+                budget: 0,
+                spent: 0,
+                remaining: 0,
+                percent: 0,
+                isOverBudget: false,
+              };
+            });
+
+          const incomeSortKey =
+            sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc'
+              ? sortBy
+              : 'budget_desc';
+
+          const sortedItems = [...list].sort((a, b) => {
+            switch (incomeSortKey) {
+              case 'budget_asc':
+                return (Number(a?.received) || 0) - (Number(b?.received) || 0);
+              case 'name_asc':
+                return collator.compare(a?.name || '', b?.name || '');
+              case 'name_desc':
+                return collator.compare(b?.name || '', a?.name || '');
+              case 'budget_desc':
+              default:
+                return (Number(b?.received) || 0) - (Number(a?.received) || 0);
+            }
+          });
+
+          return {
+            items: sortedItems,
+            summary: {
+              totalReceived,
+              txCount,
+              totalBudget: 0,
+              totalSpent: 0,
+              remaining: 0,
+              monthly: totalReceived,
+              overallMonthly: 0,
+            },
+          };
+        }
+
+        // Expense mode: budgets + spent per category.
+        let totalBudget = 0;
+        let totalSpent = 0;
+        const list = (categories || [])
+          .filter(c => c?.type === selectedType)
+          .map(cat => {
+            const budgetAmount = budgets?.[selectedMonth]?.[cat?._id] || 0;
+            const spentAmount = currentMonthTrans
+              .filter(t => {
+                const catVal = t?.category && typeof t.category === 'object' ? t.category?._id : t?.category;
+                return String(catVal || '') === String(cat?._id || '');
+              })
+              .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
+            totalBudget += budgetAmount;
+            totalSpent += spentAmount;
+            const percent = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100 : 0;
+            return {
+              ...cat,
+              budget: budgetAmount,
+              spent: spentAmount,
+              remaining: budgetAmount - spentAmount,
+              percent,
+              isOverBudget: spentAmount > budgetAmount
+            };
+          });
+        const sortedItems = [...list].sort((a, b) => {
+          switch (sortBy) {
+            case 'budget_asc':
+              return (Number(a?.budget) || 0) - (Number(b?.budget) || 0);
+            case 'name_asc':
+              return collator.compare(a?.name || '', b?.name || '');
+            case 'name_desc':
+              return collator.compare(b?.name || '', a?.name || '');
+            case 'spent_desc':
+              return (Number(b?.spent) || 0) - (Number(a?.spent) || 0);
+            case 'remaining_desc':
+              return (Number(b?.remaining) || 0) - (Number(a?.remaining) || 0);
+            case 'budget_desc':
+            default:
+              return (Number(b?.budget) || 0) - (Number(a?.budget) || 0);
+          }
+        });
+        // งบรวมต่อเดือน (monthlyBudget) จะถูกใช้ใน summary card
+        const overallMonthly = monthlyBudget[selectedMonth] ?? 0;
+        return {
+          items: sortedItems,
+          summary: {
+            totalBudget,
+            totalSpent,
+            remaining: totalBudget - totalSpent,
+            monthly: totalBudget,
+            overallMonthly
+          }
+        };
+		    }, [categories, budgets, transactions, selectedMonth, monthlyBudget, selectedType, sortBy]);
 
     // Summary headline: prefer "รายรับ" as the main base, and subtract actual expenses.
     // If no income budget is set, fall back to expense budgets (classic budget mode).
@@ -607,10 +675,14 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         // noop
       }
     }, [budgets, categories, selectedMonth]);
-  const openEditModal = (category) => {
-    setEditingCategory(category);
-    setEditAmount(category.budget === 0 ? '' : category.budget.toString());
-  };
+	  const openEditModal = (category) => {
+      if (selectedType !== 'expense') {
+        showToast('info', 'รายรับไม่ต้องตั้งงบ');
+        return;
+      }
+	    setEditingCategory(category);
+	    setEditAmount(category.budget === 0 ? '' : category.budget.toString());
+	  };
 
   const openDeleteCategoryModal = (category) => {
     if (!category) return;
@@ -763,10 +835,21 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     setNewCategoryIcon('');
   };
 
-  const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
-  const budgetedItemCount = (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
-  const [categoryQuery, setCategoryQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'budgeted' | 'unbudgeted' | 'over'
+	  const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
+	  const isIncomeMode = selectedType === 'income';
+    const sortKeyForUI = useMemo(() => {
+      if (!isIncomeMode) return sortBy;
+      if (sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc') return sortBy;
+      return 'budget_desc';
+    }, [isIncomeMode, sortBy]);
+	  const budgetedItemCount = isIncomeMode ? 0 : (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
+	  const [categoryQuery, setCategoryQuery] = useState('');
+	  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'budgeted' | 'unbudgeted' | 'over'
+
+  useEffect(() => {
+    if (!isIncomeMode) return;
+    if (categoryFilter !== 'all') setCategoryFilter('all');
+  }, [isIncomeMode, categoryFilter]);
 
   const filteredCategories = useMemo(() => {
     const list = Array.isArray(processedData.items) ? processedData.items : [];
@@ -776,6 +859,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       const qLower = q.toLowerCase();
       out = out.filter((c) => String(c?.name || '').toLowerCase().includes(qLower));
     }
+    if (isIncomeMode) return out;
     switch (categoryFilter) {
       case 'budgeted':
         out = out.filter((c) => (Number(c?.budget) || 0) > 0);
@@ -791,7 +875,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         break;
     }
     return out;
-  }, [processedData.items, categoryQuery, categoryFilter]);
+  }, [processedData.items, categoryQuery, categoryFilter, isIncomeMode]);
 
   const handleClose = () => {
     if (typeof onClose === 'function') onClose();
@@ -804,11 +888,15 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       <>
 	        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+20px)]">
           {/* Title row */}
-          <div className="relative flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">งบประมาณ{typeLabel}</div>
-              <div className="text-lg font-extrabold text-[color:var(--app-text)]">งบที่ตั้งไว้</div>
-            </div>
+	          <div className="relative flex items-center justify-center">
+	            <div className="text-center">
+	              <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">
+                  {isIncomeMode ? 'รายรับ' : `งบประมาณ${typeLabel}`}
+                </div>
+	              <div className="text-lg font-extrabold text-[color:var(--app-text)]">
+                  {isIncomeMode ? 'รายรับเดือนนี้' : 'งบที่ตั้งไว้'}
+                </div>
+	            </div>
 
           </div>
 
@@ -888,36 +976,50 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
           })()}
 
 	          {/* Summary card */}
-	          <div className="mt-4 relative overflow-hidden rounded-[28px] border border-emerald-400/20 bg-gradient-to-br from-emerald-400 via-emerald-400 to-green-500 text-slate-950 shadow-[0_20px_60px_-40px_rgba(16,185,129,0.85)]">
+		          <div className="mt-4 relative overflow-hidden rounded-[28px] border border-emerald-400/20 bg-gradient-to-br from-emerald-400 via-emerald-400 to-green-500 text-slate-950 shadow-[0_20px_60px_-40px_rgba(16,185,129,0.85)]">
 	            <div className="absolute inset-0 opacity-25 [background:radial-gradient(800px_circle_at_10%_20%,rgba(255,255,255,0.6),transparent_45%),radial-gradient(700px_circle_at_70%_80%,rgba(0,0,0,0.2),transparent_55%)]" />
 	            <div className="relative p-5">
-	              <div className="text-sm font-extrabold">
-                  {headlineSummary.baseMode !== 'expense_budget' ? 'คงเหลือจากรายรับ' : 'งบที่เหลือทั้งหมด'}
-                </div>
-	              <div className="mt-1 text-4xl font-extrabold tracking-tight">
-	                {formatCurrency(headlineSummary.remaining)}
-	              </div>
+                {isIncomeMode ? (
+                  <>
+                    <div className="text-sm font-extrabold">รายรับรวมเดือนนี้</div>
+                    <div className="mt-1 text-4xl font-extrabold tracking-tight">
+                      {formatCurrency(headlineSummary.incomeActualTotal || 0)}
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-slate-950/80">
+                      บันทึกแล้ว {Number(processedData?.summary?.txCount) || 0} รายการ
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-extrabold">
+                      {headlineSummary.baseMode !== 'expense_budget' ? 'คงเหลือจากรายรับ' : 'งบที่เหลือทั้งหมด'}
+                    </div>
+                    <div className="mt-1 text-4xl font-extrabold tracking-tight">
+                      {formatCurrency(headlineSummary.remaining)}
+                    </div>
 
-	              <div className="mt-4 flex items-center justify-between text-sm font-extrabold">
-	                <div>ใช้ไปแล้ว {headlineSummary.spentPct}%</div>
-	                <div>เหลือ {formatCurrency(headlineSummary.remaining)}</div>
-	              </div>
+                    <div className="mt-4 flex items-center justify-between text-sm font-extrabold">
+                      <div>ใช้ไปแล้ว {headlineSummary.spentPct}%</div>
+                      <div>เหลือ {formatCurrency(headlineSummary.remaining)}</div>
+                    </div>
 
-	              <div className="mt-2 h-3 w-full rounded-full bg-black/15 overflow-hidden">
-	                <div
-	                  className="h-full rounded-full bg-white shadow-[0_10px_25px_-10px_rgba(255,255,255,0.95)]"
-	                  style={{ width: `${headlineSummary.spentPctClamped}%` }}
-	                />
-	              </div>
+                    <div className="mt-2 h-3 w-full rounded-full bg-black/15 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-white shadow-[0_10px_25px_-10px_rgba(255,255,255,0.95)]"
+                        style={{ width: `${headlineSummary.spentPctClamped}%` }}
+                      />
+                    </div>
 
-	              <div className="mt-3 text-sm font-semibold text-slate-950/80">
-                  {headlineSummary.baseMode === 'income_actual'
-                    ? 'จากรายรับเดือนนี้ '
-                    : headlineSummary.baseMode === 'income_budget'
-                      ? 'จากรายรับที่ตั้งไว้ '
-                      : 'จากงบทั้งหมด '}
-	                {formatCurrency(headlineSummary.baseTotal)}
-	              </div>
+                    <div className="mt-3 text-sm font-semibold text-slate-950/80">
+                      {headlineSummary.baseMode === 'income_actual'
+                        ? 'จากรายรับเดือนนี้ '
+                        : headlineSummary.baseMode === 'income_budget'
+                          ? 'จากรายรับที่ตั้งไว้ '
+                          : 'จากงบทั้งหมด '}
+                      {formatCurrency(headlineSummary.baseTotal)}
+                    </div>
+                  </>
+                )}
 	            </div>
 	          </div>
 
@@ -961,75 +1063,93 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h10M4 18h16"/>
                 </svg>
-                {sortBy === 'name_asc'
-                  ? 'ชื่อ A - Z'
-                  : sortBy === 'name_desc'
-                    ? 'ชื่อ Z - A'
-                    : sortBy === 'budget_asc'
-                      ? 'งบน้อย → มาก'
-                      : sortBy === 'spent_desc'
-                        ? 'ใช้มาก → น้อย'
-                        : sortBy === 'remaining_desc'
-                          ? 'คงเหลือมาก → น้อย'
-                          : 'งบมาก → น้อย'}
-              </button>
+	                {!isIncomeMode ? (
+                    sortBy === 'name_asc'
+                      ? 'ชื่อ A - Z'
+                      : sortBy === 'name_desc'
+                        ? 'ชื่อ Z - A'
+                        : sortBy === 'budget_asc'
+                          ? 'งบน้อย → มาก'
+                          : sortBy === 'spent_desc'
+                            ? 'ใช้มาก → น้อย'
+                            : sortBy === 'remaining_desc'
+                              ? 'คงเหลือมาก → น้อย'
+                              : 'งบมาก → น้อย'
+                  ) : (
+                    sortKeyForUI === 'name_asc'
+                      ? 'ชื่อ A - Z'
+                      : sortKeyForUI === 'name_desc'
+                        ? 'ชื่อ Z - A'
+                        : sortKeyForUI === 'budget_asc'
+                          ? 'รับน้อย → มาก'
+                          : 'รับมาก → น้อย'
+                  )}
+	              </button>
 
                 {isSortOpen && (
                   <>
                     <div className="fixed inset-0 z-30" onClick={() => setIsSortOpen(false)} />
                     <div className="absolute right-0 mt-2 z-40 w-56 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-1 shadow-xl shadow-black/20">
-                      {[
-                        { key: 'budget_desc', label: 'งบมาก → น้อย' },
-                        { key: 'budget_asc', label: 'งบน้อย → มาก' },
-                        { key: 'spent_desc', label: 'ใช้มาก → น้อย' },
-                        { key: 'remaining_desc', label: 'คงเหลือมาก → น้อย' },
-                        { key: 'name_asc', label: 'ชื่อ A → Z' },
-                        { key: 'name_desc', label: 'ชื่อ Z → A' },
-                      ].map(opt => (
-                        <button
-                          key={opt.key}
-                          type="button"
+	                      {(!isIncomeMode
+                        ? [
+                            { key: 'budget_desc', label: 'งบมาก → น้อย' },
+                            { key: 'budget_asc', label: 'งบน้อย → มาก' },
+                            { key: 'spent_desc', label: 'ใช้มาก → น้อย' },
+                            { key: 'remaining_desc', label: 'คงเหลือมาก → น้อย' },
+                            { key: 'name_asc', label: 'ชื่อ A → Z' },
+                            { key: 'name_desc', label: 'ชื่อ Z → A' },
+                          ]
+                        : [
+                            { key: 'budget_desc', label: 'รับมาก → น้อย' },
+                            { key: 'budget_asc', label: 'รับน้อย → มาก' },
+                            { key: 'name_asc', label: 'ชื่อ A → Z' },
+                            { key: 'name_desc', label: 'ชื่อ Z → A' },
+                          ]
+                      ).map(opt => (
+	                        <button
+	                          key={opt.key}
+	                          type="button"
                           onClick={() => {
                             setSortBy(opt.key);
                             setIsSortOpen(false);
                           }}
-                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-white/5 ${sortBy === opt.key ? 'bg-white/5' : ''}`}
-                          role="menuitem"
-                        >
-                          <span className="text-slate-100">{opt.label}</span>
-                          {sortBy === opt.key && (
-                            <svg className="h-4 w-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
-                      ))}
+	                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-white/5 ${(!isIncomeMode ? sortBy : sortKeyForUI) === opt.key ? 'bg-white/5' : ''}`}
+	                          role="menuitem"
+	                        >
+	                          <span className="text-slate-100">{opt.label}</span>
+	                          {((!isIncomeMode ? sortBy : sortKeyForUI) === opt.key) && (
+	                            <svg className="h-4 w-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+	                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+	                            </svg>
+	                          )}
+	                        </button>
+	                      ))}
                     </div>
                   </>
                 )}
               </div>
             </div>
 
-            {(headlineSummary.incomeActualTotal > 0 || headlineSummary.incomeBudgetTotal > 0 || headlineSummary.expenseBudgetTotal > 0) && (
-              <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                {headlineSummary.baseMode === 'income_actual'
-                  ? 'รายรับเดือนนี้: '
-                  : headlineSummary.baseMode === 'income_budget'
-                    ? 'รายรับที่ตั้งไว้เดือนนี้: '
-                    : 'งบรายจ่ายรวมเดือนนี้: '}
-                <span className="font-extrabold text-slate-200">
-                  {formatCurrency(
-                    headlineSummary.baseMode === 'income_actual'
-                      ? headlineSummary.incomeActualTotal
-                      : headlineSummary.baseMode === 'income_budget'
-                        ? headlineSummary.incomeBudgetTotal
-                        : headlineSummary.expenseBudgetTotal
-                  )}
-                </span>
-              </div>
-            )}
-        </div>
-      </>
+              {!isIncomeMode && (headlineSummary.incomeActualTotal > 0 || headlineSummary.incomeBudgetTotal > 0 || headlineSummary.expenseBudgetTotal > 0) && (
+                <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                  {headlineSummary.baseMode === 'income_actual'
+                    ? 'รายรับเดือนนี้: '
+                    : headlineSummary.baseMode === 'income_budget'
+                      ? 'รายรับที่ตั้งไว้เดือนนี้: '
+                      : 'งบรายจ่ายรวมเดือนนี้: '}
+                  <span className="font-extrabold text-slate-200">
+                    {formatCurrency(
+                      headlineSummary.baseMode === 'income_actual'
+                        ? headlineSummary.incomeActualTotal
+                        : headlineSummary.baseMode === 'income_budget'
+                          ? headlineSummary.incomeBudgetTotal
+                          : headlineSummary.expenseBudgetTotal
+                    )}
+                  </span>
+                </div>
+              )}
+	        </div>
+	      </>
 
       {/* Settings Modal */}
       {mounted && isSettingsOpen && createPortal((
@@ -1249,36 +1369,44 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   ) : null}
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {[
-                    { key: 'all', label: 'ทั้งหมด' },
-                    { key: 'budgeted', label: 'ตั้งงบแล้ว' },
-                    { key: 'unbudgeted', label: 'ยังไม่ตั้งงบ' },
-                    { key: 'over', label: 'เกินงบ' },
-                  ].map((opt) => {
-                    const active = categoryFilter === opt.key;
-                    return (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => setCategoryFilter(opt.key)}
-                        className={[
-                          'rounded-2xl px-3 py-2 text-xs font-extrabold transition border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
-                          active
-                            ? 'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25 focus:ring-emerald-300/30'
-                            : 'border-white/10 bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 focus:ring-emerald-400/20',
-                        ].join(' ')}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {!isIncomeMode ? (
+                  <>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        { key: 'all', label: 'ทั้งหมด' },
+                        { key: 'budgeted', label: 'ตั้งงบแล้ว' },
+                        { key: 'unbudgeted', label: 'ยังไม่ตั้งงบ' },
+                        { key: 'over', label: 'เกินงบ' },
+                      ].map((opt) => {
+                        const active = categoryFilter === opt.key;
+                        return (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setCategoryFilter(opt.key)}
+                            className={[
+                              'rounded-2xl px-3 py-2 text-xs font-extrabold transition border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                              active
+                                ? 'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25 focus:ring-emerald-300/30'
+                                : 'border-white/10 bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 focus:ring-emerald-400/20',
+                            ].join(' ')}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                  {budgetedItemCount > 0 ? `ตั้งงบแล้ว ${budgetedItemCount} หมวด` : 'ยังไม่มีหมวดที่ตั้งงบ'}
-                </div>
-              </div>
+                    <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                      {budgetedItemCount > 0 ? `ตั้งงบแล้ว ${budgetedItemCount} หมวด` : 'ยังไม่มีหมวดที่ตั้งงบ'}
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                    รายรับจะสรุปจากรายการที่บันทึกไว้ (ไม่ต้องตั้งงบ)
+                  </div>
+                )}
+	              </div>
 
               {filteredCategories.length === 0 ? (
                 <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 text-center shadow-sm shadow-black/10">
@@ -1309,80 +1437,115 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 </div>
               ) : null}
 
-              {filteredCategories.map((cat) => {
-                const pct = cat.budget > 0 ? Math.round((cat.spent / cat.budget) * 100) : 0;
-                const progress = cat.budget > 0 ? clamp01(cat.spent / cat.budget) : 0;
-                const over = cat.isOverBudget && cat.budget > 0;
-                const pctText = cat.budget > 0 ? `${Math.max(0, pct)}%` : '—';
-                const pctColor = over ? 'text-rose-300' : progress >= 0.85 ? 'text-amber-200' : 'text-emerald-200';
-                const barColor = over ? '#FB7185' : progress >= 0.85 ? '#FACC15' : '#22C55E';
-                return (
-                  <div
-                    key={cat._id}
-                    onClick={() => openEditModal(cat)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        openEditModal(cat);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    className={[
-                      'w-full rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition',
-                      'cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-                      over ? 'border-rose-500/25 bg-[var(--app-surface)]' : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)]',
-                    ].join(' ')}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-3">
+	              {filteredCategories.map((cat) => {
+	                const pct = cat.budget > 0 ? Math.round((cat.spent / cat.budget) * 100) : 0;
+	                const progress = cat.budget > 0 ? clamp01(cat.spent / cat.budget) : 0;
+	                const over = cat.isOverBudget && cat.budget > 0;
+	                const pctText = cat.budget > 0 ? `${Math.max(0, pct)}%` : '—';
+	                const pctColor = over ? 'text-rose-300' : progress >= 0.85 ? 'text-amber-200' : 'text-emerald-200';
+	                const barColor = over ? '#FB7185' : progress >= 0.85 ? '#FACC15' : '#22C55E';
+	                return (
+	                  <div
+	                    key={cat._id}
+                      {...(!isIncomeMode
+                        ? {
+                            onClick: () => openEditModal(cat),
+                            onKeyDown: (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openEditModal(cat);
+                              }
+                            },
+                            role: 'button',
+                            tabIndex: 0,
+                          }
+                        : {})}
+	                    className={[
+	                      'w-full rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition',
+	                      !isIncomeMode ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/25' : 'focus:outline-none',
+	                      over ? 'border-rose-500/25 bg-[var(--app-surface)]' : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)]',
+	                    ].join(' ')}
+	                  >
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div className="flex min-w-0 items-center gap-3">
                         <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl bg-white/5 ring-1 ring-white/10">
                           <CategoryIcon iconKey={cat.icon} className="w-6 h-6 text-slate-200" />
                         </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{cat.name}</div>
-                          <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
-                            เหลือ{' '}
-                            <span className={cat.remaining < 0 ? 'text-rose-300' : 'text-emerald-200'}>
-                              {formatCurrency(cat.remaining)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
+	                        <div className="min-w-0">
+	                          <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{cat.name}</div>
+	                          <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
+                              {isIncomeMode ? (
+                                <>
+                                  รับแล้ว{' '}
+                                  <span className="text-emerald-200">{formatCurrency(cat.received || 0)}</span>
+                                  {Number(cat.txCount) ? (
+                                    <span className="text-[color:var(--app-muted-2)]"> • {cat.txCount} รายการ</span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <>
+                                  เหลือ{' '}
+                                  <span className={cat.remaining < 0 ? 'text-rose-300' : 'text-emerald-200'}>
+                                    {formatCurrency(cat.remaining)}
+                                  </span>
+                                </>
+                              )}
+	                          </div>
+	                        </div>
+	                      </div>
+	
 	                      <div className="shrink-0 flex flex-col items-end gap-2">
-                          <div className="flex items-center gap-2">
-	                          <button
-	                            type="button"
-	                            onClick={(e) => {
-	                              e.stopPropagation();
-	                              openEditModal(cat);
-	                            }}
-	                            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-	                          >
-	                            แก้ไข
-	                          </button>
-                          </div>
-	                        <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
+	                          <div className="flex items-center gap-2">
+                              {!isIncomeMode ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditModal(cat);
+                                  }}
+                                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                                >
+                                  แก้ไข
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDeleteCategoryModal(cat);
+                                  }}
+                                  className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs font-extrabold text-rose-300 hover:bg-rose-500/15 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
+                                >
+                                  ลบ
+                                </button>
+                              )}
+	                          </div>
+                          {!isIncomeMode ? (
+	                          <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
+                          ) : (
+                            <div className="text-sm font-extrabold text-slate-200">{formatCurrency(cat.received || 0)}</div>
+                          )}
 	                      </div>
 	                    </div>
-
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
-                        <div className="truncate">
-                          {formatCurrency(cat.spent)} <span className="text-[color:var(--app-muted-2)]">/ {formatCurrency(cat.budget)}</span>
+	
+                    {!isIncomeMode ? (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
+                          <div className="truncate">
+                            {formatCurrency(cat.spent)} <span className="text-[color:var(--app-muted-2)]">/ {formatCurrency(cat.budget)}</span>
+                          </div>
+                        </div>
+                        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
+                          <div
+                            className="h-full rounded-full shadow-[0_10px_22px_-14px_rgba(34,197,94,0.8)]"
+                            style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: barColor }}
+                          />
                         </div>
                       </div>
-                      <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
-                        <div
-                          className="h-full rounded-full shadow-[0_10px_22px_-14px_rgba(34,197,94,0.8)]"
-                          style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: barColor }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+                    ) : null}
+	                  </div>
+	                );
+	              })}
 
 	              <button
 	                type="button"
@@ -1699,11 +1862,11 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       ), document.body)}
 
       {/* 4. Edit Budget Bottom Sheet / Modal */}
-        {mounted && editingCategory && createPortal((
-        <div
-          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
-          onClick={() => setEditingCategory(null)}
-        >
+	        {mounted && editingCategory && !isIncomeMode && createPortal((
+	        <div
+	          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+	          onClick={() => setEditingCategory(null)}
+	        >
           <div 
             className="bg-[var(--app-surface)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col max-h-[90dvh] sm:max-h-[85dvh]"
             onClick={(e) => e.stopPropagation()}

@@ -314,7 +314,8 @@ app.use('/api/categories', categoryRoutes); // เปลี่ยนจาก Ca
 app.use('/api/budgets', budgetRoutes); // แก้ไขการพิมพ์ผิด
 app.use('/api', notificationsRouter); // ใช้ /api/notifications
 app.use('/api/ocr', ocrRoutes); // OCR routes
-app.use('/uploads', express.static('uploads')); // Serve uploaded files
+// Serve uploaded files (use absolute path so it works regardless of process cwd)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Dev debug endpoints
 app.use('/api/debug', debugRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
