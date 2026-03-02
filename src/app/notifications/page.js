@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import LoadingMascot from '@/components/LoadingMascot';
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
@@ -57,10 +58,7 @@ export default function Notifications() {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex items-center justify-center">
         <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-8">
-          <div className="flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            <span className="text-slate-600 font-medium">กำลังโหลด...</span>
-          </div>
+          <LoadingMascot label="กำลังโหลด..." size={88} />
         </div>
       </main>
     );
