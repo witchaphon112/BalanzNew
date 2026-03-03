@@ -175,6 +175,11 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingTransactionId, setDeletingTransactionId] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [recentTxnType, setRecentTxnType] = useState('all'); // 'all' | 'expense' | 'income'
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingTransaction, setViewingTransaction] = useState(null);
@@ -551,24 +556,39 @@ export default function Dashboard() {
     setShowEditModal(true);
   };
 
-  const handleDelete = async (transactionId) => {
-    if (!confirm('คุณแน่ใจหรือไม่ที่จะลบรายการนี้?')) return;
+  const handleDelete = (transactionId) => {
+    if (!transactionId) return;
+    setDeletingTransactionId(transactionId);
+    setDeleteError('');
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    const transactionId = deletingTransactionId;
+    if (!transactionId || deleteLoading) return;
 
     try {
+      setDeleteLoading(true);
+      setDeleteError('');
+
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
       const res = await fetch(`${API_BASE}/api/transactions/${transactionId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!res.ok) {
-        throw new Error('Failed to delete transaction');
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || 'ลบรายการไม่สำเร็จ');
       }
 
+      setShowDeleteModal(false);
+      setDeletingTransactionId(null);
       fetchStats();
-    } catch (error) {
-      setError('เกิดข้อผิดพลาดในการลบ: ' + error.message);
+    } catch (err) {
+      setDeleteError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -777,173 +797,6 @@ export default function Dashboard() {
     return base - expenseActual;
   }, [monthExpenseBudgetTotal, monthExpenseTotal, monthIncomeTotal, monthIncomeBudgetTotal]);
 
-  const healthAnalysis = useMemo(() => {
-    const income = Number(monthIncomeTotal) || 0;
-    const expense = Math.max(0, Number(monthExpenseTotal) || 0);
-    const budgetTotal = Number(monthExpenseBudgetTotal) || 0;
-    const hasBudget = budgetTotal > 0;
-
-    const savings = income - expense;
-    const savingsRate = income > 0 ? savings / income : null; // -inf..1
-    const expenseRatio = income > 0 ? expense / income : null; // 0..inf
-
-    const parsed = selectedParsed;
-    const nowParts = nowBkk;
-    const isCurrentMonth = !!parsed && !!nowParts && nowParts.year === parsed.year && nowParts.monthIndex === parsed.monthIndex;
-    const progress = isCurrentMonth ? Math.max(0.05, Math.min(1, (Number(nowParts?.day) || 1) / Math.max(1, daysInSelectedMonth))) : 1;
-
-    const expectedSpendSoFar = hasBudget ? budgetTotal * progress : null;
-    const paceRatio = hasBudget && expectedSpendSoFar && expectedSpendSoFar > 0 ? expense / expectedSpendSoFar : null;
-
-    let score = 0;
-    if (income <= 0) {
-      score = expense > 0 ? 10 : 0;
-    } else {
-      const s = Math.max(0, Math.min(1, (Number.isFinite(savingsRate) ? savingsRate : 0) / 0.3)); // 30%+ => full
-      const savingsComponent = 50 * s;
-
-      let budgetComponent = 0;
-      let paceComponent = 0;
-
-      if (hasBudget && expectedSpendSoFar && expectedSpendSoFar > 0) {
-        const pr = Number(paceRatio) || 0;
-        const paceScore = pr <= 1 ? 1 : Math.max(0, 1 - (pr - 1) / 0.6); // 0 at 1.6x pace
-        budgetComponent = 30 * paceScore;
-
-        if (isCurrentMonth) {
-          const remainingDays = Math.max(1, daysInSelectedMonth - (Number(nowParts?.day) || 1) + 1);
-          const remainingBudget = budgetTotal - expense;
-          const neededPerDay = remainingBudget / remainingDays;
-          const targetPerDay = budgetTotal / Math.max(1, daysInSelectedMonth);
-          const dpRatio = targetPerDay > 0 ? neededPerDay / targetPerDay : 1;
-          const dailyScore = dpRatio <= 1 ? 1 : Math.max(0, 1 - (dpRatio - 1) / 1); // 0 at 2x
-          paceComponent = 20 * dailyScore;
-        } else {
-          paceComponent = 20;
-        }
-      } else {
-        const er = Number(expenseRatio);
-        const expenseScore = !Number.isFinite(er) ? 0 : er <= 0.55 ? 1 : er >= 1 ? 0 : 1 - (er - 0.55) / 0.45;
-        budgetComponent = 30 * expenseScore;
-        paceComponent = 20 * (isCurrentMonth ? Math.max(0, Math.min(1, (Number.isFinite(savingsRate) ? savingsRate : 0) / 0.2)) : 1);
-      }
-
-      score = Math.round(Math.max(0, Math.min(100, savingsComponent + budgetComponent + paceComponent)));
-    }
-
-    let label = 'ควรปรับปรุง';
-    let tone = 'text-rose-200';
-    let ringColor = '#FB7185'; // rose-400
-
-    if (income <= 0 && expense > 0) {
-      label = 'ยังไม่มีรายรับ';
-      tone = 'text-rose-200';
-      ringColor = '#FB7185';
-    } else if (hasBudget && expense > budgetTotal) {
-      label = 'เกินงบแล้ว';
-      tone = 'text-rose-200';
-      ringColor = '#FB7185';
-    } else if (score >= 80) {
-      label = 'ดีเยี่ยม';
-      tone = 'text-emerald-200';
-      ringColor = '#34D399'; // emerald-400
-    } else if (score >= 60) {
-      label = 'ดี';
-      tone = 'text-sky-200';
-      ringColor = '#38BDF8'; // sky-400
-    } else if (score >= 40) {
-      label = 'พอใช้';
-      tone = 'text-amber-200';
-      ringColor = '#FACC15'; // amber-400
-    }
-
-    const parts = [];
-    if (income > 0 && Number.isFinite(savingsRate)) {
-      parts.push(`ออม ${Math.round(savingsRate * 100)}%`);
-    } else if (income <= 0) {
-      parts.push('ไม่มีรายรับ');
-    }
-
-    if (hasBudget) {
-      parts.push(`ใช้งบ ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}%`);
-      if (isCurrentMonth && expectedSpendSoFar && expectedSpendSoFar > 0) {
-        const pr = Number(paceRatio) || 0;
-        if (pr >= 1.15) parts.push('ใช้เร็วกว่าแผน');
-        else if (pr <= 0.85) parts.push('คุมงบได้ดี');
-        else parts.push('ตามแผน');
-      }
-    } else if (income > 0 && Number.isFinite(expenseRatio)) {
-      parts.push(`รายจ่าย ${Math.round(expenseRatio * 100)}% ของรายรับ`);
-    }
-
-    const txs = Array.isArray(stats?.transactionsAll) ? stats.transactionsAll : [];
-    let topExpense = null;
-    if (txs.length) {
-      const map = new Map();
-      for (const t of txs) {
-        if (!t || t.type !== 'expense') continue;
-        const amt = Number(t.amount) || 0;
-        if (amt <= 0) continue;
-        const id = String(t.category?._id || t.category || '_none');
-        const name = String(t.category?.name || 'ไม่ระบุ');
-        const prev = map.get(id) || { id, name, amount: 0 };
-        prev.amount += amt;
-        map.set(id, prev);
-      }
-      const arr = Array.from(map.values()).sort((a, b) => b.amount - a.amount);
-      if (arr[0] && arr[0].amount > 0) {
-        topExpense = {
-          name: arr[0].name,
-          amount: arr[0].amount,
-          pct: expense > 0 ? arr[0].amount / expense : 0,
-        };
-      }
-    }
-
-    let hint = '';
-    if (!hasBudget) {
-      if (income <= 0 && expense <= 0) {
-        hint = 'เริ่มจากจดรายรับ/รายจ่ายสัก 5–10 รายการ แล้วระบบจะวิเคราะห์แม่นขึ้น';
-      } else if (income <= 0 && expense > 0) {
-        hint = 'เดือนนี้ยังไม่มีรายรับ แต่มีรายจ่าย แนะนำให้บันทึกรายรับเพื่อให้ภาพรวมแม่นขึ้น';
-      } else if (income > 0 && expense <= 0) {
-        hint = 'มีรายรับแล้ว แต่ยังไม่มีรายจ่าย ลองจดรายจ่ายประจำวันเพื่อให้วิเคราะห์ครบถ้วน';
-      } else if (score >= 80) {
-        const saved = income - expense;
-        hint = `ดีมาก เหลือออม ${formatTHB(saved)} • แนะนำ: ตั้งงบ “3 หมวดหลัก” เพื่อคุมต่อเนื่อง${topExpense ? ` (หมวดที่ใช้เยอะสุด: ${topExpense.name} ~${Math.round(topExpense.pct * 100)}%)` : ''}`;
-      } else if (score >= 60) {
-        hint = `แนะนำ: ตั้งงบหมวดที่ใช้เยอะสุดก่อน${topExpense ? ` (${topExpense.name})` : ''} แล้วค่อยเพิ่มหมวดอื่นทีละนิด`;
-      } else if (score >= 40) {
-        hint = `แนะนำ: ลดรายจ่ายหมวดหลัก${topExpense ? ` (${topExpense.name})` : ''} และตั้งงบรายเดือนเพื่อคุมไม่ให้ไหล`;
-      } else {
-        hint = `แนะนำ: รายจ่ายสูงเมื่อเทียบรายรับ ลองลดหมวดที่ใช้เยอะ${topExpense ? ` (${topExpense.name})` : ''} และเพิ่มรายรับให้เหลือออม`;
-      }
-    } else if (income > 0 && Number.isFinite(savingsRate) && savingsRate < 0.1) {
-      hint = `แนะนำ: พยายามเหลือออมอย่างน้อย 10% (ตอนนี้ออม ${Math.round((Number.isFinite(savingsRate) ? savingsRate : 0) * 100)}%)`;
-    } else if (expense > budgetTotal) {
-      hint = `แนะนำ: เกินงบแล้ว ${formatTHB(expense - budgetTotal)} ลองลดรายจ่ายหรือปรับงบให้เหมาะกับเดือนนี้`;
-    } else if (isCurrentMonth && expectedSpendSoFar && expectedSpendSoFar > 0 && expense / expectedSpendSoFar >= 1.15) {
-      const nowParts = nowBkk;
-      const remainingDays = nowParts ? Math.max(1, daysInSelectedMonth - (Number(nowParts.day) || 1) + 1) : 1;
-      const remainingBudget = budgetTotal - expense;
-      const perDay = remainingBudget / remainingDays;
-      hint = `แนะนำ: ใช้เร็วกว่าแผน ลองคุมให้อยู่ที่ ~${formatTHB(perDay)} ต่อวัน (เพื่อไม่ให้เกินงบ)`;
-    } else if (score >= 80) {
-      hint = 'คุมการเงินได้ดีมาก รักษาวินัย และทบทวนงบหมวดที่ใช้บ่อยเป็นระยะ';
-    } else {
-      hint = 'ดูแนวโน้มรายจ่ายและจุดรั่วไหล แล้วปรับงบ/พฤติกรรมให้เหมาะกับเดือนนี้';
-    }
-
-    return {
-      score,
-      label,
-      tone,
-      ringColor,
-      summary: parts.join(' • '),
-      hint,
-    };
-  }, [monthIncomeTotal, monthExpenseTotal, monthExpenseBudgetTotal, selectedParsed, daysInSelectedMonth, nowBkk, stats.transactionsAll]);
-
   const leakItems = useMemo(() => {
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
     const map = new Map();
@@ -1024,18 +877,6 @@ export default function Dashboard() {
       });
     }
 
-    if (Number.isFinite(healthAnalysis?.score) && healthAnalysis.score < 40 && income > 0) {
-      push({
-        id: `health_low_${selectedMonth}`,
-        tone: 'rose',
-        icon: Lightbulb,
-        title: 'สุขภาพการเงินควรปรับปรุง',
-        body: healthAnalysis.summary || 'ลองลดรายจ่ายหรือเพิ่มรายรับเพื่อให้เหลือออมมากขึ้น',
-        href: '/analytics',
-        cta: 'ดูภาพรวม',
-      });
-    }
-
     if (isCurrentMonth && dailyTargetToday > 0 && todaySpend > dailyTargetToday * 1.25) {
       push({
         id: `daily_over_${selectedMonth}`,
@@ -1100,7 +941,6 @@ export default function Dashboard() {
     todaySpend,
     dailyTargetToday,
     leakItems,
-    healthAnalysis,
     selectedMonth,
     nowBkk,
   ]);
@@ -1137,7 +977,7 @@ export default function Dashboard() {
     return { iconBg: 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20', border: 'border-emerald-400/15' };
   };
 
-  const budgetRows = useMemo(() => {
+  const budgetRowsExpense = useMemo(() => {
     const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
     const entries = Object.entries(monthBudgets || {});
     if (!entries.length) return [];
@@ -1151,7 +991,7 @@ export default function Dashboard() {
       spentByCategory.set(id, (spentByCategory.get(id) || 0) + (Number(t.amount) || 0));
     }
 
-    const colors = ['#38BDF8', '#FACC15', '#A78BFA']; // sky, yellow, violet
+    const colors = ['#FB7185', '#FACC15', '#38BDF8']; // rose, amber, sky
     const rows = entries
       .map(([categoryId, total], idx) => {
         const cat = (categories || []).find((c) => c?._id === categoryId);
@@ -1173,8 +1013,101 @@ export default function Dashboard() {
       .filter((r) => r.budget > 0)
       .sort((a, b) => b.pct - a.pct);
 
-    return rows.slice(0, 2);
+    return rows;
   }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById]);
+
+  const budgetRowsIncome = useMemo(() => {
+    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+    const entries = Object.entries(monthBudgets || {});
+    if (!entries.length) return [];
+
+    const receivedByCategory = new Map();
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    for (const t of src) {
+      if (!t || t.type !== 'income') continue;
+      const id = t.category?._id || t.category || '';
+      if (!id) continue;
+      receivedByCategory.set(id, (receivedByCategory.get(id) || 0) + (Number(t.amount) || 0));
+    }
+
+    const colors = ['#34D399', '#38BDF8', '#A78BFA']; // emerald, sky, violet
+    const rows = entries
+      .map(([categoryId, total], idx) => {
+        const cat = (categories || []).find((c) => c?._id === categoryId);
+        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+        if (type && type !== 'income') return null;
+        const budget = Number(total) || 0;
+        const received = Math.max(0, Number(receivedByCategory.get(categoryId) || 0));
+        const pctRaw = budget > 0 ? received / budget : 0;
+        const pctClamped = Math.max(0, Math.min(1, pctRaw));
+        const alpha = 0.25 + 0.75 * pctClamped; // keep visible even when pct is low
+        return {
+          id: categoryId,
+          name: cat?.name || 'หมวดหมู่',
+          icon: cat?.icon || 'other',
+          received,
+          budget,
+          pct: pctClamped,
+          color: colors[idx % colors.length],
+          alpha,
+        };
+      })
+      .filter(Boolean)
+      .filter((r) => r.budget > 0)
+      .sort((a, b) => b.pct - a.pct);
+
+    return rows;
+  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById]);
+
+  const budgetCardType = recentTxnType === 'income' ? 'income' : 'expense';
+  const budgetRows = budgetCardType === 'income' ? budgetRowsIncome : budgetRowsExpense;
+
+  const incomeMonthCategoryRows = useMemo(() => {
+    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+    const map = new Map();
+    for (const t of src) {
+      if (!t || t.type !== 'income') continue;
+      const id = t.category?._id || t.category || '_none';
+      const amt = Number(t.amount) || 0;
+      if (amt <= 0) continue;
+      const prev = map.get(id) || {
+        id,
+        name: t.category?.name || 'ไม่ระบุ',
+        icon: t.category?.icon || 'other',
+        received: 0,
+        txCount: 0,
+      };
+      prev.received += amt;
+      prev.txCount += 1;
+      map.set(id, prev);
+    }
+
+    const colors = ['#34D399', '#38BDF8', '#A78BFA', '#FACC15', '#FB7185', '#60A5FA'];
+    const list = Array.from(map.values()).sort((a, b) => (Number(b.received) || 0) - (Number(a.received) || 0));
+    const maxReceived = Math.max(1, ...list.map((r) => Number(r?.received) || 0));
+    return list.map((r, idx) => {
+      const pct01 = Math.max(0, Math.min(1, (Number(r?.received) || 0) / maxReceived));
+      const alpha = 0.25 + 0.75 * pct01;
+      return { ...r, color: colors[idx % colors.length], alpha };
+    });
+  }, [stats.transactionsAll]);
+
+  const showIncomeRowsWithoutTarget =
+    budgetCardType === 'income' &&
+    (budgetRowsIncome?.length || 0) === 0 &&
+    (incomeMonthCategoryRows?.length || 0) > 0;
+
+  const budgetCardTitle =
+    budgetCardType === 'income'
+      ? (showIncomeRowsWithoutTarget ? 'รายรับตามหมวดหมู่' : 'เป้ารายรับตามหมวดหมู่')
+      : 'งบประมาณ';
+
+  const recentTransactionsFiltered = useMemo(() => {
+    const src = Array.isArray(stats?.recentTransactions) ? stats.recentTransactions : [];
+    if (recentTxnType === 'income') return src.filter((t) => t?.type === 'income');
+    if (recentTxnType === 'expense') return src.filter((t) => t?.type === 'expense');
+    return src;
+  }, [stats?.recentTransactions, recentTxnType]);
 
   /* --- JSX Rendering --- */
 
@@ -1206,17 +1139,7 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCurrencyModal(true)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--app-surface)] shadow-sm shadow-black/10 border border-[color:var(--app-border)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
-              aria-label="อัตราแลกเปลี่ยน"
-              title="อัตราแลกเปลี่ยน"
-            >
-              <svg className="h-5 w-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m-5 3H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-            </button>
+            
 
             <button
               type="button"
@@ -1277,14 +1200,6 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-
-          <Link
-            href="/budget"
-            className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 text-sm font-extrabold text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-          >
-            <Plus className="h-4 w-4" />
-            งบประมาณ
-          </Link>
         </div>
 
         {/* Currency Modal */}
@@ -1540,51 +1455,99 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Summary grid (match reference UI) */}
+        {/* Income / Expense quick filter (tap to filter list + budgets) */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Financial health */}
-          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-            <div className="flex items-start justify-between">
-              <div className="relative h-14 w-14">
-                {(() => {
-                  const r = 22;
-                  const circ = 2 * Math.PI * r;
-                  const pct = Math.max(0, Math.min(100, Number(healthAnalysis.score) || 0));
-                  const dash = (pct / 100) * circ;
-                  return (
-                    <svg viewBox="0 0 56 56" className="h-14 w-14">
-                      <g transform="rotate(-90 28 28)">
-                        <circle cx="28" cy="28" r={r} fill="none" stroke="var(--app-border)" strokeWidth="6" />
-                        <circle
-                          cx="28"
-                          cy="28"
-                          r={r}
-                          fill="none"
-                          stroke={healthAnalysis.ringColor}
-                          strokeWidth="6"
-                          strokeLinecap="round"
-                          strokeDasharray={`${dash} ${Math.max(0, circ - dash)}`}
-                        />
-                      </g>
-                      <text x="28" y="33" textAnchor="middle" fontSize="16" fill="var(--app-text)" fontWeight="800">
-                        {pct}
-                      </text>
-                    </svg>
-                  );
-                })()}
-              </div>
-              <div className="h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center">
-                <Lightbulb className="h-6 w-6 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-              </div>
+          {(() => {
+            const expense = Math.max(0, Number(monthExpenseTotal) || 0);
+            const expenseBudget = Math.max(0, Number(monthExpenseBudgetTotal) || 0);
+            const expHasTarget = expenseBudget > 0;
+            const expPct = expHasTarget ? Math.round((expense / expenseBudget) * 100) : null;
+            const expPctClamped = expHasTarget ? Math.max(0, Math.min(100, (expense / expenseBudget) * 100)) : 0;
+            const expDiff = expenseBudget - expense;
+            const expActive = recentTxnType === 'expense';
+
+            const income = Math.max(0, Number(monthIncomeTotal) || 0);
+            const incomeTarget = Math.max(0, Number(monthIncomeBudgetTotal) || 0);
+            const incHasTarget = incomeTarget > 0;
+            const incPct = incHasTarget ? Math.round((income / incomeTarget) * 100) : null;
+            const incPctClamped = incHasTarget ? Math.max(0, Math.min(100, (income / incomeTarget) * 100)) : 0;
+            const incDiff = incomeTarget - income;
+            const incActive = recentTxnType === 'income';
+            const incVisualPct = incHasTarget ? incPctClamped : (income > 0 ? 100 : 8);
+            const incVisualPctClamped = Math.max(1, Math.min(100, Number(incVisualPct) || 0));
+
+            return (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setRecentTxnType((p) => (p === 'expense' ? 'all' : 'expense'))}
+                  className={[
+                    'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
+                    expActive
+                      ? 'border-rose-400/30 bg-rose-500/10 focus:ring-rose-400/25'
+                      : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
+                  ].join(' ')}
+                  aria-pressed={expActive}
+                >
+                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายจ่าย</div>
+                  <div className="mt-1 text-xl font-extrabold text-rose-300">{formatTHB(expense)}</div>
+                  {expHasTarget ? (
+                    <>
+                      <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                        {expDiff >= 0 ? `เหลือ ${formatTHB(expDiff)} จากงบ` : `เกิน ${formatTHB(Math.abs(expDiff))} จากงบ`} • {expPct}%
+                      </div>
+                      <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                        <div className="h-full rounded-full bg-rose-400" style={{ width: `${expPctClamped}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อดูเฉพาะรายจ่าย</div>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRecentTxnType((p) => (p === 'income' ? 'all' : 'income'))}
+                  className={[
+                    'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
+                    incActive
+                      ? 'border-emerald-400/30 bg-emerald-500/10 focus:ring-emerald-400/25'
+                      : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
+                  ].join(' ')}
+                  aria-pressed={incActive}
+                >
+                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายรับ</div>
+                  <div className="mt-1 text-xl font-extrabold text-emerald-300">{formatTHB(income)}</div>
+                  <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                    {incHasTarget
+                      ? (incDiff >= 0 ? `เหลือ ${formatTHB(incDiff)} จากเป้า` : `เกิน ${formatTHB(Math.abs(incDiff))} จากเป้า`)
+                      : 'แตะเพื่อดูเฉพาะรายรับ'}
+                  </div>
+                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incVisualPctClamped}%` }} />
+                  </div>
+                </button>
+              </>
+            );
+          })()}
+        </div>
+
+        {/* Budget */}
+        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm shadow-black/10">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-extrabold text-[color:var(--app-text)]">{budgetCardTitle}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
+              {budgetRows.length > 5 && (
+                <Link href="/budget" className="text-xs font-extrabold text-sky-300 hover:text-sky-200">
+                  ดูทั้งหมด
+                </Link>
+              )}
             </div>
-            <div className="mt-3 text-base font-extrabold text-[color:var(--app-text)]">สุขภาพการเงิน</div>
-            <div className={`mt-1 text-xs font-semibold ${healthAnalysis.tone}`}>{healthAnalysis.label}</div>
-            <div className="mt-2 text-[11px] font-semibold text-slate-400">{healthAnalysis.summary}</div>
-            <div className="mt-2 line-clamp-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{healthAnalysis.hint}</div>
           </div>
 
-          {/* Right column */}
-          <div className="grid grid-rows-2 gap-3">
+          {/* Summary grid (match reference UI) */}
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
               <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
               <div className="mt-1 flex items-end gap-2">
@@ -1608,73 +1571,85 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Leak points */}
-        {leakItems.length > 0 && (
-          <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-[color:var(--app-text)]">จุดรั่วไหล</h2>
-              <Link href="/analytics" className="text-sm font-extrabold text-sky-300 hover:text-sky-200">
-                ดูทั้งหมด
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              {leakItems.map((it) => (
-                <div key={it.id} className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-                  <div className="mx-auto h-12 w-12 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-rose-200">
-                    <div className="scale-90">{renderIcon(it.icon)}</div>
-                  </div>
-                  <div className="mt-3 text-center text-sm font-extrabold text-[color:var(--app-text)] truncate">{it.name}</div>
-                  <div className="mt-1 text-center text-sm font-extrabold text-rose-300">
-                    -{formatTHB(it.amount)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Budget */}
-        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm shadow-black/10">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-extrabold text-[color:var(--app-text)]">งบประมาณ</div>
-            <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
-          </div>
-
-          {budgetRows.length === 0 ? (
-            <div className="mt-4">
-              <div className="text-sm font-semibold text-slate-400">ยังไม่มีการตั้งงบประมาณ</div>
-              <Link
-                href="/budget"
-                className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
-              >
-                <Plus className="h-4 w-4" />
-                ตั้งงบประมาณ
-              </Link>
-            </div>
-          ) : (
+          {showIncomeRowsWithoutTarget ? (
             <div className="mt-4 space-y-4">
-              {budgetRows.map((r) => (
+              {incomeMonthCategoryRows.slice(0, 6).map((r) => (
                 <div key={r.id}>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
-                      <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
+                        <div className="scale-90">{renderIcon(r.icon)}</div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                          <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
+                        </div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                          รับแล้ว {formatTHB(r.received)}
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-sm font-semibold text-slate-200">
-                      {formatTHB(r.spent)} <span className="text-[color:var(--app-muted-2)]">/ {formatTHB(r.budget)}</span>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-extrabold text-emerald-300">{formatTHB(r.received)}</div>
                     </div>
                   </div>
                   <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${Math.round(r.pct * 100)}%`, backgroundColor: r.color }} />
+                    <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: r.color, opacity: r.alpha }} />
+                  </div>
+                </div>
+              ))}
+
+              
+            </div>
+          ) : budgetRows.length > 0 ? (
+            <div className="mt-4 space-y-4">
+              {budgetRows.slice(0, 6).map((r) => (
+                <div key={r.id}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
+                        <div className="scale-90">{renderIcon(r.icon)}</div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                          <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
+                        </div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                          {budgetCardType === 'income'
+                            ? `เป้า ${formatTHB(r.budget)} • ได้แล้ว ${formatTHB(r.received)}`
+                            : `งบ ${formatTHB(r.budget)} • ใช้ไป ${formatTHB(r.spent)}`}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-extrabold text-slate-100">
+                        {budgetCardType === 'income' ? '' : `${Math.round(r.pct * 100)}%`}
+                      </div>
+                      <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                        {budgetCardType === 'income'
+                          ? `เหลือ ${formatTHB(Math.max(0, r.budget - r.received))} จากเป้า`
+                          : `เหลือ ${formatTHB(Math.max(0, r.budget - r.spent))}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: budgetCardType === 'income' ? '100%' : `${Math.round(r.pct * 100)}%`,
+                        backgroundColor: r.color,
+                        opacity: budgetCardType === 'income' ? (r.alpha ?? 1) : 1,
+                      }}
+                    />
                   </div>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          ) : null}
+	        </div>
 
         {/* Recent Transactions Section */}
         <div>
@@ -1694,7 +1669,7 @@ export default function Dashboard() {
               <div className="text-center py-10">
                 <LoadingMascot label="กำลังโหลด..." size={72} />
               </div>
-            ) : stats.recentTransactions.length === 0 ? (
+            ) : recentTransactionsFiltered.length === 0 ? (
               <div className="text-center py-10">
                 <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
@@ -1704,7 +1679,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {stats.recentTransactions.map((txn, index) => (
+                {recentTransactionsFiltered.map((txn, index) => (
                   <div
                     key={txn._id}
                     onClick={() => handleView(txn)}
@@ -1958,51 +1933,59 @@ export default function Dashboard() {
       )}
 
       {/* Edit Transaction Modal */}
-      {showEditModal && editingTransaction && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
-          onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
-        >
-          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
-            {/* Modal Header */}
-            <div className="relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 p-6 overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
-              
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">แก้ไขรายการ</h2>
-                    <p className="text-slate-950/70 text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
-                  aria-label="ปิด"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleUpdateSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-120px)]">
-              {error && (
-                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
-                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
-                  </svg>
-                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
-                </div>
-              )}
+      {mounted && showEditModal && editingTransaction && createPortal((
+	        <div 
+	          className="fixed inset-0 bg-black/60 backdrop-blur-md z-[9999] animate-fadeIn flex items-end justify-center p-0"
+	          onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
+	        >
+	          <div
+	            className="w-full bg-[var(--app-surface)] text-[color:var(--app-text)] shadow-2xl overflow-hidden animate-slideUp flex flex-col rounded-t-3xl sm:rounded-3xl sm:max-w-md h-[88dvh] max-h-[88dvh] sm:h-auto sm:max-h-[90dvh]"
+	            onClick={(e) => e.stopPropagation()}
+	            role="dialog"
+	            aria-modal="true"
+	            aria-label="แก้ไขรายการ"
+	          >
+	            <form onSubmit={handleUpdateSubmit} className="flex h-full flex-col">
+	              {/* Modal Header */}
+	              <div className="sticky top-0 z-10 relative bg-gradient-to-br from-emerald-500 via-emerald-500 to-green-500 text-slate-950 px-6 pb-5 pt-[calc(env(safe-area-inset-top)+12px)] overflow-hidden">
+	                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" aria-hidden="true" />
+	                <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12" aria-hidden="true" />
+	              
+	                <div className="relative flex items-center justify-between">
+	                  <div className="flex items-center gap-3">
+	                    <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
+	                      <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+	                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+	                      </svg>
+	                    </div>
+	                    <div>
+	                      <h2 className="text-xl font-bold">แก้ไขรายการ</h2>
+	                      <p className="text-slate-950/70 text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
+	                    </div>
+	                  </div>
+	                  <button
+	                    type="button"
+	                    onClick={() => setShowEditModal(false)}
+	                    className="p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
+	                    aria-label="ปิด"
+	                  >
+	                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+	                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+	                    </svg>
+	                  </button>
+	                </div>
+	              </div>
+		
+	              {/* Modal Body */}
+	              <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-6 space-y-5">
+	              {error && (
+		                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
+		                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+	                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
+	                  </svg>
+	                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
+	                </div>
+	              )}
 
               {/* Type Selection */}
               <div>
@@ -2099,29 +2082,101 @@ export default function Dashboard() {
                   rows="3"
                   className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
                   placeholder="เพิ่มรายละเอียด..."
-                />
+	                />
+	              </div>
+	
+	              </div>
+
+	              {/* Modal Footer */}
+	              <div className="sticky bottom-0 z-10 border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+	                <div className="flex gap-3">
+		                <button
+		                  type="button"
+		                  onClick={() => setShowEditModal(false)}
+	                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
+	                >
+	                  ยกเลิก
+	                </button>
+	                <button
+	                  type="submit"
+	                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
+	                >
+	                  บันทึก
+		                </button>
+		                </div>
+		              </div>
+		            </form>
+	          </div>
+	        </div>
+	      ), document.body)}
+
+      {/* Delete Confirm Modal */}
+      {mounted && showDeleteModal && createPortal((
+        <div
+          className="fixed inset-0 z-[10000] bg-slate-950/55 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => e.target === e.currentTarget && setShowDeleteModal(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border border-white/10 bg-[var(--app-surface)] text-[color:var(--app-text)] shadow-2xl shadow-black/40 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ยืนยันการลบ"
+          >
+            <div className="border-b border-white/10 bg-white/5 px-6 py-5 flex items-center justify-between gap-4">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20">
+                  <Trash2 className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-lg font-extrabold text-[color:var(--app-text)]">ลบรายการนี้?</div>
+                  <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted-2)]">การลบจะไม่สามารถกู้คืนได้</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                aria-label="ปิด"
+                title="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {deleteError ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 text-sm font-semibold">
+                  {deleteError}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-semibold text-[color:var(--app-muted-2)]">
+                กด <span className="text-rose-200 font-extrabold">ลบ</span> เพื่อยืนยัน หรือกด <span className="text-slate-100 font-extrabold">ยกเลิก</span> เพื่อกลับไปก่อนหน้า
               </div>
 
-              {/* Submit Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+                  disabled={deleteLoading}
                 >
                   ยกเลิก
                 </button>
                 <button
-                  type="submit"
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
+                  type="button"
+                  onClick={confirmDelete}
+                  className="flex-1 h-12 rounded-2xl bg-rose-500 px-4 text-sm font-extrabold text-white hover:brightness-95 disabled:opacity-60"
+                  disabled={deleteLoading}
                 >
-                  บันทึก
+                  {deleteLoading ? 'กำลังลบ...' : 'ลบ'}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* View Transaction Modal */}
       {mounted && showViewModal && viewingTransaction && createPortal((

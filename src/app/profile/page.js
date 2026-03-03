@@ -10,7 +10,8 @@ import {
   Moon,
   BellRing,
   Brain,
-  ReceiptText,
+  Languages,
+  Trash2,
   LayoutGrid,
   Pencil,
   Flame,
@@ -85,19 +86,24 @@ export default function Profile() {
   const [rankingError, setRankingError] = useState('');
 
   // Local feature settings (stored in localStorage)
-  const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'autocat' | 'payments' | 'categories'
+  const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'autocat' | 'language' | 'clearAll' | 'categories'
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderTime, setReminderTime] = useState('08:00');
   const [autoCategorize, setAutoCategorize] = useState(false);
+  const [language, setLanguage] = useState('th'); // 'th' | 'en'
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
 
   useEffect(() => {
     try {
       const rEn = localStorage.getItem('reminderEnabled');
       const rTime = localStorage.getItem('reminderTime');
       const aCat = localStorage.getItem('autoCategorize');
+      const lang = localStorage.getItem('balanz_lang');
       if (rEn !== null) setReminderEnabled(JSON.parse(rEn));
       if (rTime) setReminderTime(rTime);
       if (aCat !== null) setAutoCategorize(JSON.parse(aCat));
+      if (lang === 'en' || lang === 'th') setLanguage(lang);
     } catch (e) {}
   }, []);
 
@@ -170,7 +176,10 @@ export default function Profile() {
     } catch {}
   };
 
-  const openModal = (key) => setActiveModal(key);
+  const openModal = (key) => {
+    if (key === 'clearAll') setDeleteConfirmText('');
+    setActiveModal(key);
+  };
   const closeModal = () => setActiveModal(null);
 
   const saveReminder = () => {
@@ -190,6 +199,45 @@ export default function Profile() {
       setTimeout(() => setSuccess(''), 3000);
     } catch (e) {}
     closeModal();
+  };
+
+  const saveLanguage = () => {
+    try {
+      localStorage.setItem('balanz_lang', language);
+    } catch {}
+    try {
+      document.documentElement.lang = language === 'en' ? 'en' : 'th';
+      window.dispatchEvent(new Event('balanz_lang_change'));
+    } catch {}
+    setSuccess('บันทึกภาษาเรียบร้อย');
+    setTimeout(() => setSuccess(''), 3000);
+    closeModal();
+  };
+
+  const deleteAllTransactions = async () => {
+    if (deleteAllLoading) return;
+    try {
+      setDeleteAllLoading(true);
+      setError('');
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('กรุณาเข้าสู่ระบบ');
+      const res = await fetch(`${API_BASE}/api/transactions/all`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.message || 'ลบรายการไม่สำเร็จ');
+      }
+      setSuccess(`ลบรายการทั้งหมดแล้ว (${Number(data?.deletedCount) || 0} รายการ)`);
+      setTimeout(() => setSuccess(''), 3500);
+      setDeleteConfirmText('');
+      closeModal();
+    } catch (err) {
+      setError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+    } finally {
+      setDeleteAllLoading(false);
+    }
   };
 
   // --- Logic เดิม (Fetch, Upload, Update) ---
@@ -540,7 +588,6 @@ export default function Profile() {
 
             <div className="min-w-0 flex-1">
               <div className="truncate text-lg font-extrabold text-[color:var(--app-text)]">{user.name || 'ผู้ใช้งาน'}</div>
-              <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted)] truncate">{displayEmail || ''}</div>
             </div>
           </div>
         </div>
@@ -558,10 +605,7 @@ export default function Profile() {
 
         <div className="mt-4 rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.18)]">
           <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถิติการใช้งาน</div>
-            <div className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-extrabold text-emerald-200 ring-1 ring-emerald-400/25">
-              เลเวล {level}
-            </div>
+            <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถิติการใช้งาน</div>           
           </div>
           <div className="mt-3 text-lg font-extrabold text-[color:var(--app-text)]">เป้าหมายการออม</div>
 
@@ -603,16 +647,6 @@ export default function Profile() {
               </div>
             ) : null}
           </div>
-
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setRankingOpen(true)}
-              aria-label="ดูอันดับการจดต่อเนื่อง"
-              className="inline-flex items-center justify-center h-11 w-11 rounded-2xl bg-white/5 text-amber-200 hover:bg-white/10 ring-1 ring-white/10 shadow-sm transition"
-            >
-              <Trophy className="w-5 h-5" />
-            </button>
-          </div>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -645,15 +679,18 @@ export default function Profile() {
 
           {[
             { key: 'reminder', label: 'เตือนจดประจำวัน', icon: BellRing, right: reminderEnabled ? `เปิด ${reminderTime}` : '', action: () => openModal('reminder') },
-            { key: 'autocat', label: 'จัดหมวดด้วยความจำ', icon: Brain, right: autoCategorize ? 'เปิด' : '', action: () => openModal('autocat') },
-            { key: 'payments', label: 'ประวัติการชำระเงิน', icon: ReceiptText, right: '', action: () => router.push('/transactions') },
+            { key: 'language', label: 'ภาษา', icon: Languages, right: language === 'en' ? 'English' : 'ไทย', action: () => openModal('language') },
             { key: 'categories', label: 'ตั้งค่าหมวด', icon: LayoutGrid, right: '', action: () => router.push('/categories') },
+            { key: 'clearAll', label: 'ลบรายการทั้งหมด', icon: Trash2, right: '', action: () => openModal('clearAll') },
           ].map(({ key, label, icon: Icon, right, action }) => (
             <button
               key={key}
               type="button"
               onClick={action}
-              className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition"
+              className={[
+                'w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition',
+                key === 'clearAll' ? 'border-rose-400/25 bg-rose-500/10 hover:bg-rose-500/15' : '',
+              ].join(' ')}
             >
               <div className="flex items-center gap-3">
                 <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
@@ -679,7 +716,7 @@ export default function Profile() {
             ออกจากระบบ
           </button>
           <div className="mt-5 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
-            เวอร์ชัน 2.4.0 (Build 2024)
+            เวอร์ชัน 1.0.0 - สร้างด้วย ❤️ โดยทีม Balanz
           </div>
         </div>
       </div>
@@ -688,20 +725,22 @@ export default function Profile() {
       {activeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
-          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
-            <div className="flex items-start justify-between">
-              <h3 className="text-lg font-extrabold">
-                {activeModal === 'reminder'
-                  ? 'เตือนจดประจำวัน'
-                  : activeModal === 'autocat'
-                    ? 'จัดหมวดด้วยความจำ'
-                    : activeModal === 'payments'
-                      ? 'ประวัติการชำระเงิน'
-                      : 'ตั้งค่าหมวด'}
-              </h3>
-              <button onClick={closeModal} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
-            </div>
-            <div className="mt-4">
+	          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
+	            <div className="flex items-start justify-between">
+	              <h3 className="text-lg font-extrabold">
+	                {activeModal === 'reminder'
+	                  ? 'เตือนจดประจำวัน'
+	                  : activeModal === 'autocat'
+	                    ? 'จัดหมวดด้วยความจำ'
+	                    : activeModal === 'language'
+	                      ? 'ภาษา'
+	                      : activeModal === 'clearAll'
+	                        ? 'ลบรายการทั้งหมด'
+	                        : 'ตั้งค่าหมวด'}
+	              </h3>
+	              <button onClick={closeModal} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
+	            </div>
+	            <div className="mt-4">
               {activeModal === 'reminder' && (
                 <div className="space-y-3">
                   <label className="flex items-center gap-3">
@@ -719,34 +758,88 @@ export default function Profile() {
                 </div>
               )}
 
-              {activeModal === 'autocat' && (
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3">
-                    <input type="checkbox" checked={autoCategorize} onChange={(e) => setAutoCategorize(e.target.checked)} className="w-4 h-4" />
-                    <span className="text-sm font-semibold">เปิดจัดหมวดอัตโนมัติจากข้อความ/จำนวน</span>
-                  </label>
-                  <p className="text-xs text-slate-400 font-semibold">เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน</p>
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
-                    <button onClick={saveAutoCategorize} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
-                  </div>
-                </div>
-              )}
+	              {activeModal === 'autocat' && (
+	                <div className="space-y-3">
+	                  <label className="flex items-center gap-3">
+	                    <input type="checkbox" checked={autoCategorize} onChange={(e) => setAutoCategorize(e.target.checked)} className="w-4 h-4" />
+	                    <span className="text-sm font-semibold">เปิดจัดหมวดอัตโนมัติจากข้อความ/จำนวน</span>
+	                  </label>
+	                  <p className="text-xs text-slate-400 font-semibold">เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน</p>
+	                  <div className="flex justify-end gap-2 mt-4">
+	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
+	                    <button onClick={saveAutoCategorize} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
+	                  </div>
+	                </div>
+	              )}
 
-              {activeModal === 'payments' && (
-                <div className="space-y-3">
-                  <p className="text-sm font-semibold text-[color:var(--app-text)]">คุณสามารถดูประวัติการชำระเงินทั้งหมดได้ที่หน้ารายการ</p>
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ปิด</button>
-                    <button onClick={() => { closeModal(); router.push('/transactions'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">ไปที่รายการ</button>
-                  </div>
-                </div>
-              )}
+	              {activeModal === 'language' && (
+	                <div className="space-y-3">
+	                  <p className="text-xs font-semibold text-[color:var(--app-muted)]">
+	                    ตั้งค่าภาษาสำหรับแอป (บันทึกไว้ในเครื่องนี้)
+	                  </p>
 
-              {activeModal === 'categories' && (
-                <div className="space-y-3">
-                  <p className="text-sm font-semibold text-slate-200">จัดการหมวดหมู่ของคุณ (เพิ่ม/แก้ไข/ลบ)</p>
-                  <div className="flex justify-end gap-2 mt-4">
+	                  <div className="space-y-2">
+	                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+	                      <input
+	                        type="radio"
+	                        name="balanz_lang"
+	                        value="th"
+	                        checked={language === 'th'}
+	                        onChange={() => setLanguage('th')}
+	                      />
+	                      <div className="text-sm font-extrabold">ไทย</div>
+	                    </label>
+
+	                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+	                      <input
+	                        type="radio"
+	                        name="balanz_lang"
+	                        value="en"
+	                        checked={language === 'en'}
+	                        onChange={() => setLanguage('en')}
+	                      />
+	                      <div className="text-sm font-extrabold">English</div>
+	                    </label>
+	                  </div>
+
+	                  <div className="flex justify-end gap-2 mt-4">
+	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
+	                    <button onClick={saveLanguage} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
+	                  </div>
+	                </div>
+	              )}
+
+	              {activeModal === 'clearAll' && (
+	                <div className="space-y-3">
+	                  <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-rose-200 text-sm font-semibold">
+	                    การลบนี้จะลบ “รายการทั้งหมด” ของคุณแบบถาวร และไม่สามารถกู้คืนได้
+	                  </div>
+	                  <div>
+	                    <label className="text-xs font-semibold text-[color:var(--app-muted)]">พิมพ์คำว่า DELETE เพื่อยืนยัน</label>
+	                    <input
+	                      value={deleteConfirmText}
+	                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+	                      className="mt-1 w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/30"
+	                      placeholder="DELETE"
+	                    />
+	                  </div>
+	                  <div className="flex justify-end gap-2 mt-4">
+	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
+	                    <button
+	                      onClick={deleteAllTransactions}
+	                      disabled={deleteAllLoading || deleteConfirmText !== 'DELETE'}
+	                      className="px-4 py-2 bg-rose-500 text-white rounded-xl font-extrabold disabled:opacity-50"
+	                    >
+	                      {deleteAllLoading ? 'กำลังลบ...' : 'ลบทั้งหมด'}
+	                    </button>
+	                  </div>
+	                </div>
+	              )}
+
+	              {activeModal === 'categories' && (
+	                <div className="space-y-3">
+	                  <p className="text-sm font-semibold text-slate-200">จัดการหมวดหมู่ของคุณ (เพิ่ม/แก้ไข/ลบ)</p>
+	                  <div className="flex justify-end gap-2 mt-4">
                     <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ปิด</button>
                     <button onClick={() => { closeModal(); router.push('/categories'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">ไปที่หมวดหมู่</button>
                   </div>

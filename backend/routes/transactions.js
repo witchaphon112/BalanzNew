@@ -156,6 +156,17 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Delete ALL transactions for authenticated user
+router.delete('/all', authMiddleware, async (req, res) => {
+  try {
+    const result = await Transaction.deleteMany({ userId: req.user.userId });
+    res.json({ message: 'Deleted all transactions', deletedCount: result?.deletedCount || 0 });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ message: 'Server error: ' + error.message });
+  }
+});
+
 // Delete transaction
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {

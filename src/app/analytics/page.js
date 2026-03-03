@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import LoadingMascot from '@/components/LoadingMascot';
@@ -18,11 +18,7 @@ import {
   Wallet, TrendingUp, TrendingDown,
   ChevronLeft, ChevronRight,
   X,
-  Utensils, ShoppingBag, Car, Home, Zap, Heart, 
-  Gamepad2, Stethoscope, GraduationCap, Plane, 
-  Briefcase, Gift, Smartphone, Coffee, Music, 
-  Dumbbell, PawPrint, Scissors, CreditCard, 
-  Landmark, MoreHorizontal, Layers, SlidersHorizontal
+  Layers
 } from 'lucide-react';
 
 // ลงทะเบียน Chart.js
@@ -39,48 +35,6 @@ const formatCurrency = (v) => {
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
-
-const clamp01 = (n) => Math.max(0, Math.min(1, n));
-
-const buildSmoothSvgPath = (points) => {
-  if (!Array.isArray(points) || points.length === 0) return '';
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-
-  let d = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length - 2; i++) {
-    const current = points[i];
-    const next = points[i + 1];
-    const midX = (current.x + next.x) / 2;
-    const midY = (current.y + next.y) / 2;
-    d += ` Q ${current.x} ${current.y} ${midX} ${midY}`;
-  }
-  const penultimate = points[points.length - 2];
-  const last = points[points.length - 1];
-  d += ` Q ${penultimate.x} ${penultimate.y} ${last.x} ${last.y}`;
-  return d;
-};
-
-// --- 1. ICON CONFIG ---
-// Map ชื่อไอคอน (จาก Database) ให้เป็น Component
-const ICON_MAP = {
-  'food': Utensils, 'drink': Coffee, 'restaurant': Utensils,
-  'shopping': ShoppingBag, 'gift': Gift, 'clothes': Scissors,
-  'transport': Car, 'fuel': Zap, 'plane': Plane,
-  'home': Home, 'bills': Zap, 'pet': PawPrint,
-  'game': Gamepad2, 'music': Music, 'health': Stethoscope, 'sport': Dumbbell,
-  'money': Landmark, 'salary': CreditCard, 'work': Briefcase,
-  'education': GraduationCap, 'tech': Smartphone,
-  'other': MoreHorizontal, 'love': Heart
-};
-
-// Component ช่วยแสดง Icon (รองรับข้อมูลเก่าที่เป็น Emoji)
-const CategoryIcon = ({ iconName, className = "w-5 h-5" }) => {
-  const IconComp = ICON_MAP[iconName];
-  if (IconComp) return <IconComp className={className} />;
-  // Fallback สำหรับข้อมูลเก่าที่เป็น Emoji
-  return <span className="text-lg leading-none">{iconName || '?'}</span>;
-};
 
 // --- 2. CONSTANTS ---
 const MONTH_NAMES = [
@@ -115,29 +69,12 @@ export default function Analytics() {
   const [categories, setCategories] = useState([]);
   const { out: monthList, currentIdx: initialMonthIndex } = useMemo(() => buildMonthList(), []);
   const [currentMonthIndex, setCurrentMonthIndex] = useState(() => initialMonthIndex); // เริ่มที่เดือนปัจจุบัน
+  const [compareMonthIndex, setCompareMonthIndex] = useState(() => Math.max(0, initialMonthIndex - 1));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Filter State
-  const [filterText, setFilterText] = useState('');
-  const [filterType, setFilterType] = useState('all'); // 'all', 'income', 'expense'
-  const [showTxnFilters, setShowTxnFilters] = useState(false);
   const [overviewMode, setOverviewMode] = useState('monthly'); // 'daily' | 'monthly'
-  const spendChartRef = useRef(null);
-  const spendClearTimerRef = useRef(null);
-  const [activeSpendIndex, setActiveSpendIndex] = useState(null);
-  const [spendTooltip, setSpendTooltip] = useState(null); // { xPx, yPx }
-
-  useEffect(() => {
-    return () => {
-      try {
-        if (spendClearTimerRef.current) clearTimeout(spendClearTimerRef.current);
-      } catch {
-        // ignore
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -154,6 +91,7 @@ export default function Analytics() {
   }, []);
 
   const selectedMonthObj = monthList[currentMonthIndex];
+  const compareMonthObj = monthList[compareMonthIndex];
 
   const monthIndexMap = useMemo(() => {
     const map = new Map();
@@ -234,20 +172,15 @@ export default function Analytics() {
     return tDate.getMonth() === mDate.getMonth() && tDate.getFullYear() === mDate.getFullYear();
   }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-  // Filter by type
-  if (filterType !== 'all') {
-    filteredTransactions = filteredTransactions.filter(t => t.type === filterType);
-  }
-
-  // Apply filterText (search หมวดหมู่/หมายเหตุ)
-  if (filterText.trim()) {
-    filteredTransactions = filteredTransactions.filter(t => {
-      const cat = categories.find(c => c._id === t.category?._id || c._id === t.category);
-      const catName = cat?.name?.toLowerCase() || '';
-      const notes = (t.notes || '').toLowerCase();
-      return catName.includes(filterText.toLowerCase()) || notes.includes(filterText.toLowerCase());
-    });
-  }
+  const categoryNameById = useMemo(() => {
+    const map = new Map();
+    for (const c of categories || []) {
+      const id = c?._id ? String(c._id) : '';
+      if (!id) continue;
+      map.set(id, String(c.name || ''));
+    }
+    return map;
+  }, [categories]);
 
   // คำนวณยอดรวม
   const summary = filteredTransactions.reduce((acc, t) => {
@@ -257,84 +190,6 @@ export default function Analytics() {
   }, { income: 0, expense: 0 });
   
   const balance = summary.income - summary.expense;
-  const healthScore = useMemo(() => {
-    if (!Number.isFinite(summary.income) || summary.income <= 0) return 0;
-    const savingsRate = (summary.income - summary.expense) / summary.income; // -inf..1
-    return Math.round(clamp01(savingsRate) * 100);
-  }, [summary.income, summary.expense]);
-
-  const healthLabel = healthScore >= 80 ? 'ดีเยี่ยม' : healthScore >= 60 ? 'ดี' : 'ควรปรับปรุง';
-  const healthSubLabel = healthScore >= 80
-    ? 'คุณทำได้ดีมาก! ออมต่อเนื่องแบบนี้เลย'
-    : healthScore >= 60
-      ? 'กำลังไปได้ดี ลองเพิ่มสัดส่วนการออมอีกนิด'
-      : 'ลองลดรายจ่าย หรือเพิ่มรายรับเพื่อให้เหลือออมมากขึ้น';
-
-  const spendingTrend = useMemo(() => {
-    const monthDate = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : null;
-    if (!monthDate) return null;
-
-    const now = new Date();
-    const isCurrentMonth = monthDate.getFullYear() === now.getFullYear() && monthDate.getMonth() === now.getMonth();
-    const endDate = isCurrentMonth ? now : new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
-    const startDate = new Date(endDate);
-    startDate.setDate(endDate.getDate() - 6);
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(startDate);
-      d.setDate(startDate.getDate() + i);
-      days.push(d);
-    }
-
-    const dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const expenseByDay = new Map(days.map(d => [dayKey(d), 0]));
-
-    for (const t of filteredTransactions || []) {
-      if (!t || t.type !== 'expense') continue;
-      const d = new Date(t.date);
-      if (Number.isNaN(d.getTime())) continue;
-      const key = dayKey(d);
-      if (!expenseByDay.has(key)) continue;
-      expenseByDay.set(key, expenseByDay.get(key) + (Number(t.amount) || 0));
-    }
-
-    const values = days.map(d => expenseByDay.get(dayKey(d)) || 0);
-    const todaySpend = values[values.length - 1] || 0;
-
-    // Compare month expense vs last month expense
-    const lastMonthDate = new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1);
-    let lastMonthExpense = 0;
-    for (const t of transactions || []) {
-      if (!t || t.type !== 'expense') continue;
-      const d = new Date(t.date);
-      if (Number.isNaN(d.getTime())) continue;
-      if (d.getFullYear() !== lastMonthDate.getFullYear() || d.getMonth() !== lastMonthDate.getMonth()) continue;
-      lastMonthExpense += Number(t.amount) || 0;
-    }
-    const thisMonthExpense = Number(summary.expense) || 0;
-    const pctChange = lastMonthExpense > 0 ? Math.round(((thisMonthExpense - lastMonthExpense) / lastMonthExpense) * 100) : null;
-
-    // Build SVG paths
-    const W = 100;
-    const H = 40;
-    const pad = 4;
-    const usableH = H - pad * 2;
-    const max = Math.max(1, ...values);
-    const points = values.map((v, i) => {
-      const x = (i / 6) * W;
-      const y = pad + (1 - v / max) * usableH;
-      return { x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) };
-    });
-
-    const dPath = buildSmoothSvgPath(points);
-    const first = points[0];
-    const last = points[points.length - 1];
-    const areaPath = `${dPath} L ${last.x} ${H} L ${first.x} ${H} Z`;
-    const labels = days.map(d => d.toLocaleDateString('th-TH', { weekday: 'short' }));
-
-    return { dPath, areaPath, labels, values, todaySpend, thisMonthExpense, pctChange, points };
-  }, [selectedMonthObj, filteredTransactions, transactions, summary.expense]);
 
   // จัดกลุ่มรายจ่ายตามหมวดหมู่
   const expenseByCategory = useMemo(() => {
@@ -342,11 +197,69 @@ export default function Analytics() {
     filteredTransactions
       .filter(t => t.type === 'expense')
       .forEach(t => {
-        const catName = t.category?.name || 'อื่นๆ';
+        const catId = t.category?._id || t.category || '';
+        const fallbackName = catId ? categoryNameById.get(String(catId)) : '';
+        const catName = t.category?.name || fallbackName || 'อื่นๆ';
         map[catName] = (map[catName] || 0) + (t.amount || 0);
       });
     return map;
-  }, [filteredTransactions]);
+  }, [filteredTransactions, categoryNameById]);
+
+  const compareExpense = useMemo(() => {
+    const monthA = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : null;
+    const monthB = compareMonthObj?.value instanceof Date ? compareMonthObj.value : null;
+    if (!monthA || !monthB) {
+      return { labels: [], a: [], b: [], totalA: 0, totalB: 0 };
+    }
+
+    const isInMonth = (t, monthDate) => {
+      const d = new Date(t?.date);
+      if (Number.isNaN(d.getTime())) return false;
+      return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+    };
+
+    const sumByCategory = (monthDate) => {
+      const map = new Map();
+      let total = 0;
+      for (const t of transactions || []) {
+        if (!t || t.type !== 'expense') continue;
+        if (!isInMonth(t, monthDate)) continue;
+        const amount = Number(t.amount) || 0;
+        if (amount <= 0) continue;
+        total += amount;
+        const catId = t.category?._id || t.category || '';
+        const fallbackName = catId ? categoryNameById.get(String(catId)) : '';
+        const catName = t.category?.name || fallbackName || 'อื่นๆ';
+        map.set(catName, (map.get(catName) || 0) + amount);
+      }
+      return { map, total };
+    };
+
+    const aRes = sumByCategory(monthA);
+    const bRes = sumByCategory(monthB);
+
+    const allKeys = new Set([...aRes.map.keys(), ...bRes.map.keys()]);
+    const combined = Array.from(allKeys).map((name) => ({
+      name,
+      a: aRes.map.get(name) || 0,
+      b: bRes.map.get(name) || 0,
+      sum: (aRes.map.get(name) || 0) + (bRes.map.get(name) || 0),
+    }));
+
+    const topN = (isMobile ? 6 : 10);
+    const sorted = combined
+      .sort((x, y) => (y.sum || 0) - (x.sum || 0))
+      .filter((r) => (r.sum || 0) > 0)
+      .slice(0, topN);
+
+    return {
+      labels: sorted.map((r) => r.name),
+      a: sorted.map((r) => r.a),
+      b: sorted.map((r) => r.b),
+      totalA: aRes.total,
+      totalB: bRes.total,
+    };
+  }, [selectedMonthObj, compareMonthObj, transactions, categoryNameById, isMobile]);
 
   const dailySeries = useMemo(() => {
     const map = new Map();
@@ -500,31 +413,64 @@ export default function Analytics() {
     return items;
   }, [expenseByCategory, isMobile]);
 
-  const recentTransactions = useMemo(() => {
-    const src = Array.isArray(filteredTransactions) ? filteredTransactions : [];
-    return src.slice(0, 5);
-  }, [filteredTransactions]);
+  const compareBarData = useMemo(() => {
+    const labelA = selectedMonthObj?.label || 'เดือน A';
+    const labelB = compareMonthObj?.label || 'เดือน B';
+    return {
+      labels: compareExpense.labels || [],
+      datasets: [
+        {
+          label: labelA,
+          data: compareExpense.a || [],
+          backgroundColor: 'rgba(244, 63, 94, 0.85)', // rose
+          borderRadius: 10,
+          barThickness: 14,
+        },
+        {
+          label: labelB,
+          data: compareExpense.b || [],
+          backgroundColor: 'rgba(56, 189, 248, 0.85)', // sky
+          borderRadius: 10,
+          barThickness: 14,
+        },
+      ]
+    };
+  }, [compareExpense, selectedMonthObj, compareMonthObj]);
 
-  const formatTxnTime = (dateInput) => {
-    const d = new Date(dateInput);
-    if (Number.isNaN(d.getTime())) return '';
-    const now = new Date();
-    const isSameDay =
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate();
-    const y = new Date(now);
-    y.setDate(now.getDate() - 1);
-    const isYesterday =
-      d.getFullYear() === y.getFullYear() &&
-      d.getMonth() === y.getMonth() &&
-      d.getDate() === y.getDate();
-
-    const time = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    if (isSameDay) return `วันนี้, ${time}`;
-    if (isYesterday) return `เมื่อวาน, ${time}`;
-    return `${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}, ${time}`;
-  };
+  const compareBarOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    plugins: {
+      legend: {
+        display: true,
+        labels: { color: 'rgba(226, 232, 240, 0.9)', boxWidth: 10, boxHeight: 10 }
+      },
+      tooltip: {
+        backgroundColor: 'rgba(2, 8, 23, 0.92)',
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        titleColor: 'rgba(248,250,252,0.95)',
+        bodyColor: 'rgba(226,232,240,0.95)',
+        callbacks: {
+          label: (ctx) => {
+            const v = ctx.raw ?? 0;
+            return `${ctx.dataset?.label || ''}: ฿ ${formatCurrency(Number(v) || 0)}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255, 255, 255, 0.08)' },
+        ticks: { color: 'rgba(226, 232, 240, 0.7)', maxTicksLimit: isMobile ? 4 : 6, callback: (v) => formatCurrency(v) }
+      },
+      y: {
+        grid: { display: false },
+        ticks: { color: 'rgba(226, 232, 240, 0.75)' }
+      }
+    }
+  }), [isMobile]);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
@@ -739,199 +685,62 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Financial health score */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-500 to-green-500 p-5 text-slate-950 shadow-lg shadow-emerald-500/20">
-          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-[42px] bg-white/20" aria-hidden="true" />
-          <div className="absolute -right-2 -top-2 h-24 w-24 rounded-[32px] bg-white/15" aria-hidden="true" />
-
-          <div className="relative z-10">
-            <div className="text-[11px] font-extrabold tracking-wide text-slate-950/70">คะแนนสุขภาพการเงิน(การออมเงิน)</div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <div className="text-4xl font-extrabold">{healthScore}</div>
-              <div className="text-sm font-extrabold text-slate-950/70">/ 100</div>
-            </div>
-
-            <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-white/25 px-3 py-1 text-[11px] font-extrabold">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-950/70" aria-hidden="true" />
-              {healthLabel}
-            </div>
-
-            <div className="mt-3 text-[11px] font-semibold text-slate-950/70">{healthSubLabel}</div>
-
-            <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-black/15">
-              <div className="h-full rounded-full bg-white/80" style={{ width: `${healthScore}%` }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Spending trend */}
-        {spendingTrend && (
-          <div className="relative overflow-hidden rounded-[34px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-sm font-extrabold text-slate-300">ใช้ไปวันนี้</div>
-                <div className="mt-2 text-4xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(spendingTrend.todaySpend)}</div>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <div className="text-sm font-extrabold text-slate-300">เดือนนี้</div>
-                <div className="mt-2 text-2xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(spendingTrend.thisMonthExpense)}</div>
-                {typeof spendingTrend.pctChange === 'number' && (
-                  <div
-                    className={[
-                      'mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold',
-                      spendingTrend.pctChange <= 0 ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/20' : 'bg-rose-500/15 text-rose-200 border border-rose-400/20'
-                    ].join(' ')}
-                  >
-                    {spendingTrend.pctChange > 0 ? `+${spendingTrend.pctChange}%` : `${spendingTrend.pctChange}%`} เทียบเดือนก่อน
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <div
-                ref={spendChartRef}
-                className="relative h-24"
-                onPointerLeave={() => {
-                  setActiveSpendIndex(null);
-                  setSpendTooltip(null);
-                }}
-                onPointerDown={(e) => {
-                  if (!spendChartRef.current || !spendingTrend?.points?.length) return;
-                  const rect = spendChartRef.current.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const idx = Math.max(0, Math.min(6, Math.round((x / Math.max(1, rect.width)) * 6)));
-                  const p = spendingTrend.points[idx];
-                  const yPx = (p.y / 40) * rect.height;
-
-                  setActiveSpendIndex(idx);
-                  setSpendTooltip({ xPx: x, yPx });
-
-                  // On touch, keep tooltip briefly after tapping.
-                  if (e.pointerType === 'touch') {
-                    try {
-                      if (spendClearTimerRef.current) clearTimeout(spendClearTimerRef.current);
-                      spendClearTimerRef.current = setTimeout(() => {
-                        setActiveSpendIndex(null);
-                        setSpendTooltip(null);
-                      }, 1800);
-                    } catch {
-                      // ignore
-                    }
-                  }
-                }}
-                onPointerMove={(e) => {
-                  if (!spendChartRef.current || !spendingTrend?.points?.length) return;
-                  const rect = spendChartRef.current.getBoundingClientRect();
-                  const x = e.clientX - rect.left;
-                  const idx = Math.max(0, Math.min(6, Math.round((x / Math.max(1, rect.width)) * 6)));
-                  const p = spendingTrend.points[idx];
-                  const yPx = (p.y / 40) * rect.height;
-
-                  setActiveSpendIndex(idx);
-                  setSpendTooltip({ xPx: x, yPx });
-                }}
-                role="img"
-                aria-label="กราฟแนวโน้มรายจ่าย 7 วันล่าสุด (แตะหรือเลื่อนเมาส์เพื่อดูตัวเลข)"
-              >
-                {spendTooltip && activeSpendIndex != null && (
-                  <div
-                    className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs font-extrabold text-slate-100 backdrop-blur"
-                    style={{
-                      left: `${Math.max(10, Math.min((spendChartRef.current?.getBoundingClientRect().width || 0) - 10, spendTooltip.xPx))}px`,
-                      top: `${Math.max(8, spendTooltip.yPx)}px`,
-                    }}
-                  >
-                    <div className="text-slate-300">{spendingTrend.labels[activeSpendIndex]}</div>
-                    <div className="mt-0.5">฿{formatCurrency(spendingTrend.values[activeSpendIndex] || 0)}</div>
-                  </div>
-                )}
-
-                <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
-                  <defs>
-                    <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#22c55e" stopOpacity="0.22" />
-                      <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
-                    </linearGradient>
-                    <linearGradient id="spendStroke" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#22c55e" stopOpacity="0.65" />
-                      <stop offset="70%" stopColor="#34d399" stopOpacity="0.95" />
-                      <stop offset="100%" stopColor="#10b981" stopOpacity="0.95" />
-                    </linearGradient>
-                    <filter id="spendGlow" x="-20%" y="-40%" width="140%" height="200%">
-                      <feGaussianBlur stdDeviation="0.9" result="blur" />
-                      <feColorMatrix
-                        in="blur"
-                        type="matrix"
-                        values="
-                          0 0 0 0 0.133
-                          0 0 0 0 0.773
-                          0 0 0 0 0.365
-                          0 0 0 0.9 0"
-                        result="glow"
-                      />
-                      <feMerge>
-                        <feMergeNode in="glow" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-
-                  <rect x="0" y="0" width="100" height="40" fill="transparent" />
-                  <path d={spendingTrend.areaPath} fill="url(#spendFill)" />
-                  <path
-                    d={spendingTrend.dPath}
-                    fill="none"
-                    stroke="url(#spendStroke)"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    opacity="0.18"
-                    filter="url(#spendGlow)"
-                  />
-                  <path
-                    d={spendingTrend.dPath}
-                    fill="none"
-                    stroke="url(#spendStroke)"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {activeSpendIndex != null && spendingTrend.points?.[activeSpendIndex] && (
-                    <>
-                      <circle
-                        cx={spendingTrend.points[activeSpendIndex].x}
-                        cy={spendingTrend.points[activeSpendIndex].y}
-                        r="2.6"
-                        fill="#0b2730"
-                        stroke="#34d399"
-                        strokeWidth="1.4"
-                      />
-                      <circle
-                        cx={spendingTrend.points[activeSpendIndex].x}
-                        cy={spendingTrend.points[activeSpendIndex].y}
-                        r="5.5"
-                        fill="#22c55e"
-                        opacity="0.10"
-                      />
-                    </>
-                  )}
-                </svg>
-              </div>
-
-              <div className="mt-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
-                {spendingTrend.labels.map((l) => (
-                  <div key={l}>{l}</div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Charts */}
         <div className="space-y-3">
+          {/* Compare expenses between 2 months */}
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เทียบรายจ่าย 2 เดือน</div>
+                <div className="mt-0.5 text-xs font-semibold text-slate-400">แสดงหมวดที่ใช้เยอะสุด (รวมสองเดือน)</div>
+              </div>
+              <div className="shrink-0">
+                <label className="block text-[11px] font-semibold text-[color:var(--app-muted-2)]">เทียบกับ</label>
+                <select
+                  value={compareMonthIndex}
+                  onChange={(e) => setCompareMonthIndex(Math.max(0, Math.min(monthList.length - 1, Number(e.target.value) || 0)))}
+                  className="mt-1 h-10 max-w-[190px] rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                  aria-label="เลือกเดือนสำหรับเปรียบเทียบ"
+                >
+                  {monthList.map((m, idx) => (
+                    <option key={`${m.label}-${idx}`} value={idx}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {compareMonthIndex === currentMonthIndex && (
+              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+                เลือกเดือน “เทียบกับ” ให้ต่างจากเดือนที่เลือก เพื่อดูความแตกต่าง
+              </div>
+            )}
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{selectedMonthObj?.label || 'เดือนที่เลือก'}</div>
+                <div className="mt-1 text-lg font-extrabold text-rose-200">฿{formatCurrency(compareExpense.totalA || 0)}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{compareMonthObj?.label || 'เดือนที่เทียบ'}</div>
+                <div className="mt-1 text-lg font-extrabold text-sky-200">฿{formatCurrency(compareExpense.totalB || 0)}</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {compareExpense.labels.length === 0 ? (
+                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
+                  ไม่มีรายจ่ายสำหรับการเปรียบเทียบ
+                </div>
+              ) : (
+                <div className="h-72">
+                  <Bar data={compareBarData} options={compareBarOptions} />
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -1022,141 +831,10 @@ export default function Analytics() {
                 })}
               </div>
             )}
-          </div>
-        </div>
+	        </div>
+	      </div>
 
-        {/* Recent Transactions (match reference design) */}
-        <div className="rounded-[34px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 shadow-[0_20px_70px_-55px_rgba(0,0,0,0.25)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-xl font-extrabold text-[color:var(--app-text)]">รายการล่าสุด</div>
-            <button
-              type="button"
-              onClick={() => setShowTxnFilters((v) => !v)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-              aria-label="ตัวกรอง"
-              title="ตัวกรอง"
-            >
-              <SlidersHorizontal className="h-5 w-5" />
-            </button>
-          </div>
-
-          {showTxnFilters && (
-            <div className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-3 ring-1 ring-white/10">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-[220px,minmax(0,1fr)]">
-                <div className="min-w-0">
-                  <div className="flex w-full rounded-2xl border border-white/10 bg-black/15 p-1 shadow-sm shadow-black/10" role="group" aria-label="ตัวกรองประเภทรายการ">
-                    <button
-                      type="button"
-                      onClick={() => setFilterType('all')}
-                      aria-pressed={filterType === 'all'}
-                      className={[
-                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-                        filterType === 'all'
-                          ? 'bg-white/10 text-[color:var(--app-text)] ring-1 ring-white/10'
-                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
-                      ].join(' ')}
-                    >
-                      ทั้งหมด
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType('income')}
-                      aria-pressed={filterType === 'income'}
-                      className={[
-                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-                        filterType === 'income'
-                          ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20'
-                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
-                      ].join(' ')}
-                    >
-                      รายรับ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFilterType('expense')}
-                      aria-pressed={filterType === 'expense'}
-                      className={[
-                        'flex-1 rounded-2xl px-3 py-2 text-sm font-extrabold transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-                        filterType === 'expense'
-                          ? 'bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20'
-                          : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] hover:bg-white/5',
-                      ].join(' ')}
-                    >
-                      รายจ่าย
-                    </button>
-                  </div>
-                </div>
-
-                <div className="relative min-w-0">
-                  <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                  </svg>
-                  <input
-                    type="text"
-                    value={filterText}
-                    onChange={(e) => setFilterText(e.target.value)}
-                    className="h-10 w-full min-w-0 rounded-2xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm font-semibold text-slate-100 placeholder-slate-500 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                    placeholder="ค้นหา: หมวด หรือ หมายเหตุ..."
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-5 divide-y divide-white/10">
-            {recentTransactions.length > 0 ? recentTransactions.map((t) => {
-              const cat = categories.find((c) => c._id === t.category?._id || c._id === t.category);
-              const isExpense = t.type === 'expense';
-              const title = (t.notes || '').trim() || cat?.name || 'รายการ';
-              const sub = formatTxnTime(t.date);
-              const amount = Number(t.amount) || 0;
-              const amountText = amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              return (
-                <div key={t._id} className="flex items-center justify-between gap-4 py-4">
-                  <div className="min-w-0 flex items-center gap-4">
-                    <div
-                      className={[
-                        'h-12 w-12 rounded-full flex items-center justify-center shrink-0 ring-1',
-                        isExpense
-                          ? 'bg-amber-500/15 text-amber-200 ring-amber-400/15'
-                          : 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/15',
-                      ].join(' ')}
-                      aria-hidden="true"
-                    >
-                      <CategoryIcon iconName={cat?.icon} className="w-5 h-5" />
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{title}</div>
-                      <div className="mt-1 truncate text-sm font-semibold text-[color:var(--app-muted-2)]">{sub}</div>
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 text-right">
-                    <div className={`text-lg font-extrabold ${isExpense ? 'text-rose-200' : 'text-emerald-300'}`}>
-                      {isExpense ? '-' : '+'} ฿{amountText}
-                    </div>
-                    <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted-2)]">
-                      {cat?.name || (isExpense ? 'รายจ่าย' : 'รายรับ')}
-                    </div>
-                  </div>
-                </div>
-              );
-            }) : (
-              <div className="py-10 text-center text-sm font-semibold text-slate-400">ไม่มีรายการในเดือนนี้</div>
-            )}
-          </div>
-
-          <div className="mt-6">
-            <Link
-              href="/transactions"
-              className="block rounded-2xl py-2 text-center text-sm font-semibold text-slate-400 hover:text-slate-200"
-            >
-              ดูรายการทั้งหมด
-            </Link>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
+	      </div>
+	    </main>
+	  );
+	}

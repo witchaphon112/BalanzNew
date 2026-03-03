@@ -120,10 +120,6 @@ export default function Currency({ onClose }) {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-2 0-3 1-3 2s1 2 3 2 3 1 3 2-1 2-3 2m0-8V7m0 1v8m0 0v1" />
               </svg>
             </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-extrabold leading-tight">อัตราแลกเปลี่ยนเงิน</h1>
-              <p className="mt-0.5 text-xs font-semibold text-slate-950/70">แปลงสกุลเงินแบบเรียลไทม์</p>
-            </div>
           </div>
         </div>
 
