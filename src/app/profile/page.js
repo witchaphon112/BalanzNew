@@ -680,7 +680,7 @@ export default function Profile() {
           {[
             { key: 'reminder', label: 'เตือนจดประจำวัน', icon: BellRing, right: reminderEnabled ? `เปิด ${reminderTime}` : '', action: () => openModal('reminder') },
             { key: 'language', label: 'ภาษา', icon: Languages, right: language === 'en' ? 'English' : 'ไทย', action: () => openModal('language') },
-            { key: 'categories', label: 'ตั้งค่าหมวด', icon: LayoutGrid, right: '', action: () => router.push('/categories') },
+            { key: 'categories', label: 'ตั้งค่าหมวด', icon: LayoutGrid, right: '', action: () => router.push('/budget') },
             { key: 'clearAll', label: 'ลบรายการทั้งหมด', icon: Trash2, right: '', action: () => openModal('clearAll') },
           ].map(({ key, label, icon: Icon, right, action }) => (
             <button

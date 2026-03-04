@@ -338,6 +338,13 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     if (!el) return;
     if (e.pointerType === 'touch') return; // keep native swipe scrolling on touch devices
     if (e.button != null && e.button !== 0) return; // left click only (mouse)
+    // If the user clicks a month button, allow the click to go through (don't start drag capture).
+    try {
+      const target = e?.target;
+      if (target && target.closest && target.closest('button')) return;
+    } catch {
+      // ignore
+    }
     suppressMonthClickRef.current = false;
     monthDragRef.current = { active: true, startX: e.clientX, startScrollLeft: el.scrollLeft };
     try {
@@ -352,7 +359,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     const st = monthDragRef.current;
     if (!el || !st.active) return;
     const dx = e.clientX - st.startX;
-    if (Math.abs(dx) > 4) suppressMonthClickRef.current = true;
+    if (Math.abs(dx) > 10) suppressMonthClickRef.current = true;
     el.scrollLeft = st.startScrollLeft - dx;
     scheduleUpdateMonthScroll();
   };

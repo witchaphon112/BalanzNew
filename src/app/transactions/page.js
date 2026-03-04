@@ -34,6 +34,10 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
+  CheckSquare,
+  Square,
+  ListChecks,
+  X,
 } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
@@ -124,6 +128,16 @@ export default function TransactionsPage() {
   // Multi-select: [] means "ทั้งหมด"
   const [filterCategory, setFilterCategory] = useState([]); // string[] (categoryId | 'other')
   const [openSwipeId, setOpenSwipeId] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedTxnIds, setSelectedTxnIds] = useState(() => new Set());
+  const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false);
+  const [showBulkDateModal, setShowBulkDateModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [deleteIds, setDeleteIds] = useState([]);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkDate, setBulkDate] = useState('');
   const filtersRef = useRef(null);
   const touchRef = useRef({ x: 0, y: 0, id: null, moved: false });
   const touchClearRef = useRef(null);
@@ -138,6 +152,159 @@ export default function TransactionsPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const selectedCount = selectedTxnIds.size;
+  const txnById = useMemo(() => {
+    const map = new Map();
+    (transactions || []).forEach((t) => { if (t?._id) map.set(t._id, t); });
+    return map;
+  }, [transactions]);
+  const selectedTxns = useMemo(() => {
+    return Array.from(selectedTxnIds).map((id) => txnById.get(id)).filter(Boolean);
+  }, [selectedTxnIds, txnById]);
+  const selectedTypeSet = useMemo(() => {
+    const set = new Set();
+    selectedTxns.forEach((t) => { if (t?.type) set.add(t.type); });
+    return set;
+  }, [selectedTxns]);
+  const canBulkEditCategory = selectedCount > 0 && selectedTypeSet.size === 1;
+  const bulkType = canBulkEditCategory ? Array.from(selectedTypeSet)[0] : '';
+  const bulkCategories = useMemo(() => {
+    if (!bulkType) return [];
+    return (categories || []).filter((c) => c?.type === bulkType);
+  }, [categories, bulkType]);
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedTxnIds(new Set());
+    setOpenSwipeId(null);
+    setShowBulkCategoryModal(false);
+    setShowBulkDateModal(false);
+    setShowDeleteConfirmModal(false);
+    setDeleteIds([]);
+    setDeleteLoading(false);
+    setDeleteError('');
+  };
+
+  const toggleSelectTxn = (id) => {
+    if (!id) return;
+    setSelectedTxnIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    const ids = (filteredTransactions || []).map((t) => t?._id).filter(Boolean);
+    setSelectedTxnIds(new Set(ids));
+  };
+
+  const clearSelection = () => setSelectedTxnIds(new Set());
+
+  const openDeleteConfirm = (ids) => {
+    const next = (ids || []).map((v) => String(v || '')).filter(Boolean);
+    if (next.length === 0) return;
+    setDeleteIds(next);
+    setDeleteError('');
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedTxnIds.size === 0) return;
+    openDeleteConfirm(Array.from(selectedTxnIds));
+  };
+
+  const confirmDelete = async () => {
+    if (deleteLoading) return;
+    if (!deleteIds || deleteIds.length === 0) return;
+
+    try {
+      setDeleteLoading(true);
+      setDeleteError('');
+      const token = localStorage.getItem('token');
+      const ids = [...deleteIds];
+
+      const results = await Promise.allSettled(ids.map(async (id) => {
+        const res = await fetch(`${API_BASE}/api/transactions/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          let msg = '';
+          try {
+            const data = await res.json();
+            msg = data?.message ? String(data.message) : '';
+          } catch {}
+          throw new Error(msg || 'ลบรายการไม่สำเร็จ');
+        }
+        return true;
+      }));
+
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        setDeleteError(`ลบไม่สำเร็จ ${failed.length} รายการ ลองใหม่อีกครั้ง`);
+        return;
+      }
+
+      await fetchTransactions(token);
+
+      setShowDeleteConfirmModal(false);
+      setDeleteIds([]);
+      setShowEditModal(false);
+      setEditingTransaction(null);
+      setOpenSwipeId(null);
+
+      if (selectMode) exitSelectMode();
+    } catch (err) {
+      setDeleteError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handleBulkUpdateCategory = async () => {
+    if (!canBulkEditCategory) return;
+    if (!bulkCategoryId) return;
+    if (!confirm(`แก้หมวดของ ${selectedCount} รายการที่เลือกใช่ไหม?`)) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const ids = Array.from(selectedTxnIds);
+      await Promise.all(ids.map((id) => fetch(`${API_BASE}/api/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ category: bulkCategoryId }),
+      })));
+      await fetchTransactions(token);
+      setShowBulkCategoryModal(false);
+      exitSelectMode();
+    } catch (err) {
+      setError('เกิดข้อผิดพลาด: ' + (err?.message || 'Error'));
+    }
+  };
+
+  const handleBulkUpdateDate = async () => {
+    if (selectedCount === 0) return;
+    if (!bulkDate) return;
+    if (!confirm(`แก้วันที่ของ ${selectedCount} รายการที่เลือกเป็น ${bulkDate} ใช่ไหม?`)) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const ids = Array.from(selectedTxnIds);
+      await Promise.all(ids.map((id) => fetch(`${API_BASE}/api/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ date: bulkDate }),
+      })));
+      await fetchTransactions(token);
+      setShowBulkDateModal(false);
+      exitSelectMode();
+    } catch (err) {
+      setError('เกิดข้อผิดพลาด: ' + (err?.message || 'Error'));
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -162,6 +329,7 @@ export default function TransactionsPage() {
         if (cancelled) return;
         setTransactions(sorted);
         setCategories(Array.isArray(cData) ? cData : []);
+        exitSelectMode();
       } catch (e) {
         if (cancelled) return;
         setError('เกิดข้อผิดพลาด: ' + (e?.message || 'Error'));
@@ -260,6 +428,34 @@ export default function TransactionsPage() {
     setFilteredTransactions(filtered);
   }, [transactions, filterType, searchQuery, selectedMonth, dayFilter, dateRange, filterCategory, categories]);
 
+  // If the visible list changes, keep selection only for IDs still visible.
+  useEffect(() => {
+    if (!selectMode) return;
+    const visible = new Set((filteredTransactions || []).map((t) => t?._id).filter(Boolean));
+    setSelectedTxnIds((prev) => {
+      const next = new Set();
+      prev.forEach((id) => { if (visible.has(id)) next.add(id); });
+      return next;
+    });
+  }, [filteredTransactions, selectMode]);
+
+  useEffect(() => {
+    if (!showBulkCategoryModal) return;
+    if (bulkCategoryId) return;
+    const first = bulkCategories?.[0]?._id || '';
+    if (first) setBulkCategoryId(first);
+  }, [showBulkCategoryModal, bulkCategoryId, bulkCategories]);
+
+  useEffect(() => {
+    if (!showBulkDateModal) return;
+    if (bulkDate) return;
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    setBulkDate(`${yyyy}-${mm}-${dd}`);
+  }, [showBulkDateModal, bulkDate]);
+
   // Export filtered transactions to CSV (Excel-compatible)
   const exportToCSV = () => {
     try {
@@ -337,22 +533,9 @@ export default function TransactionsPage() {
     setShowEditModal(true);
   };
 
-  const handleDelete = async (transactionId) => {
-    if (!confirm('คุณแน่ใจหรือไม่ที่จะลบรายการนี้?')) return;
-
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/transactions/${transactionId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error('Failed to delete');
-      
-      fetchTransactions(token);
-    } catch (error) {
-      setError('เกิดข้อผิดพลาด: ' + error.message);
-    }
+  const handleDelete = (transactionId) => {
+    if (!transactionId) return;
+    openDeleteConfirm([transactionId]);
   };
 
   const handleUpdateSubmit = async (e) => {
@@ -644,6 +827,7 @@ export default function TransactionsPage() {
       setDateRange({ start: '', end: '' });
       setDayFilter('all');
       setSelectedMonth('');
+      try { setOpenDropdown(null); } catch {}
       return;
     }
 
@@ -673,6 +857,7 @@ export default function TransactionsPage() {
     setDayFilter('all');
     setSelectedMonth('');
     setCalendarMonth(new Date(start.getFullYear(), start.getMonth(), 1));
+    try { setOpenDropdown(null); } catch {}
   };
 
   const applyDayPreset = (key) => {
@@ -803,25 +988,25 @@ export default function TransactionsPage() {
     <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
       <div className="mx-auto w-full max-w-lg">
         {/* Sticky header */}
-        <div className="sticky top-0 z-[40] bg-[var(--app-bg)] backdrop-blur">
-          <div className="px-4 pt-4 pb-3">
-            <div className="relative flex items-center justify-between gap-3">
-              <div className="w-11 shrink-0" aria-hidden="true" />
+          <div className="sticky top-0 z-[40] bg-[var(--app-bg)] backdrop-blur">
+            <div className="px-4 pt-4 pb-3">
+              <div className="relative flex items-center justify-between gap-3">
+                <div className="w-11 shrink-0" aria-hidden="true" />
 
               <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-center max-w-[70%]">
                 <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ธุรกรรม</div>
                 <h1 className="truncate text-lg font-extrabold text-[color:var(--app-text)]">รายการ</h1>
               </div>
 
-              <div className="ml-auto shrink-0 flex items-center gap-2">
-                <ExportButton
-                  onClick={exportToCSV}
-                  className="flex-row gap-2 rounded-2xl !border-emerald-500 !bg-emerald-500 !text-white shadow-sm shadow-black/10 hover:brightness-95 focus-visible:ring-emerald-400/35"
-                />
-              </div>
-            </div>
+	              <div className="ml-auto shrink-0 flex items-center gap-2">
+	                <ExportButton
+	                  onClick={exportToCSV}
+	                  className="flex-row gap-2 rounded-2xl !border-emerald-500 !bg-emerald-500 !text-white shadow-sm shadow-black/10 hover:brightness-95 focus-visible:ring-emerald-400/35"
+	                />
+	              </div>
+	            </div>
 
-            <div ref={filtersRef} className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm">
+	            <div ref={filtersRef} className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="relative flex-1">
                   <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -849,12 +1034,12 @@ export default function TransactionsPage() {
                   title={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
                 >
                   <SlidersHorizontal className="h-5 w-5" />
-                </button>
-              </div>
-
-              {showFilters && (
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {/* Category */}
+	                </button>
+	              </div>
+	
+	              {showFilters && (
+	                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+	                {/* Category */}
                 <div className="relative">
                   <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
                     <Tag className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1045,131 +1230,157 @@ export default function TransactionsPage() {
                       <ChevronDown className="h-4 w-4" />
                     </span>
                   </button>
-                  {openDropdown === 'date' && (
+                  {mounted && openDropdown === 'date' && createPortal((
                     <div
-                      className="absolute left-0 right-0 top-[calc(100%+8px)] z-[30] max-h-[72dvh] overflow-y-auto overflow-x-hidden overscroll-contain rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-[0_18px_40px_-20px_rgba(0,0,0,0.25)]"
+                      className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
                       role="dialog"
                       aria-label="เลือกช่วงเวลา"
+                      onClick={(e) => e.target === e.currentTarget && setOpenDropdown(null)}
                     >
-                      {/* Presets */}
-                      <div className="flex gap-2 overflow-x-auto border-b border-[color:var(--app-border)] px-3 py-2.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        {[
-                          { key: 'today', label: 'วันนี้' },
-                          { key: 'yesterday', label: 'เมื่อวาน' },
-                          { key: 'thisWeek', label: 'สัปดาห์นี้' },
-                          { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
-                          { key: 'last7', label: '7 วันล่าสุด' },
-                          { key: 'currentMonth', label: 'เดือนนี้' },
-                          { key: 'lastMonth', label: 'เดือนที่แล้ว' },
-                          { key: 'reset', label: 'รีเซ็ต' },
-                        ].map((p) => (
-                          <button
-                            key={p.key}
-                            type="button"
-                            onClick={() => (p.key === 'today' || p.key === 'yesterday' ? applyDayPreset(p.key) : applyPreset(p.key))}
-                            className={[
-                              'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
-                              p.key === 'reset'
-                                ? 'border-rose-500/25 bg-rose-500/10 text-[color:var(--app-danger)] hover:bg-rose-500/15'
-                                : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]',
-                            ].join(' ')}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Selected range summary */}
-                      <div className="border-b border-[color:var(--app-border)] px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
-                          {(dateRange?.start || dateRange?.end) && (
-                            <button
-                              type="button"
-                              onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                              className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
-                            >
-                              ล้าง
-                            </button>
-                          )}
-                        </div>
-                        <div className="mt-2 flex items-center gap-2">
-                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                            {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
+                      <div className="bg-[var(--app-surface)] w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)] flex flex-col max-h-[92dvh] sm:max-h-[88dvh]">
+                        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[color:var(--app-border)]">
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ตัวกรอง</div>
+                            <div className="truncate text-base font-extrabold">ช่วงเวลา</div>
                           </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                            {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <label className="block">
-                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
-                            <input
-                              type="date"
-                              value={dateRange?.start || ''}
-                              onChange={(e) => setExplicitRange(e.target.value, dateRange?.end || '')}
-                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                            />
-                          </label>
-                          <label className="block">
-                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
-                            <input
-                              type="date"
-                              value={dateRange?.end || ''}
-                              min={dateRange?.start || undefined}
-                              onChange={(e) => setExplicitRange(dateRange?.start || '', e.target.value)}
-                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                            />
-                          </label>
-                        </div>
-
-                        {dateRange?.start && !dateRange?.end && (
                           <button
                             type="button"
-                            onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
-                            className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                            onClick={() => setOpenDropdown(null)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            aria-label="ปิด"
                           >
-                            ใช้วันเดียว (เริ่ม = สิ้นสุด)
+                            <X className="h-5 w-5" aria-hidden="true" />
                           </button>
-                        )}
-                      </div>
+                        </div>
 
-                      {/* Calendar */}
-                      <div className="p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                            aria-label="เดือนก่อนหน้า"
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                          </button>
-                          <div className="min-w-0 flex-1 text-center">
-                            <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
-                              {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
-                            </div>
-                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                              {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                        <div className="flex-1 overflow-y-auto overscroll-contain">
+                          {/* Presets */}
+                          <div className="sticky top-0 z-[1] bg-[var(--app-surface)] border-b border-[color:var(--app-border)]">
+                            <div className="flex gap-2 overflow-x-auto px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                              {[
+                                { key: 'today', label: 'วันนี้' },
+                                { key: 'yesterday', label: 'เมื่อวาน' },
+                                { key: 'thisWeek', label: 'สัปดาห์นี้' },
+                                { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
+                                { key: 'last7', label: '7 วันล่าสุด' },
+                                { key: 'currentMonth', label: 'เดือนนี้' },
+                                { key: 'lastMonth', label: 'เดือนที่แล้ว' },
+                                { key: 'reset', label: 'รีเซ็ต' },
+                              ].map((p) => (
+                                <button
+                                  key={p.key}
+                                  type="button"
+                                  onClick={() => (p.key === 'today' || p.key === 'yesterday' ? applyDayPreset(p.key) : applyPreset(p.key))}
+                                  className={[
+                                    'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
+                                    p.key === 'reset'
+                                      ? 'border-rose-500/25 bg-rose-500/10 text-[color:var(--app-danger)] hover:bg-rose-500/15'
+                                      : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]',
+                                  ].join(' ')}
+                                >
+                                  {p.label}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                            aria-label="เดือนถัดไป"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
+
+                          {/* Selected range summary + inputs */}
+                          <div className="p-4">
+                            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
+                                {(dateRange?.start || dateRange?.end) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
+                                    className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
+                                  >
+                                    ล้างช่วง
+                                  </button>
+                                )}
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
+                                  {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
+                                </div>
+                                <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                                <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
+                                  {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
+                                </div>
+                              </div>
+
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                <label className="block">
+                                  <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
+                                  <input
+                                    type="date"
+                                    value={dateRange?.start || ''}
+                                    onChange={(e) => setExplicitRange(e.target.value, dateRange?.end || '')}
+                                    className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                                  />
+                                </label>
+                                <label className="block">
+                                  <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
+                                  <input
+                                    type="date"
+                                    value={dateRange?.end || ''}
+                                    min={dateRange?.start || undefined}
+                                    onChange={(e) => setExplicitRange(dateRange?.start || '', e.target.value)}
+                                    className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                                  />
+                                </label>
+                              </div>
+
+                              {dateRange?.start && !dateRange?.end && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
+                                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                                >
+                                  ใช้วันเดียว (เริ่ม = สิ้นสุด)
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Calendar */}
+                          <div className="px-4 pb-4">
+                            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+                                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                                  aria-label="เดือนก่อนหน้า"
+                                >
+                                  <ChevronLeft className="h-4 w-4" />
+                                </button>
+                                <div className="min-w-0 flex-1 text-center">
+                                  <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
+                                    {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                                  </div>
+                                  <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                                    {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+                                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                                  aria-label="เดือนถัดไป"
+                                >
+                                  <ChevronRight className="h-4 w-4" />
+                                </button>
+                              </div>
+
+                              <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3">
+                                {renderMonth(calendarMonth)}
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3">
-                          {renderMonth(calendarMonth)}
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between gap-2">
+                        <div className="border-t border-[color:var(--app-border)] bg-[var(--app-surface)] px-5 py-4 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
@@ -1187,7 +1398,7 @@ export default function TransactionsPage() {
                         </div>
                       </div>
                     </div>
-                  )}
+                  ), document.body)}
                 </div>
               </div>
               )}
@@ -1195,10 +1406,24 @@ export default function TransactionsPage() {
         </div>
         </div>
 
-        <div className="px-4 py-5">
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
+	        <div className="px-4 py-5">
+            <div className="mb-4 flex flex-col gap-2">
+              {!selectMode && (
+                <button
+                  type="button"
+                  onClick={() => { setSelectMode(true); setOpenSwipeId(null); setSelectedTxnIds(new Set()); }}
+                  className="inline-flex h-12 w-full items-center justify-between gap-4 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-[color:var(--app-text)] shadow-sm shadow-black/10 transition hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 motion-reduce:transition-none"
+                  aria-label="เลือกหลายรายการ"
+                  title="เลือกหลายรายการ"
+                >
+                  <span className="text-sm font-extrabold">เลือกหลายรายการ</span>
+                  <ListChecks className="h-5 w-5 opacity-80" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+	        {/* Error Message */}
+	        {error && (
+	          <div className="mb-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
             <div className="flex items-start gap-3">
               <svg className="h-5 w-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
@@ -1267,7 +1492,8 @@ export default function TransactionsPage() {
 
                   <div className="mt-2 space-y-3">
                     {group.items.map(txn => {
-                      const isOpen = openSwipeId === txn._id;
+                      const isSelected = selectedTxnIds.has(txn._id);
+                      const isOpen = !selectMode && openSwipeId === txn._id;
                       const categoryName = txn.category?.name || 'ไม่ระบุ';
                       const title = (txn.notes && txn.notes.trim()) ? txn.notes : categoryName;
                       const subtitle = `${formatTimeHHmm(txn.date) || '—'} • ${categoryName}`;
@@ -1276,7 +1502,10 @@ export default function TransactionsPage() {
                       return (
                         <div
                           key={txn._id}
-                          className="relative overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-sm"
+                          className={[
+                            'relative overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-sm',
+                            selectMode && isSelected ? 'ring-2 ring-emerald-400/35' : '',
+                          ].join(' ')}
                         >
                           <div
                             className={[
@@ -1291,6 +1520,7 @@ export default function TransactionsPage() {
                               type="button"
                               onClick={() => handleEdit(txn)}
                               tabIndex={isOpen ? 0 : -1}
+                              disabled={selectMode}
                               className={[
                                 'flex-1 bg-gradient-to-b from-emerald-400 to-emerald-500 text-slate-950',
                                 'font-extrabold text-sm',
@@ -1308,6 +1538,7 @@ export default function TransactionsPage() {
                               type="button"
                               onClick={() => handleDelete(txn._id)}
                               tabIndex={isOpen ? 0 : -1}
+                              disabled={selectMode}
                               className={[
                                 'flex-1 bg-gradient-to-b from-rose-400 to-rose-500 text-white',
                                 'font-extrabold text-sm',
@@ -1324,11 +1555,12 @@ export default function TransactionsPage() {
 
                           <button
                             type="button"
-                            onTouchStart={(e) => onCardTouchStart(txn._id, e)}
-                            onTouchMove={(e) => onCardTouchMove(txn._id, e)}
-                            onTouchEnd={() => onCardTouchEnd(txn._id)}
+                            onTouchStart={selectMode ? undefined : (e) => onCardTouchStart(txn._id, e)}
+                            onTouchMove={selectMode ? undefined : (e) => onCardTouchMove(txn._id, e)}
+                            onTouchEnd={selectMode ? undefined : () => onCardTouchEnd(txn._id)}
                             onClick={() => {
                               if (touchRef.current.moved) return;
+                              if (selectMode) { toggleSelectTxn(txn._id); return; }
                               if (isOpen) { setOpenSwipeId(null); return; }
                               handleEdit(txn);
                             }}
@@ -1341,6 +1573,15 @@ export default function TransactionsPage() {
                             ].join(' ')}
                           >
                             <div className="flex items-center gap-4 px-4 py-4">
+                              {selectMode && (
+                                <div className="shrink-0" aria-hidden="true">
+                                  {isSelected ? (
+                                    <CheckSquare className="h-6 w-6 text-emerald-300" />
+                                  ) : (
+                                    <Square className="h-6 w-6 text-slate-500" />
+                                  )}
+                                </div>
+                              )}
                               <div
                                 className={[
                                   'h-12 w-12 rounded-full flex items-center justify-center shrink-0 ring-1',
@@ -1377,9 +1618,252 @@ export default function TransactionsPage() {
           )}
         </div>
 
-        <div className="h-24" />
-      </div>
-      </div>
+					        <div className={selectMode ? 'h-40' : 'h-24'} />
+			      </div>
+			      </div>
+
+	        {/* Bottom popup actions (multi-select) */}
+	        {mounted && selectMode && createPortal((
+		          <div className="fixed inset-x-0 bottom-0 z-[95]">
+			            <div className="mx-auto w-full max-w-lg px-0 sm:px-4 ">
+		              <div className="rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/30 backdrop-blur">
+	                <div className="flex items-center justify-between gap-3 px-4 pt-4">
+	                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">
+	                    เลือกแล้ว <span className="text-[color:var(--app-text)] font-extrabold">{selectedCount}</span> รายการ
+	                  </div>
+	                  <button
+	                    type="button"
+	                    onClick={exitSelectMode}
+	                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                    aria-label="ยกเลิกการเลือก"
+	                    title="ยกเลิก"
+	                  >
+	                    <X className="h-5 w-5" aria-hidden="true" />
+	                  </button>
+	                </div>
+
+	                <div className="grid grid-cols-3 gap-3 p-3 pt-3">
+	                  <button
+	                    type="button"
+	                    onClick={() => setShowBulkCategoryModal(true)}
+	                    disabled={!canBulkEditCategory}
+	                    className={[
+	                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
+	                      canBulkEditCategory
+	                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30'
+	                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed',
+	                    ].join(' ')}
+	                    title={canBulkEditCategory ? 'แก้หมวดหมู่' : 'เลือกได้เฉพาะรายการประเภทเดียว (รายรับหรือรายจ่าย)'}
+	                  >
+	                    <span className="inline-flex items-center justify-center gap-2">
+	                      <Tag className="h-5 w-5" aria-hidden="true" />
+	                      แก้หมวด
+	                    </span>
+	                  </button>
+
+	                  <button
+	                    type="button"
+	                    onClick={() => setShowBulkDateModal(true)}
+	                    disabled={selectedCount === 0}
+	                    className={[
+	                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
+	                      selectedCount > 0
+	                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30'
+	                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed',
+	                    ].join(' ')}
+	                  >
+	                    <span className="inline-flex items-center justify-center gap-2">
+	                      <CalendarDays className="h-5 w-5" aria-hidden="true" />
+	                      แก้วันที่
+	                    </span>
+	                  </button>
+
+	                  <button
+	                    type="button"
+	                    onClick={handleBulkDelete}
+	                    disabled={selectedCount === 0}
+	                    className={[
+	                      'rounded-2xl px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
+	                      selectedCount === 0
+	                        ? 'bg-rose-500/30 text-white/60 cursor-not-allowed'
+	                        : 'bg-rose-500 text-white hover:brightness-95 focus:ring-rose-300/30',
+	                    ].join(' ')}
+	                    title="ลบรายการที่เลือก"
+	                  >
+	                    <span className="inline-flex items-center justify-center gap-2">
+	                      <Trash2 className="h-5 w-5" aria-hidden="true" />
+	                      ลบ ({selectedCount})
+	                    </span>
+	                  </button>
+	                </div>
+	              </div>
+	            </div>
+	          </div>
+	        ), document.body)}
+
+	      {/* Bulk Category Modal */}
+	      {mounted && showBulkCategoryModal && createPortal((
+	        <div
+	          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
+          onClick={(e) => e.target === e.currentTarget && setShowBulkCategoryModal(false)}
+        >
+          <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
+            <div className="px-5 pt-5 pb-4">
+              <div className="text-sm font-extrabold">แก้หมวด ({selectedCount})</div>
+              <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
+                {canBulkEditCategory ? `ประเภท: ${bulkType === 'income' ? 'รายรับ' : 'รายจ่าย'}` : 'เลือกได้เฉพาะรายการประเภทเดียว'}
+              </div>
+
+              <div className="mt-4">
+                <label className="text-xs font-bold text-[color:var(--app-muted)]">หมวดหมู่</label>
+                <select
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  disabled={!canBulkEditCategory}
+                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-sm font-semibold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                >
+                  {bulkCategories.map((c) => (
+                    <option key={c._id} value={c._id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4 bg-[var(--app-surface)]">
+              <button
+                type="button"
+                onClick={() => setShowBulkCategoryModal(false)}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkUpdateCategory}
+                disabled={!canBulkEditCategory || !bulkCategoryId}
+                className={[
+                  'rounded-2xl px-4 py-3 text-sm font-extrabold shadow-sm',
+                  (!canBulkEditCategory || !bulkCategoryId)
+                    ? 'bg-emerald-500/30 text-slate-950/50 cursor-not-allowed'
+                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
+                ].join(' ')}
+              >
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Bulk Date Modal */}
+      {mounted && showBulkDateModal && createPortal((
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
+          onClick={(e) => e.target === e.currentTarget && setShowBulkDateModal(false)}
+        >
+          <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
+            <div className="px-5 pt-5 pb-4">
+              <div className="text-sm font-extrabold">แก้วันที่ ({selectedCount})</div>
+              <div className="mt-4">
+                <label className="text-xs font-bold text-[color:var(--app-muted)]">วันที่</label>
+                <input
+                  type="date"
+                  value={bulkDate}
+                  onChange={(e) => setBulkDate(e.target.value)}
+                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-sm font-semibold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4 bg-[var(--app-surface)]">
+              <button
+                type="button"
+                onClick={() => setShowBulkDateModal(false)}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkUpdateDate}
+                disabled={!bulkDate || selectedCount === 0}
+                className={[
+                  'rounded-2xl px-4 py-3 text-sm font-extrabold shadow-sm',
+                  (!bulkDate || selectedCount === 0)
+                    ? 'bg-emerald-500/30 text-slate-950/50 cursor-not-allowed'
+                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
+                ].join(' ')}
+              >
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Delete Confirm Modal */}
+      {mounted && showDeleteConfirmModal && createPortal((
+        <div
+          className="fixed inset-0 z-[10000] bg-slate-950/45 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
+          onClick={(e) => e.target === e.currentTarget && !deleteLoading && setShowDeleteConfirmModal(false)}
+        >
+          <div
+            className="bg-[var(--app-surface)] w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="ยืนยันการลบ"
+          >
+            <div className="px-5 pt-5 pb-4 border-b border-white/10 bg-[var(--app-surface)]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-base font-extrabold">
+                    ลบ {deleteIds?.length || 0} รายการ?
+                  </div>
+                  <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
+                    การลบจะไม่สามารถกู้คืนได้
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !deleteLoading && setShowDeleteConfirmModal(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  aria-label="ปิด"
+                  title="ปิด"
+                  disabled={deleteLoading}
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+
+              {deleteError ? (
+                <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                  {deleteError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 bg-[var(--app-surface)]">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirmModal(false)}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+                disabled={deleteLoading}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="rounded-2xl bg-rose-500 px-4 py-3 text-sm font-extrabold text-white hover:brightness-95 disabled:opacity-60"
+                disabled={deleteLoading || (deleteIds?.length || 0) === 0}
+              >
+                {deleteLoading ? 'กำลังลบ...' : 'ลบ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
 
       {/* Edit Modal */}
       {mounted && showEditModal && editingTransaction && createPortal((

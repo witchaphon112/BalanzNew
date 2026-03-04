@@ -3,13 +3,15 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import LoadingMascot from '@/components/LoadingMascot';
-import { Doughnut, Bar } from 'react-chartjs-2';
+import { Doughnut, Bar, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   ArcElement,
   BarElement,
   CategoryScale,
   LinearScale,
+  PointElement,
+  LineElement,
   Tooltip,
   Legend,
 } from 'chart.js';
@@ -22,19 +24,30 @@ import {
 } from 'lucide-react';
 
 // ลงทะเบียน Chart.js
-ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
+ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-// Utility: format numbers for display
-const formatCurrency = (v) => {
-  if (typeof v !== 'number') return v;
-  try {
-    return new Intl.NumberFormat('th-TH').format(v);
-  } catch {
-    return String(v);
-  }
-};
+  // Utility: format numbers for display
+  const formatCurrency = (v) => {
+    if (typeof v !== 'number') return v;
+    try {
+      return new Intl.NumberFormat('th-TH').format(v);
+    } catch {
+      return String(v);
+    }
+  };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+  const formatTHB = (value, { decimals = 2 } = {}) => {
+    const n = Number(value) || 0;
+    const fixed = Number.isFinite(decimals) ? Number(decimals) : 2;
+    try {
+      return `฿${new Intl.NumberFormat('th-TH', { minimumFractionDigits: fixed, maximumFractionDigits: fixed }).format(n)}`;
+    } catch {
+      const s = fixed > 0 ? n.toFixed(fixed) : String(Math.round(n));
+      return `฿${s}`;
+    }
+  };
+
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
 
 // --- 2. CONSTANTS ---
 const MONTH_NAMES = [
@@ -205,61 +218,118 @@ export default function Analytics() {
     return map;
   }, [filteredTransactions, categoryNameById]);
 
-  const compareExpense = useMemo(() => {
-    const monthA = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : null;
-    const monthB = compareMonthObj?.value instanceof Date ? compareMonthObj.value : null;
+  const BANGKOK_TZ = 'Asia/Bangkok';
+  const getBangkokDateParts = (dateInput) => {
+    const d = new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return null;
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: BANGKOK_TZ,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(d);
+      const map = {};
+      parts.forEach((p) => { if (p?.type) map[p.type] = p.value; });
+      const year = Number(map.year);
+      const month = Number(map.month);
+      const day = Number(map.day);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+      return { year, monthIndex: month - 1, day };
+    } catch {
+      return { year: d.getFullYear(), monthIndex: d.getMonth(), day: d.getDate() };
+    }
+  };
+
+  const compareExpenseDaily = useMemo(() => {
+    const monthA = compareMonthObj?.value instanceof Date ? compareMonthObj.value : null; // dropdown
+    const monthB = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : null; // current selected month
     if (!monthA || !monthB) {
-      return { labels: [], a: [], b: [], totalA: 0, totalB: 0 };
+      return {
+        labels: [],
+        seriesA: [],
+        seriesB: [],
+        totalA: 0,
+        totalB: 0,
+        avgA: 0,
+        avgB: 0,
+        cutoffA: 0,
+        cutoffB: 0,
+      };
     }
 
-    const isInMonth = (t, monthDate) => {
-      const d = new Date(t?.date);
-      if (Number.isNaN(d.getTime())) return false;
-      return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+    const nowParts = getBangkokDateParts(Date.now());
+
+    const daysInMonth = (monthDate) => {
+      const y = monthDate.getFullYear();
+      const m = monthDate.getMonth();
+      return new Date(y, m + 1, 0).getDate();
     };
 
-    const sumByCategory = (monthDate) => {
-      const map = new Map();
+    const sameMonth = (monthDate, parts) => {
+      if (!parts) return false;
+      return parts.year === monthDate.getFullYear() && parts.monthIndex === monthDate.getMonth();
+    };
+
+    const buildCumulative = (monthDate) => {
+      const y = monthDate.getFullYear();
+      const m = monthDate.getMonth();
+      const dim = daysInMonth(monthDate);
+      const cutoff = sameMonth(monthDate, nowParts) ? Math.max(1, Math.min(dim, Number(nowParts.day) || 1)) : dim;
+      const daily = Array.from({ length: cutoff }, () => 0);
       let total = 0;
+
       for (const t of transactions || []) {
         if (!t || t.type !== 'expense') continue;
-        if (!isInMonth(t, monthDate)) continue;
         const amount = Number(t.amount) || 0;
         if (amount <= 0) continue;
+        const p = getBangkokDateParts(t?.date);
+        if (!p) continue;
+        if (p.year !== y || p.monthIndex !== m) continue;
+        if (p.day < 1 || p.day > cutoff) continue;
+        daily[p.day - 1] += amount;
         total += amount;
-        const catId = t.category?._id || t.category || '';
-        const fallbackName = catId ? categoryNameById.get(String(catId)) : '';
-        const catName = t.category?.name || fallbackName || 'อื่นๆ';
-        map.set(catName, (map.get(catName) || 0) + amount);
       }
-      return { map, total };
+
+      const cum = [];
+      let run = 0;
+      for (let i = 0; i < daily.length; i++) {
+        run += daily[i];
+        cum.push(run);
+      }
+      return { dim, cutoff, total, cum };
     };
 
-    const aRes = sumByCategory(monthA);
-    const bRes = sumByCategory(monthB);
+    const a = buildCumulative(monthA);
+    const b = buildCumulative(monthB);
+    const maxDays = Math.max(a.dim, b.dim);
+    const labels = Array.from({ length: maxDays }, (_, i) => String(i + 1));
 
-    const allKeys = new Set([...aRes.map.keys(), ...bRes.map.keys()]);
-    const combined = Array.from(allKeys).map((name) => ({
-      name,
-      a: aRes.map.get(name) || 0,
-      b: bRes.map.get(name) || 0,
-      sum: (aRes.map.get(name) || 0) + (bRes.map.get(name) || 0),
-    }));
+    const pad = (res) => {
+      const out = Array.from({ length: maxDays }, () => null);
+      const n = Math.min(res.cutoff, res.dim, maxDays);
+      for (let i = 0; i < n; i++) out[i] = res.cum[i] ?? null;
+      return out;
+    };
 
-    const topN = (isMobile ? 6 : 10);
-    const sorted = combined
-      .sort((x, y) => (y.sum || 0) - (x.sum || 0))
-      .filter((r) => (r.sum || 0) > 0)
-      .slice(0, topN);
+    const seriesA = pad(a);
+    const seriesB = pad(b);
+
+    const avgA = a.cutoff > 0 ? a.total / a.cutoff : 0;
+    const avgB = b.cutoff > 0 ? b.total / b.cutoff : 0;
 
     return {
-      labels: sorted.map((r) => r.name),
-      a: sorted.map((r) => r.a),
-      b: sorted.map((r) => r.b),
-      totalA: aRes.total,
-      totalB: bRes.total,
+      labels,
+      seriesA,
+      seriesB,
+      totalA: a.total,
+      totalB: b.total,
+      avgA,
+      avgB,
+      cutoffA: a.cutoff,
+      cutoffB: b.cutoff,
     };
-  }, [selectedMonthObj, compareMonthObj, transactions, categoryNameById, isMobile]);
+  }, [compareMonthObj, selectedMonthObj, transactions]);
 
   const dailySeries = useMemo(() => {
     const map = new Map();
@@ -413,39 +483,42 @@ export default function Analytics() {
     return items;
   }, [expenseByCategory, isMobile]);
 
-  const compareBarData = useMemo(() => {
-    const labelA = selectedMonthObj?.label || 'เดือน A';
-    const labelB = compareMonthObj?.label || 'เดือน B';
+  const compareLineData = useMemo(() => {
+    const labelA = compareMonthObj?.label || 'เดือนที่เลือก';
+    const labelB = selectedMonthObj?.label || 'เดือนนี้';
     return {
-      labels: compareExpense.labels || [],
+      labels: compareExpenseDaily.labels,
       datasets: [
         {
-          label: labelA,
-          data: compareExpense.a || [],
-          backgroundColor: 'rgba(244, 63, 94, 0.85)', // rose
-          borderRadius: 10,
-          barThickness: 14,
+          label: labelB,
+          data: compareExpenseDaily.seriesB,
+          borderColor: 'rgba(244, 63, 94, 0.95)', // rose (expense)
+          backgroundColor: 'transparent',
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35,
+          spanGaps: false,
         },
         {
-          label: labelB,
-          data: compareExpense.b || [],
-          backgroundColor: 'rgba(56, 189, 248, 0.85)', // sky
-          borderRadius: 10,
-          barThickness: 14,
+          label: labelA,
+          data: compareExpenseDaily.seriesA,
+          borderColor: 'rgba(56, 189, 248, 0.95)', // sky
+          backgroundColor: 'transparent',
+          borderWidth: 3,
+          pointRadius: 0,
+          tension: 0.35,
+          spanGaps: false,
         },
-      ]
+      ],
     };
-  }, [compareExpense, selectedMonthObj, compareMonthObj]);
+  }, [compareExpenseDaily, selectedMonthObj, compareMonthObj]);
 
-  const compareBarOptions = useMemo(() => ({
+  const compareLineOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
-    indexAxis: 'y',
+    layout: { padding: { left: 6, right: 10, top: 10, bottom: 2 } },
     plugins: {
-      legend: {
-        display: true,
-        labels: { color: 'rgba(226, 232, 240, 0.9)', boxWidth: 10, boxHeight: 10 }
-      },
+      legend: { display: false },
       tooltip: {
         backgroundColor: 'rgba(2, 8, 23, 0.92)',
         borderColor: 'rgba(255,255,255,0.08)',
@@ -453,24 +526,44 @@ export default function Analytics() {
         titleColor: 'rgba(248,250,252,0.95)',
         bodyColor: 'rgba(226,232,240,0.95)',
         callbacks: {
+          title: (items) => {
+            const first = items?.[0];
+            const label = first?.label ? String(first.label) : '';
+            return label ? `วันที่ ${label}` : '';
+          },
           label: (ctx) => {
-            const v = ctx.raw ?? 0;
-            return `${ctx.dataset?.label || ''}: ฿ ${formatCurrency(Number(v) || 0)}`;
-          }
-        }
-      }
+            const v = Number(ctx.raw);
+            if (!Number.isFinite(v)) return `${ctx.dataset?.label || ''}: —`;
+            return `${ctx.dataset?.label || ''}: ${formatTHB(v)}`;
+          },
+        },
+      },
     },
+    interaction: { mode: 'index', intersect: false },
     scales: {
       x: {
-        grid: { color: 'rgba(255, 255, 255, 0.08)' },
-        ticks: { color: 'rgba(226, 232, 240, 0.7)', maxTicksLimit: isMobile ? 4 : 6, callback: (v) => formatCurrency(v) }
+        grid: { display: false },
+        ticks: {
+          color: 'rgba(148, 163, 184, 0.85)',
+          maxRotation: 0,
+          autoSkip: false,
+          callback: (value, index) => {
+            const label = compareExpenseDaily.labels?.[index];
+            const day = Number(label);
+            if (!Number.isFinite(day)) return '';
+            const lastDay = Number(compareExpenseDaily.labels?.[compareExpenseDaily.labels.length - 1]) || 31;
+            const marks = new Set([1, 5, 10, 15, 20, 25, lastDay]);
+            return marks.has(day) ? String(day) : '';
+          },
+        },
       },
       y: {
+        display: false,
         grid: { display: false },
-        ticks: { color: 'rgba(226, 232, 240, 0.75)' }
-      }
-    }
-  }), [isMobile]);
+        ticks: { display: false },
+      },
+    },
+  }), [compareExpenseDaily.labels, formatTHB]);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
@@ -686,60 +779,108 @@ export default function Analytics() {
         </div>
 
         {/* Charts */}
-        <div className="space-y-3">
-          {/* Compare expenses between 2 months */}
-          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เทียบรายจ่าย 2 เดือน</div>
-                <div className="mt-0.5 text-xs font-semibold text-slate-400">แสดงหมวดที่ใช้เยอะสุด (รวมสองเดือน)</div>
-              </div>
-              <div className="shrink-0">
-                <label className="block text-[11px] font-semibold text-[color:var(--app-muted-2)]">เทียบกับ</label>
-                <select
-                  value={compareMonthIndex}
-                  onChange={(e) => setCompareMonthIndex(Math.max(0, Math.min(monthList.length - 1, Number(e.target.value) || 0)))}
-                  className="mt-1 h-10 max-w-[190px] rounded-2xl border border-white/10 bg-white/5 px-3 text-xs font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  aria-label="เลือกเดือนสำหรับเปรียบเทียบ"
-                >
-                  {monthList.map((m, idx) => (
-                    <option key={`${m.label}-${idx}`} value={idx}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+	        <div className="space-y-3">
+	          {/* Compare expenses between 2 months */}
+	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="min-w-0">
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เทียบรายจ่าย</div>
+	                <div className="mt-0.5 text-xs font-semibold text-slate-400">เปรียบเทียบรายจ่ายสะสมรายวันของ 2 เดือน</div>
+	              </div>
+	            </div>
 
-            {compareMonthIndex === currentMonthIndex && (
-              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
-                เลือกเดือน “เทียบกับ” ให้ต่างจากเดือนที่เลือก เพื่อดูความแตกต่าง
-              </div>
-            )}
+	            {compareMonthIndex === currentMonthIndex && (
+	              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+	                เลือกเดือน “เทียบกับ” ให้ต่างจากเดือนที่เลือก เพื่อดูความแตกต่าง
+	              </div>
+	            )}
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{selectedMonthObj?.label || 'เดือนที่เลือก'}</div>
-                <div className="mt-1 text-lg font-extrabold text-rose-200">฿{formatCurrency(compareExpense.totalA || 0)}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{compareMonthObj?.label || 'เดือนที่เทียบ'}</div>
-                <div className="mt-1 text-lg font-extrabold text-sky-200">฿{formatCurrency(compareExpense.totalB || 0)}</div>
-              </div>
-            </div>
+	            <div className="mt-4 relative">
+	              {!isMobile && (
+	                <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+	                  <div className="rounded-full border border-white/10 bg-[var(--app-surface)] px-3 py-1 text-[11px] font-extrabold text-[color:var(--app-muted)] shadow-sm">
+	                    VS
+	                  </div>
+	                </div>
+	              )}
 
-            <div className="mt-4">
-              {compareExpense.labels.length === 0 ? (
-                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
-                  ไม่มีรายจ่ายสำหรับการเปรียบเทียบ
-                </div>
-              ) : (
-                <div className="h-72">
-                  <Bar data={compareBarData} options={compareBarOptions} />
-                </div>
-              )}
-            </div>
-          </div>
+	              <div className="grid grid-cols-2 gap-3">
+	                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+	                  <div className="flex items-start justify-between gap-2">
+	                    <div className="min-w-0">
+	                      <div className="inline-flex items-center gap-2 text-[11px] font-extrabold text-[color:var(--app-muted)]">
+	                        <span className="h-2.5 w-2.5 rounded-full bg-sky-400" aria-hidden="true" />
+	                        เทียบเดือน
+	                      </div>
+	                    </div>
+	                    <select
+	                      value={compareMonthIndex}
+	                      onChange={(e) => setCompareMonthIndex(Math.max(0, Math.min(monthList.length - 1, Number(e.target.value) || 0)))}
+	                      className="h-10 max-w-[170px] rounded-2xl border border-white/10 bg-[var(--app-surface)] px-3 text-[11px] font-extrabold text-slate-100 shadow-sm hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+	                      aria-label="เลือกเดือนสำหรับเปรียบเทียบ"
+	                    >
+	                      {monthList.map((m, idx) => (
+	                        <option key={`${m.label}-${idx}`} value={idx}>
+	                          {m.label}
+	                        </option>
+	                      ))}
+	                    </select>
+	                  </div>
+
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">ใช้จ่ายไป</div>
+	                  <div className="mt-1 text-xl font-extrabold text-sky-200">{formatTHB(compareExpenseDaily.totalA || 0)}</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">อัตราการใช้จ่าย</div>
+	                  <div className="mt-1 text-sm font-extrabold text-slate-100">
+	                    {formatTHB(compareExpenseDaily.avgA || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">ต่อวัน</span>
+	                  </div>
+	                </div>
+
+	                <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+	                  <div className="flex items-start justify-between gap-2">
+	                    <div className="min-w-0">
+	                      <div className="inline-flex items-center gap-2 text-[11px] font-extrabold text-[color:var(--app-muted)]">
+	                        <span className="h-2.5 w-2.5 rounded-full bg-rose-400" aria-hidden="true" />
+	                        เดือนที่เลือก
+	                      </div>
+	                      <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)] truncate">
+	                        {selectedMonthObj?.label || '—'}
+	                      </div>
+	                    </div>
+	                  </div>
+
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">ใช้จ่ายไปแล้ว</div>
+	                  <div className="mt-1 text-xl font-extrabold text-rose-200">{formatTHB(compareExpenseDaily.totalB || 0)}</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">อัตราการใช้จ่าย</div>
+	                  <div className="mt-1 text-sm font-extrabold text-slate-100">
+	                    {formatTHB(compareExpenseDaily.avgB || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">ต่อวัน</span>
+	                  </div>
+	                </div>
+	              </div>
+	            </div>
+
+	            <div className="mt-4">
+	              {compareExpenseDaily.labels.length === 0 || ((compareExpenseDaily.totalA || 0) <= 0 && (compareExpenseDaily.totalB || 0) <= 0) ? (
+	                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
+	                  ไม่มีรายจ่ายสำหรับการเปรียบเทียบ
+	                </div>
+	              ) : (
+	                <div className="h-64 rounded-3xl border border-white/10 bg-white/5 p-3">
+	                  <Line data={compareLineData} options={compareLineOptions} />
+	                </div>
+	              )}
+
+	              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-extrabold text-slate-300">
+	                <span className="inline-flex items-center gap-2">
+	                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400" aria-hidden="true" />
+	                  {selectedMonthObj?.label || 'เดือนที่เลือก'}
+	                </span>
+	                <span className="inline-flex items-center gap-2">
+	                  <span className="h-2.5 w-2.5 rounded-full bg-sky-400" aria-hidden="true" />
+	                  {compareMonthObj?.label || 'เดือนที่เทียบ'}
+	                </span>
+	              </div>
+	            </div>
+	          </div>
 
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">

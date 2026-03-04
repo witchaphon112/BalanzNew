@@ -5,9 +5,9 @@ const { User, Transaction, Category, Budget, ImportExportLog, LineLoginSession, 
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
-const { scanImageFile } = require('../utils/ocrScan');
 const { transcribeAudioFile } = require('../utils/transcribeAudio');
 const { mergeUsers } = require('../utils/mergeUsers');
+const { parseSlipImageBuffer } = require('../utils/openaiSlip');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -83,6 +83,30 @@ async function pushToUser(userId, message) {
   }
 }
 
+function getPushTargetId(source) {
+  const t = source && source.type;
+  if (t === 'group') return source.groupId || '';
+  if (t === 'room') return source.roomId || '';
+  return (source && source.userId) || '';
+}
+
+function buildAiUserErrorMessage(err) {
+  const code = String(err?.code || '').trim();
+  const status = Number(err?.status || 0) || 0;
+  const rawMsg = String(err?.message || '').trim();
+
+  if (code === 'missing_openai_api_key') return 'ยังไม่ได้ตั้งค่า OPENAI_API_KEY ใน backend/.env';
+  if (status === 401) return 'OpenAI API key ไม่ถูกต้อง/หมดอายุ (401)';
+  if (status === 403) return 'OpenAI ถูกปฏิเสธสิทธิ์ (403)';
+  if (status === 429) return 'OpenAI โควต้าเต็ม/โดน rate limit (429)';
+  if (code === 'invalid_json') return 'AI ตอบกลับผิดรูปแบบ';
+  if (/abort/i.test(rawMsg)) return 'AI timeout';
+  if (/fetch failed|enotfound|econnrefused|etimedout/i.test(rawMsg)) return 'เชื่อมต่อ OpenAI ไม่ได้ (network)';
+
+  if (rawMsg) return `AI error: ${rawMsg.slice(0, 180)}`;
+  return 'AI error';
+}
+
 // debug: show whether token was loaded when this module initialized
 console.log('LINE webhook module loaded. CHANNEL_TOKEN present:', CHANNEL_TOKEN ? (CHANNEL_TOKEN.slice(0,8) + '...') : 'no');
 
@@ -107,6 +131,42 @@ function formatThaiDateTime(input) {
   }
 }
 
+function getBangkokMonthRange(dateInput) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+
+  // Thailand is UTC+07:00 with no DST.
+  const bangkokMs = d.getTime() + 7 * 60 * 60 * 1000;
+  const bd = new Date(bangkokMs);
+  const year = bd.getUTCFullYear();
+  const month = bd.getUTCMonth();
+
+  const startUtcMs = Date.UTC(year, month, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  const endUtcMs = Date.UTC(year, month + 1, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  return { start: new Date(startUtcMs), end: new Date(endUtcMs) };
+}
+
+async function sumCategoryTotalForMonth({ userId, categoryId, type, when } = {}) {
+  if (!userId || !categoryId) return null;
+  const range = getBangkokMonthRange(when || new Date());
+  if (!range) return null;
+
+  const rows = await Transaction.aggregate([
+    {
+      $match: {
+        userId,
+        categoryId,
+        type: type === 'income' ? 'income' : 'expense',
+        datetime: { $gte: range.start, $lt: range.end },
+      },
+    },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]).catch(() => []);
+
+  const total = rows && rows[0] && typeof rows[0].total === 'number' ? rows[0].total : null;
+  return Number.isFinite(total) ? total : null;
+}
+
 function pickCategoryIconDisplay(categoryIcon) {
   const raw = String(categoryIcon || '').trim();
   if (!raw) return { kind: 'emoji', value: '🤖' };
@@ -119,6 +179,7 @@ function buildRecordedSuccessFlexMessage({
   txId,
   type,
   amount,
+  categoryTotal,
   note,
   categoryName,
   categoryIcon,
@@ -132,6 +193,7 @@ function buildRecordedSuccessFlexMessage({
     : { bg: '#FCE7E7', text: '#DC2626' };
 
   const safeAmount = Number(amount) || 0;
+  const safeCategoryTotal = Number.isFinite(Number(categoryTotal)) ? Number(categoryTotal) : safeAmount;
   const safeNote = String(note || '').trim() || '-';
   const safeCategory = String(categoryName || '').trim() || 'ไม่ระบุ';
   const isCategoryUnknown = safeCategory === 'ไม่ระบุ';
@@ -265,7 +327,7 @@ function buildRecordedSuccessFlexMessage({
             layout: 'horizontal',
             contents: [
               { type: 'text', text: `รวมหมวด ${isCategoryUnknown ? 'ไม่ระบุ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
-              { type: 'text', text: formatThb(safeAmount), size: 'md', weight: 'bold', color: '#22C55E', flex: 0 },
+              { type: 'text', text: formatThb(safeCategoryTotal), size: 'md', weight: 'bold', color: '#22C55E', flex: 0 },
             ],
           },
 
@@ -831,16 +893,17 @@ async function handleTextEvent(event) {
       // ignore
     }
 
-    const flexMessage = buildRecordedSuccessFlexMessage({
-      txId: tx?._id,
-      type: parsed.type,
-      amount: parsed.amount,
-      note: notesText,
-      categoryName,
-      categoryIcon,
-      when: tx?.datetime || new Date(),
-      sourceLabel: 'ข้อความ',
-    });
+	    const flexMessage = buildRecordedSuccessFlexMessage({
+	      txId: tx?._id,
+	      type: parsed.type,
+	      amount: parsed.amount,
+	      categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || new Date() }),
+	      note: notesText,
+	      categoryName,
+	      categoryIcon,
+	      when: tx?.datetime || new Date(),
+	      sourceLabel: 'ข้อความ',
+	    });
 
     return sendReply(event.replyToken, flexMessage);
   }
@@ -858,14 +921,6 @@ function bufferFromStream(stream) {
   });
 }
 
-function guessImageExt(contentType) {
-  const t = String(contentType || '').toLowerCase();
-  if (t.includes('png')) return '.png';
-  if (t.includes('webp')) return '.webp';
-  if (t.includes('gif')) return '.gif';
-  return '.jpg';
-}
-
 function guessAudioExt(contentType) {
   const t = String(contentType || '').toLowerCase();
   if (t.includes('mpeg')) return '.mp3';
@@ -878,22 +933,33 @@ function guessAudioExt(contentType) {
   return '.m4a';
 }
 
+function parseSlipDateTimeToDate({ date, time } = {}) {
+  const d = String(date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const t = String(time || '').trim();
+  const hhmm = /^\d{2}:\d{2}$/.test(t) ? t : '00:00';
+  const dt = new Date(`${d}T${hhmm}:00.000+07:00`);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
 async function handleImageEvent(event) {
   const lineMessagingUserId = event.source && event.source.userId;
+  const pushTargetId = getPushTargetId(event.source);
   const messageId = event.message && event.message.id;
-  if (!lineMessagingUserId || !messageId) {
+  if (!lineMessagingUserId || !pushTargetId || !messageId) {
     return sendReply(event.replyToken, { type: 'text', text: 'อ่านรูปไม่สำเร็จ (missing user/message id)' });
   }
 
   // Ack quickly, then OCR + save transaction asynchronously (replyToken can be used only once).
-  await sendReply(event.replyToken, { type: 'text', text: 'รับรูปแล้ว กำลังอ่านข้อมูลจากรูปให้...' });
+  await sendReply(event.replyToken, { type: 'text', text: 'รับรูปแล้ว กำลังอ่านสลิปด้วย AI ให้...' });
 
   (async () => {
     try {
       ensureClient();
       const { user } = await resolveMessagingUser(lineMessagingUserId);
       if (!user) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
+        await pushToUser(pushTargetId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
         return;
       }
 
@@ -909,72 +975,64 @@ async function handleImageEvent(event) {
       }
 
       const contentType = (resp && resp.headers && (resp.headers['content-type'] || resp.headers['Content-Type'])) || '';
-      const ext = guessImageExt(contentType);
-
-      const uploadDir = path.join(__dirname, '../uploads/line');
-      try { fs.mkdirSync(uploadDir, { recursive: true }); } catch {}
-      const filePath = path.join(uploadDir, `line-${Date.now()}-${messageId}${ext}`);
-
       const buf = await bufferFromStream(stream);
-      fs.writeFileSync(filePath, buf);
+      const debugParse = String(process.env.LINE_IMAGE_DEBUG || '0') === '1';
 
-      const { extraction, ocrConfidence } = await scanImageFile(filePath, { cleanupOriginal: true });
-      const amount = extraction?.amount;
-
-      if (!amount || !(Number(amount) > 0)) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: 'อ่านรูปได้ แต่ยังจับ “ยอดเงิน” ไม่เจอ ลองส่งรูปที่ชัดขึ้น/เต็มใบอีกครั้ง' });
+      const parsed = await parseSlipImageBuffer({ buffer: buf, mimeType: contentType || 'image/jpeg' });
+      const aiAmount = parsed?.amount;
+      if (!(Number(aiAmount) > 0)) {
+        await pushToUser(pushTargetId, { type: 'text', text: 'AI อ่านรูปได้ แต่ยังจับ “ยอดเงิน” ไม่เจอ ลองส่งรูปที่ชัดขึ้น/เต็มใบอีกครั้ง' });
         return;
       }
 
-      const rawText = String(extraction?.rawText || '').toLowerCase();
-      const looksLikeIncome = /เงินเข้า|received|receive|credit|เข้าบัญชี|รับเงิน/.test(rawText);
-      const type = looksLikeIncome ? 'income' : 'expense';
+      const direction = String(parsed?.direction || 'unknown');
+      const type = direction === 'in' ? 'income' : direction === 'out' ? 'expense' : 'expense';
+      const whenFromSlip = parseSlipDateTimeToDate({ date: parsed?.date, time: parsed?.time });
 
-      let note = 'สลิป/รูปภาพ';
-      if (extraction?.documentType === 'transfer_slip') {
-        note = extraction?.recipient ? `สลิปโอนเงิน ${looksLikeIncome ? 'จาก' : 'ไปยัง'} ${extraction.recipient}` : 'สลิปโอนเงิน';
-      } else if (extraction?.documentType === 'receipt') {
-        note = 'ใบเสร็จ/สลิป';
-      }
-      const memo = String(extraction?.memo || '').trim();
-      if (memo) note = `${note} • ${memo}`;
+      let note = String(parsed?.notes || '').trim() || 'สลิปโอนเงิน';
+      const sender = String(parsed?.sender_name || '').trim();
+      const recipient = String(parsed?.recipient_name || '').trim();
+      const ref = String(parsed?.reference || '').trim();
+      const noteBits = [
+        note,
+        sender ? `ผู้โอน: ${sender}` : null,
+        recipient ? `ผู้รับ: ${recipient}` : null,
+        ref ? `อ้างอิง: ${ref}` : null,
+      ].filter(Boolean);
+      note = noteBits.join(' • ').slice(0, 280);
 
       let categoryId = null;
-
-      // Auto-categorize from OCR text (e.g. merchant/items like "อาหาร") when possible.
       try {
-        const categoryHintText = [note, extraction?.rawText || ''].filter(Boolean).join('\n');
-        const cat = classifyCategoryFromNote(categoryHintText, type);
+        const cat = classifyCategoryFromNote(note, type);
         if (cat && cat.name) {
           const doc = await ensureUserCategory({ userId: user._id, type, name: cat.name, icon: cat.icon });
           categoryId = doc?._id || null;
         }
       } catch (e) {
-        console.warn('LINE slip auto-categorize failed:', e?.message || e);
+        console.warn('LINE slip AI auto-categorize failed:', e?.message || e);
       }
 
-      // Fallback: keep transfer slips in a money-related category for clarity.
       try {
-        if (!categoryId && extraction?.documentType === 'transfer_slip') {
+        if (!categoryId) {
           const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
           const catIcon = 'money';
           const doc = await ensureUserCategory({ userId: user._id, type, name: catName, icon: catIcon });
           categoryId = doc?._id || null;
         }
       } catch (e) {
-        console.warn('LINE slip category create failed:', e?.message || e);
+        console.warn('LINE slip AI category create failed:', e?.message || e);
       }
 
       const tx = new Transaction({
         userId: user._id,
         type,
-        amount: Number(amount),
+        amount: Number(aiAmount),
         notes: note,
         note,
         categoryId,
-        datetime: new Date(),
-        source: 'slip',
-        rawMessage: { event, extraction, ocrConfidence },
+        datetime: whenFromSlip || new Date(),
+        source: 'slip_ai',
+        rawMessage: { event, parsed },
       });
       await tx.save();
 
@@ -990,29 +1048,38 @@ async function handleImageEvent(event) {
         // ignore
       }
 
-      const flexMessage = buildRecordedSuccessFlexMessage({
-        txId: tx?._id,
-        type,
-        amount: Number(amount),
-        note,
-        categoryName,
-        categoryIcon,
-        when: tx?.datetime || new Date(),
-        sourceLabel: 'รูปภาพ (OCR)',
-      });
+	      const flexMessage = buildRecordedSuccessFlexMessage({
+	        txId: tx?._id,
+	        type,
+	        amount: Number(aiAmount),
+	        categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type, when: tx?.datetime || new Date() }),
+	        note,
+	        categoryName,
+	        categoryIcon,
+	        when: tx?.datetime || new Date(),
+	        sourceLabel: 'รูปภาพ (AI)',
+	      });
 
-      await pushToUser(lineMessagingUserId, flexMessage);
+      await pushToUser(pushTargetId, flexMessage);
+      if (debugParse) {
+        await pushToUser(pushTargetId, {
+          type: 'text',
+          text: `DEBUG(AI)\namount=${aiAmount} date=${parsed?.date || '-'} time=${parsed?.time || '-'} dir=${direction}`,
+        });
+      }
     } catch (e) {
       console.error('handleImageEvent error', e);
-      await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย อ่านรูปไม่สำเร็จ ลองส่งใหม่อีกครั้ง (แนะนำรูปชัด/ไม่เอียง/เต็มใบ)' });
+      const msg = buildAiUserErrorMessage(e);
+      await pushToUser(pushTargetId, { type: 'text', text: `ขออภัย AI อ่านรูปไม่สำเร็จ: ${msg}\nแนะนำ: รูปชัด/ไม่เอียง/เต็มใบ` });
     }
   })();
 }
 
 async function handleAudioEvent(event) {
   const lineMessagingUserId = event.source && event.source.userId;
+  const pushTargetId = getPushTargetId(event.source);
   const messageId = event.message && event.message.id;
-  if (!lineMessagingUserId || !messageId) {
+  if (!lineMessagingUserId || !pushTargetId || !messageId) {
     return sendReply(event.replyToken, { type: 'text', text: 'ถอดเสียงไม่สำเร็จ (missing user/message id)' });
   }
 
@@ -1024,7 +1091,7 @@ async function handleAudioEvent(event) {
       ensureClient();
       const { user } = await resolveMessagingUser(lineMessagingUserId);
       if (!user) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
+        await pushToUser(pushTargetId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
         return;
       }
 
@@ -1062,20 +1129,19 @@ async function handleAudioEvent(event) {
         const msg = keepAudio
           ? `บันทึกเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้\nไฟล์เสียง: ${audioUrl}${hint}`
           : `ถอดเสียงยังไม่พร้อมใช้งาน${hint}`;
-        await pushToUser(lineMessagingUserId, { type: 'text', text: msg });
+        await pushToUser(pushTargetId, { type: 'text', text: msg });
         return;
       }
 
       const transcript = String(tr?.text || '').trim();
       if (!transcript) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: 'ถอดเสียงไม่เจอข้อความ ลองอัดใหม่ให้ชัดขึ้นอีกนิดนะ' });
+        await pushToUser(pushTargetId, { type: 'text', text: 'ถอดเสียงไม่เจอข้อความ ลองอัดใหม่ให้ชัดขึ้นอีกนิดนะ' });
         return;
       }
 
       const parsed = parseTransactionText(transcript);
       if (!(parsed?.type && parsed?.amount)) {
-        const extra = keepAudio ? `\nไฟล์เสียง: ${audioUrl}` : '';
-        await pushToUser(lineMessagingUserId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน${extra}` });
+        await pushToUser(pushTargetId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน${extra}` });
         return;
       }
 
@@ -1125,24 +1191,23 @@ async function handleAudioEvent(event) {
         // ignore
       }
 
-      const flexMessage = buildRecordedSuccessFlexMessage({
-        txId: tx?._id,
-        type: parsed.type,
-        amount: parsed.amount,
-        note: notesText,
-        categoryName,
-        categoryIcon,
-        when: tx?.datetime || new Date(),
-        sourceLabel: 'เสียง (ถอดเสียง)',
-      });
-      await pushToUser(lineMessagingUserId, flexMessage);
+	      const flexMessage = buildRecordedSuccessFlexMessage({
+	        txId: tx?._id,
+	        type: parsed.type,
+	        amount: parsed.amount,
+	        categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || new Date() }),
+	        note: notesText,
+	        categoryName,
+	        categoryIcon,
+	        when: tx?.datetime || new Date(),
+	        sourceLabel: 'เสียง (ถอดเสียง)',
+	      });
+      await pushToUser(pushTargetId, flexMessage);
 
-      if (keepAudio) {
-        await pushToUser(lineMessagingUserId, { type: 'text', text: `ไฟล์เสียง: ${audioUrl}` });
-      }
+
     } catch (e) {
       console.error('handleAudioEvent error', e);
-      await pushToUser(lineMessagingUserId, { type: 'text', text: 'ขออภัย ถอดเสียงไม่สำเร็จ ลองใหม่อีกครั้ง' });
+      await pushToUser(pushTargetId, { type: 'text', text: 'ขออภัย ถอดเสียงไม่สำเร็จ ลองใหม่อีกครั้ง' });
     }
   })();
 }

@@ -167,6 +167,8 @@ export default function Dashboard() {
     totalExpenses: 0,
     netSavings: 0,
     recentTransactions: [],
+    recentIncome: [],
+    recentExpense: [],
     todayExpenseTotal: 0,
     currentMonthIncomeTotal: 0,
     currentMonthExpenseTotal: 0,
@@ -371,6 +373,8 @@ export default function Dashboard() {
         totalExpenses,
         netSavings: totalIncome - totalExpenses,
         recentTransactions: sortedRecentAll.slice(0, 5),
+        recentIncome: sortedRecentAll.filter((t) => t?.type === 'income').slice(0, 5),
+        recentExpense: sortedRecentAll.filter((t) => t?.type === 'expense').slice(0, 5),
         transactionsAll: filteredTransactions,
         todayExpenseTotal,
         currentMonthIncomeTotal: Number(cmIncome) || 0,
@@ -380,7 +384,7 @@ export default function Dashboard() {
       
     } catch (error) {
       setError('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + (error.message || 'Error'));
-      setStats({ totalIncome: 0, totalExpenses: 0, netSavings: 0, recentTransactions: [], todayExpenseTotal: 0, currentMonthIncomeTotal: 0, currentMonthExpenseTotal: 0 });
+      setStats({ totalIncome: 0, totalExpenses: 0, netSavings: 0, recentTransactions: [], recentIncome: [], recentExpense: [], todayExpenseTotal: 0, currentMonthIncomeTotal: 0, currentMonthExpenseTotal: 0 });
     } finally {
       setLoading(false);
     }
@@ -1103,11 +1107,10 @@ export default function Dashboard() {
       : 'งบประมาณ';
 
   const recentTransactionsFiltered = useMemo(() => {
-    const src = Array.isArray(stats?.recentTransactions) ? stats.recentTransactions : [];
-    if (recentTxnType === 'income') return src.filter((t) => t?.type === 'income');
-    if (recentTxnType === 'expense') return src.filter((t) => t?.type === 'expense');
-    return src;
-  }, [stats?.recentTransactions, recentTxnType]);
+    if (recentTxnType === 'income') return Array.isArray(stats?.recentIncome) ? stats.recentIncome : [];
+    if (recentTxnType === 'expense') return Array.isArray(stats?.recentExpense) ? stats.recentExpense : [];
+    return Array.isArray(stats?.recentTransactions) ? stats.recentTransactions : [];
+  }, [stats?.recentTransactions, stats?.recentIncome, stats?.recentExpense, recentTxnType]);
 
   /* --- JSX Rendering --- */
 
@@ -1574,7 +1577,7 @@ export default function Dashboard() {
 
           {showIncomeRowsWithoutTarget ? (
             <div className="mt-4 space-y-4">
-              {incomeMonthCategoryRows.slice(0, 6).map((r) => (
+              {incomeMonthCategoryRows.slice(0, 5).map((r) => (
                 <div key={r.id}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1605,7 +1608,7 @@ export default function Dashboard() {
             </div>
           ) : budgetRows.length > 0 ? (
             <div className="mt-4 space-y-4">
-              {budgetRows.slice(0, 6).map((r) => (
+              {budgetRows.slice(0, 5).map((r) => (
                 <div key={r.id}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">

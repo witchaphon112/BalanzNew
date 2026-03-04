@@ -7,7 +7,7 @@ const transactionSchema = new mongoose.Schema({
   note: { type: String, default: '' },
   categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: false },
   datetime: { type: Date, required: true, default: Date.now },
-  source: { type: String, enum: ['text', 'slip', 'voice'], default: 'text' },
+  source: { type: String, enum: ['text', 'slip', 'slip_ai', 'voice'], default: 'text' },
   rawMessage: { type: mongoose.Schema.Types.Mixed }, // เก็บ raw message/payload เสมอ
 }, {
   timestamps: true
