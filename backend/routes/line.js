@@ -379,7 +379,99 @@ function buildRecordedSuccessFlexMessage({
 // simple parser: returns { type: 'income'|'expense', amount, note }
 function parseTransactionText(text) {
   const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
-  const t = normalizeDigits(text).trim();
+  const makeBangkokDateTime = ({ year, month, day, hour = 12, minute = 0 } = {}) => {
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+    const hh = Number(hour);
+    const mm = Number(minute);
+    if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const safeH = Number.isFinite(hh) ? Math.max(0, Math.min(23, hh)) : 12;
+    const safeM = Number.isFinite(mm) ? Math.max(0, Math.min(59, mm)) : 0;
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const iso = `${y}-${pad2(m)}-${pad2(d)}T${pad2(safeH)}:${pad2(safeM)}:00.000+07:00`;
+    const dt = new Date(iso);
+    if (Number.isNaN(dt.getTime())) return null;
+    return dt;
+  };
+
+  const extractWhenPrefix = (input) => {
+    const raw = normalizeDigits(input).trim();
+    let rest = raw;
+    let when = null;
+
+    const now = new Date();
+    const todayBkk = makeBangkokDateTime({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(), hour: now.getHours(), minute: now.getMinutes() });
+
+    const consume = (len) => {
+      rest = raw.slice(len).trim();
+    };
+
+    // Keywords: วันนี้ / เมื่อวาน
+    if (/^(วันนี้)(?:\s|$)/i.test(raw)) {
+      when = todayBkk || new Date();
+      consume(RegExp.$1.length);
+      return { when, rest };
+    }
+    if (/^(เมื่อวาน|เมื่อวานนี้)(?:\s|$)/i.test(raw)) {
+      const base = todayBkk || new Date();
+      const dt = new Date(base);
+      dt.setDate(dt.getDate() - 1);
+      // keep time roughly same; normalize to Bangkok offset via ISO rebuild
+      when = makeBangkokDateTime({ year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate(), hour: dt.getHours(), minute: dt.getMinutes() }) || dt;
+      consume(RegExp.$1.length);
+      return { when, rest };
+    }
+
+    // Relative days: "ย้อนหลัง 3 วัน", "3 วันก่อน"
+    const rel = raw.match(/^(?:ย้อนหลัง\s*)?(\d{1,3})\s*วัน(?:ก่อน|ที่แล้ว)?(?:\s|$)/i);
+    if (rel) {
+      const n = Number(rel[1]);
+      const base = todayBkk || new Date();
+      const dt = new Date(base);
+      if (Number.isFinite(n) && n >= 0 && n <= 3650) dt.setDate(dt.getDate() - n);
+      when = makeBangkokDateTime({ year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate(), hour: dt.getHours(), minute: dt.getMinutes() }) || dt;
+      consume(rel[0].length);
+      return { when, rest };
+    }
+
+    // Date formats: YYYY-MM-DD or DD/MM/YYYY (B.E. supported)
+    const d1 = raw.match(/^(?:วันที่\s*)?(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?(?:\s|$)/);
+    if (d1) {
+      const y = Number(d1[1]);
+      const mo = Number(d1[2]);
+      const da = Number(d1[3]);
+      const hh = d1[4] != null ? Number(d1[4]) : 12;
+      const mm = d1[5] != null ? Number(d1[5]) : 0;
+      when = makeBangkokDateTime({ year: y, month: mo, day: da, hour: hh, minute: mm });
+      if (when) {
+        consume(d1[0].length);
+        return { when, rest };
+      }
+    }
+
+    const d2 = raw.match(/^(?:วันที่\s*)?(\d{1,2})[\\/\\-](\d{1,2})[\\/\\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2}))?(?:\s|$)/);
+    if (d2) {
+      const day = Number(d2[1]);
+      const month = Number(d2[2]);
+      let year = Number(d2[3]);
+      const hh = d2[4] != null ? Number(d2[4]) : 12;
+      const mm = d2[5] != null ? Number(d2[5]) : 0;
+      if (year < 100) year = year <= 50 ? 2000 + year : 1900 + year;
+      if (year >= 2400) year = year - 543; // Buddhist year -> Gregorian
+      when = makeBangkokDateTime({ year, month, day, hour: hh, minute: mm });
+      if (when) {
+        consume(d2[0].length);
+        return { when, rest };
+      }
+    }
+
+    return { when: null, rest: raw };
+  };
+
+  const { when, rest } = extractWhenPrefix(text);
+  const t = String(rest || '').trim();
   const tl = t.toLowerCase();
   // commands: help, สรุปวันนี้, สรุปเดือนนี้, export
   if (/^help$/i.test(t) || /^ช่วยเหลือ$/i.test(t)) return { command: 'help' };
@@ -397,7 +489,7 @@ function parseTransactionText(text) {
     const note = (m[3] || '').trim();
     const amount = parseFloat(amountStr.replace(/,/g, '')) || 0;
     const type = /^(รับ|r|เรีัย|ร)$/i.test(verb) ? 'income' : 'expense';
-    return { type, amount, note, typeExplicit: true };
+    return { type, amount, note, typeExplicit: true, when };
   }
 
   // Income keyword inference for inputs like: "เงินเดือน 20000", "โบนัส 5000"
@@ -411,7 +503,7 @@ function parseTransactionText(text) {
   const mm = t.match(/([0-9,\.]+)\s*(บาท|฿)?/);
   if (mm) {
     const amount = parseFloat(mm[1].replace(/,/g, '')) || 0;
-    return { type: inferredIncome ? 'income' : 'expense', amount, note: t, typeExplicit: false };
+    return { type: inferredIncome ? 'income' : 'expense', amount, note: t, typeExplicit: false, when };
   }
 
   return { command: 'unknown' };
@@ -805,7 +897,22 @@ async function handleTextEvent(event) {
   }
 
   if (parsed.command === 'help') {
-    const helpText = 'คำสั่งตัวอย่าง:\n- จ่าย 120 ข้าวมันไก่\n- รับ 500 เงินลูกค้า\n- สรุปวันนี้\n- สรุปเดือนนี้\n- export';
+    const helpText = [
+      'คำสั่งตัวอย่าง:',
+      '- จ่าย 120 ข้าวมันไก่',
+      '- รับ 500 เงินลูกค้า',
+      '',
+      'บันทึกย้อนหลังได้:',
+      '- เมื่อวาน จ่าย 50 กาแฟ',
+      '- ย้อนหลัง 3 วัน รับ 2000 เงินลูกค้า',
+      '- 01/03/2569 จ่าย 120 อาหาร',
+      '- 2026-03-01 20:30 จ่าย 120 อาหาร',
+      '',
+      'สรุป:',
+      '- สรุปวันนี้',
+      '- สรุปเดือนนี้',
+      '- export',
+    ].join('\n');
     return sendReply(event.replyToken, { type: 'text', text: helpText });
   }
 
@@ -869,6 +976,7 @@ async function handleTextEvent(event) {
       console.warn('LINE auto-categorize failed:', e?.message || e);
     }
     // save transaction
+    const txWhen = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
     const tx = new Transaction({
       userId: user._id,
       type: parsed.type,
@@ -876,7 +984,7 @@ async function handleTextEvent(event) {
       notes: notesText,
       note: notesText,
       categoryId,
-      datetime: new Date(),
+      datetime: txWhen,
       source: 'text',
       rawMessage: event
     });
@@ -893,17 +1001,17 @@ async function handleTextEvent(event) {
       // ignore
     }
 
-	    const flexMessage = buildRecordedSuccessFlexMessage({
-	      txId: tx?._id,
-	      type: parsed.type,
-	      amount: parsed.amount,
-	      categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || new Date() }),
-	      note: notesText,
-	      categoryName,
-	      categoryIcon,
-	      when: tx?.datetime || new Date(),
-	      sourceLabel: 'ข้อความ',
-	    });
+		    const flexMessage = buildRecordedSuccessFlexMessage({
+		      txId: tx?._id,
+		      type: parsed.type,
+		      amount: parsed.amount,
+		      categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || txWhen }),
+		      note: notesText,
+		      categoryName,
+		      categoryIcon,
+		      when: tx?.datetime || txWhen,
+		      sourceLabel: 'ข้อความ',
+		    });
 
     return sendReply(event.replyToken, flexMessage);
   }
@@ -1158,6 +1266,7 @@ async function handleAudioEvent(event) {
         console.warn('VOICE auto-categorize failed:', e?.message || e);
       }
 
+      const txWhen = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
       const tx = new Transaction({
         userId: user._id,
         type: parsed.type,
@@ -1165,7 +1274,7 @@ async function handleAudioEvent(event) {
         notes: notesText,
         note: notesText,
         categoryId,
-        datetime: new Date(),
+        datetime: txWhen,
         source: 'voice',
         rawMessage: {
           event,
@@ -1191,17 +1300,17 @@ async function handleAudioEvent(event) {
         // ignore
       }
 
-	      const flexMessage = buildRecordedSuccessFlexMessage({
-	        txId: tx?._id,
-	        type: parsed.type,
-	        amount: parsed.amount,
-	        categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || new Date() }),
-	        note: notesText,
-	        categoryName,
-	        categoryIcon,
-	        when: tx?.datetime || new Date(),
-	        sourceLabel: 'เสียง (ถอดเสียง)',
-	      });
+		      const flexMessage = buildRecordedSuccessFlexMessage({
+		        txId: tx?._id,
+		        type: parsed.type,
+		        amount: parsed.amount,
+		        categoryTotal: await sumCategoryTotalForMonth({ userId: user._id, categoryId, type: parsed.type, when: tx?.datetime || txWhen }),
+		        note: notesText,
+		        categoryName,
+		        categoryIcon,
+		        when: tx?.datetime || txWhen,
+		        sourceLabel: 'เสียง (ถอดเสียง)',
+		      });
       await pushToUser(pushTargetId, flexMessage);
 
 
