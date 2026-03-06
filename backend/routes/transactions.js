@@ -11,9 +11,11 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || !decoded.exp) return res.status(401).json({ message: 'Token expired' });
     req.user = decoded;
     next();
   } catch (error) {
+    if (error && error.name === 'TokenExpiredError') return res.status(401).json({ message: 'Token expired' });
     res.status(401).json({ message: 'Invalid token' });
   }
 };
@@ -58,12 +60,14 @@ router.post('/', authMiddleware, async (req, res) => {
       userId: req.user.userId,
       amount: parseFloat(amount),
       type,
-      category: categoryId,
-      date: transactionDate,
-      notes,
+      categoryId: categoryId,
+      datetime: transactionDate,
+      note: notes || '',
     });
     await transaction.save();
-    res.status(201).json(transaction);
+    const saved = await Transaction.findById(transaction._id).populate('categoryId', 'name icon');
+    const sObj = saved.toObject();
+    res.status(201).json({ ...sObj, category: sObj.categoryId || null, date: sObj.datetime, notes: sObj.note || '' });
   } catch (error) {
     console.error('Server error:', error);
     res.status(500).json({ message: 'Server error: ' + error.message });
@@ -73,8 +77,12 @@ router.post('/', authMiddleware, async (req, res) => {
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const transactions = await Transaction.find({ userId: req.user.userId })
-      .populate('category', 'name icon');
-    res.json(transactions);
+      .populate('categoryId', 'name icon');
+    const mapped = transactions.map(t => {
+      const obj = t.toObject();
+      return { ...obj, category: obj.categoryId || null, date: obj.datetime, notes: obj.note || '' };
+    });
+    res.json(mapped);
   } catch (error) {
     res.status(500).json({ message: 'Server error: ' + error.message });
   }
@@ -118,7 +126,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         }
         categoryId = foundCategory._id;
       }
-      transaction.category = categoryId;
+      transaction.categoryId = categoryId;
     }
 
     if (date !== undefined) {
@@ -131,16 +139,28 @@ router.put('/:id', authMiddleware, async (req, res) => {
       if (isNaN(transactionDate.getTime())) {
         return res.status(400).json({ message: `Invalid date format: ${date}` });
       }
-      transaction.date = transactionDate;
+      transaction.datetime = transactionDate;
     }
 
     if (notes !== undefined) {
-      transaction.notes = notes;
+      transaction.note = notes;
     }
 
     await transaction.save();
-    const updatedTransaction = await Transaction.findById(transaction._id).populate('category', 'name icon');
-    res.json(updatedTransaction);
+    const updatedTransaction = await Transaction.findById(transaction._id).populate('categoryId', 'name icon');
+    const uobj = updatedTransaction.toObject();
+    res.json({ ...uobj, category: uobj.categoryId || null, date: uobj.datetime, notes: uobj.note || '' });
+  } catch (error) {
+    console.error('Server error:', error);
+    res.status(500).json({ message: 'Server error: ' + error.message });
+  }
+});
+
+// Delete ALL transactions for authenticated user
+router.delete('/all', authMiddleware, async (req, res) => {
+  try {
+    const result = await Transaction.deleteMany({ userId: req.user.userId });
+    res.json({ message: 'Deleted all transactions', deletedCount: result?.deletedCount || 0 });
   } catch (error) {
     console.error('Server error:', error);
     res.status(500).json({ message: 'Server error: ' + error.message });
