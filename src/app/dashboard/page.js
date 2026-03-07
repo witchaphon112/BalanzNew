@@ -204,9 +204,9 @@ export default function Dashboard() {
   const [deleteError, setDeleteError] = useState('');
   const [recentTxnType, setRecentTxnType] = useState('all'); // 'all' | 'expense' | 'income'
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addInlinePanel, setAddInlinePanel] = useState('none'); // 'none' | 'slip' | 'voice'
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingTransaction, setViewingTransaction] = useState(null);
-  const [showSlipModal, setShowSlipModal] = useState(false);
   const [slipFile, setSlipFile] = useState(null);
   const [slipPreviewUrl, setSlipPreviewUrl] = useState('');
   const [slipLoading, setSlipLoading] = useState(false);
@@ -224,6 +224,7 @@ export default function Dashboard() {
   const voiceChunksRef = useRef([]);
   const voiceStartMsRef = useRef(0);
   const voiceAutoTranscribeRef = useRef(false);
+  const slipInputRef = useRef(null);
 	  const slipAutoReadKeyRef = useRef('');
 	  const readSlipRef = useRef(null);
 	  const [categories, setCategories] = useState([]);
@@ -357,6 +358,23 @@ export default function Dashboard() {
     });
   };
 
+  const cleanupVoiceDevices = () => {
+    try {
+      if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
+        voiceRecorderRef.current.stop();
+      }
+    } catch {}
+    try {
+      if (voiceStreamRef.current) {
+        voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    } catch {}
+    voiceRecorderRef.current = null;
+    voiceStreamRef.current = null;
+    voiceChunksRef.current = [];
+    setVoiceRecording(false);
+  };
+
   const resetVoiceState = () => {
     setVoiceError('');
     setVoiceLoading(false);
@@ -370,6 +388,15 @@ export default function Dashboard() {
       return '';
     });
     voiceChunksRef.current = [];
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setAddInlinePanel('none');
+    setSlipError('');
+    resetSlipState();
+    cleanupVoiceDevices();
+    resetVoiceState();
   };
 
   const toggleAutoCategorize = () => {
@@ -646,11 +673,99 @@ export default function Dashboard() {
     setShowDatePicker(true);
   };
 
+  const inferTxnTypeFromVoice = (text) => {
+    const norm = normalizeForMatch(text);
+    if (!norm) return '';
+
+    const incomeHints = [
+      'รายรับ', 'income', 'เงินเข้า', 'โอนเข้า', 'ได้รับ', 'ได้เงิน', 'เงินเดือน', 'salary', 'โบนัส', 'bonus',
+    ];
+    const expenseHints = [
+      'รายจ่าย', 'expense', 'เงินออก', 'โอนออก', 'จ่าย', 'ซื้อ', 'ค่า', 'ชำระ', 'จ่ายบิล', 'bill', 'เติม',
+    ];
+
+    let inc = 0;
+    let exp = 0;
+    incomeHints.forEach((h) => { if (norm.includes(normalizeForMatch(h))) inc += 1; });
+    expenseHints.forEach((h) => { if (norm.includes(normalizeForMatch(h))) exp += 1; });
+
+    if (!inc && !exp) return '';
+    if (inc > exp) return 'income';
+    if (exp > inc) return 'expense';
+    return '';
+  };
+
+  const extractAmountFromVoice = (text) => {
+    const s = String(text || '');
+    if (!s) return '';
+
+    const candidates = [];
+    const re = /(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/g;
+    for (const m of s.matchAll(re)) {
+      const raw = String(m[0] || '');
+      const idx = typeof m.index === 'number' ? m.index : -1;
+      const before = idx >= 2 ? s.slice(Math.max(0, idx - 2), idx) : '';
+      const after = idx >= 0 ? s.slice(idx + raw.length, idx + raw.length + 2) : '';
+
+      // Skip numbers that look like they are part of a date/time token: "2026-03-07", "7/3", etc.
+      if ((before.includes('-') || before.includes('/') || after.includes('-') || after.includes('/')) && raw.length <= 4) {
+        continue;
+      }
+
+      const n = Number(raw.replace(/,/g, ''));
+      if (!Number.isFinite(n) || n <= 0) continue;
+      if (n > 1_000_000_000) continue;
+
+      candidates.push({ n, raw: raw.replace(/,/g, '') });
+    }
+
+    if (!candidates.length) return '';
+    // Prefer the largest plausible number (usually the amount, not a day number).
+    candidates.sort((a, b) => b.n - a.n);
+    return candidates[0].raw || '';
+  };
+
+  const categoryMatchesType = (categoryId, type) => {
+    if (!categoryId || !type) return false;
+    return (categories || []).some((c) => String(c?._id) === String(categoryId) && String(c?.type) === String(type));
+  };
+
   const applyVoiceTranscriptToAddForm = () => {
     const text = String(voiceTranscript || '').trim();
     if (!text) return;
-    setAddFormData((prev) => ({ ...prev, notes: text }));
+
+    const typeGuess = inferTxnTypeFromVoice(text);
+    const amountGuess = extractAmountFromVoice(text);
+
+    setAddFormData((prev) => {
+      const prevAmount = String(prev?.amount || '').trim();
+      const prevNotes = String(prev?.notes || '').trim();
+
+      const nextType = typeGuess || prev.type || 'expense';
+
+      let nextCategory = prev.category || '';
+      if (nextCategory && !categoryMatchesType(nextCategory, nextType)) nextCategory = '';
+
+      const suggested = suggestCategoryId({ type: nextType, notes: text });
+      if (!nextCategory && suggested?.id) nextCategory = suggested.id;
+
+      const nextNotes = !prevNotes
+        ? text
+        : prevNotes.includes(text)
+          ? prevNotes
+          : `${prevNotes}\n${text}`;
+
+      return {
+        ...prev,
+        type: nextType,
+        amount: prevAmount ? prev.amount : (amountGuess || prev.amount),
+        category: nextCategory,
+        notes: nextNotes,
+      };
+    });
+
     setShowVoiceModal(false);
+    setAddInlinePanel('none');
     setShowAddModal(true);
   };
 
@@ -683,8 +798,7 @@ export default function Dashboard() {
         throw new Error(data?.error || data?.message || 'อ่านสลิปไม่สำเร็จ');
       }
       applySlipParsedToAddForm(data?.parsed || {});
-      setShowSlipModal(false);
-      setShowAddModal(true);
+      setAddInlinePanel('none');
       resetSlipState();
     } catch (e) {
       setSlipError(e?.message ? String(e.message) : 'อ่านสลิปไม่สำเร็จ');
@@ -696,7 +810,8 @@ export default function Dashboard() {
   readSlipRef.current = readSlip;
 
   useEffect(() => {
-    if (!showSlipModal) {
+    const active = showAddModal && addInlinePanel === 'slip';
+    if (!active) {
       slipAutoReadKeyRef.current = '';
       return;
     }
@@ -713,7 +828,7 @@ export default function Dashboard() {
       }
     }, 220);
     return () => clearTimeout(id);
-  }, [showSlipModal, slipFile, slipLoading]);
+  }, [showAddModal, addInlinePanel, slipFile, slipLoading]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2362,6 +2477,7 @@ export default function Dashboard() {
           resetSlipState();
           resetVoiceState();
           setAutoCategoryApplied('');
+          setAddInlinePanel('none');
           setAddFormData({
             amount: '',
             type: 'expense',
@@ -2385,135 +2501,6 @@ export default function Dashboard() {
       >
         <Plus className="h-6 w-6" aria-hidden="true" />
       </button>
-
-      {/* Slip Reader Modal */}
-      {mounted && showSlipModal && createPortal((
-        <div
-          className="fixed inset-0 z-[9999] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0"
-          onClick={(e) => e.target === e.currentTarget && !slipLoading && setShowSlipModal(false)}
-        >
-          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40 overflow-hidden">
-            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
-              <div>
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">อ่านสลิป</div>
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เลือกรูปแล้วระบบจะอ่านให้อัตโนมัติ</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { if (!slipLoading) setShowSlipModal(false); }}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
-                aria-label="ปิด"
-                disabled={slipLoading}
-              >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {slipError ? (
-                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
-                  {slipError}
-                </div>
-              ) : null}
-
-              <input
-                id="slip-upload-input"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] || null;
-                  setSlipFile(f);
-                  setSlipError('');
-                  if (slipPreviewUrl) {
-                    try { URL.revokeObjectURL(slipPreviewUrl); } catch {}
-                  }
-                  if (f) {
-                    const url = URL.createObjectURL(f);
-                    setSlipPreviewUrl(url);
-                  } else {
-                    setSlipPreviewUrl('');
-                  }
-                }}
-                disabled={slipLoading}
-              />
-
-              <label
-                htmlFor="slip-upload-input"
-                className={[
-                  'block w-full rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] overflow-hidden cursor-pointer',
-                  'hover:bg-[var(--app-surface-3)] transition',
-                  slipLoading ? 'opacity-80 cursor-wait' : '',
-                ].join(' ')}
-              >
-                {slipPreviewUrl ? (
-                  <div className="relative">
-                    <img
-                      src={slipPreviewUrl}
-                      alt="slip preview"
-                      className="w-full max-h-[48vh] object-contain bg-black/20"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/70 via-black/20 to-transparent">
-                      <div className="text-xs font-extrabold text-white">แตะเพื่อเปลี่ยนรูป</div>
-                      <div className="mt-0.5 text-[11px] font-semibold text-white/70">ให้ยอดเงินและวันที่เห็นชัด</div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
-                        <Camera className="h-6 w-6" aria-hidden="true" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">ถ่ายรูป/อัปโหลดสลิป</div>
-                        <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">รองรับสลิป/ใบเสร็จ (≤ 10MB)</div>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" aria-hidden="true" />
-                    </div>
-                  </div>
-                )}
-              </label>
-
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">
-                    {slipLoading ? 'กำลังอ่าน...' : slipFile ? 'พร้อมอ่านอัตโนมัติ' : 'รอเลือกรูป'}
-                  </div>
-                  {slipLoading ? (
-                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
-                      <span className="inline-flex h-4 w-4 rounded-full border-2 border-white/20 border-t-emerald-300 animate-spin" aria-hidden="true" />
-                      โปรดรอสักครู่
-                    </div>
-                  ) : null}
-                </div>
-                {!slipLoading && slipError && slipFile ? (
-                  <div className="mt-2 flex items-center justify-end">
-                    <button
-                      type="button"
-                      onClick={readSlip}
-                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
-                    >
-                      ลองอ่านอีกครั้ง
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="border-t border-white/10 bg-white/5 p-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => { if (!slipLoading) setShowSlipModal(false); }}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10 disabled:opacity-60"
-                disabled={slipLoading}
-              >
-                ปิด
-              </button>
-            </div>
-          </div>
-        </div>
-      ), document.body)}
 
       {/* Voice Modal */}
       {mounted && showVoiceModal && createPortal((
@@ -2611,7 +2598,7 @@ export default function Dashboard() {
                 disabled={!String(voiceTranscript || '').trim() || voiceRecording || voiceLoading}
                 className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:brightness-95 disabled:opacity-60"
               >
-                ใช้เป็นหมายเหตุ
+                ใช้กรอกอัตโนมัติ
               </button>
             </div>
           </div>
@@ -2622,7 +2609,7 @@ export default function Dashboard() {
       {mounted && showAddModal && createPortal((
         <div
           className="fixed inset-0 z-[10005] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
-          onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
+          onClick={(e) => e.target === e.currentTarget && closeAddModal()}
         >
 	          <form
 	            onSubmit={handleAddSubmit}
@@ -2632,7 +2619,7 @@ export default function Dashboard() {
 	            <div className="relative px-5 pt-5 pb-4 sm:pt-6 sm:pb-5">
 	              <button
 	                type="button"
-	                onClick={() => setShowAddModal(false)}
+	                onClick={() => closeAddModal()}
 	                className="absolute left-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
 	                aria-label="ปิด"
 	              >
@@ -2641,194 +2628,440 @@ export default function Dashboard() {
 	              <div className="text-center text-base font-extrabold tracking-wide">เพิ่มรายการ</div>
 	            </div>
 
-	            <div className="px-5">
-	              <div className="grid grid-cols-2 rounded-full border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-1">
-	                <button
-	                  type="button"
-                  onClick={() => {
-                    setAutoCategoryApplied('');
-                    setAddFormData((prev) => ({
-                      ...prev,
-                      type: 'expense',
-                      category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'expense')
-                        ? prev.category
-                        : '',
-                    }));
-                  }}
-	                  className={[
-	                    'h-11 rounded-full text-sm font-extrabold transition',
-	                    addFormData.type === 'expense'
-	                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
-	                      : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
-	                  ].join(' ')}
-	                >
-	                  รายจ่าย
-	                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAutoCategoryApplied('');
-                    setAddFormData((prev) => ({
-                      ...prev,
-                      type: 'income',
-                      category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'income')
-                        ? prev.category
-                        : '',
-                    }));
-                  }}
-	                  className={[
-	                    'h-11 rounded-full text-sm font-extrabold transition',
-	                    addFormData.type === 'income'
-	                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
-	                      : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
-	                  ].join(' ')}
-	                >
-	                  รายรับ
-	                </button>
-	              </div>
-	            </div>
+              <>
+                  <div className="px-5">
+                    <div className="grid grid-cols-2 rounded-full border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAutoCategoryApplied('');
+                          setAddFormData((prev) => ({
+                            ...prev,
+                            type: 'expense',
+                            category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'expense')
+                              ? prev.category
+                              : '',
+                          }));
+                        }}
+                        className={[
+                          'h-11 rounded-full text-sm font-extrabold transition',
+                          addFormData.type === 'expense'
+                            ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+                            : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
+                        ].join(' ')}
+                      >
+                        รายจ่าย
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAutoCategoryApplied('');
+                          setAddFormData((prev) => ({
+                            ...prev,
+                            type: 'income',
+                            category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'income')
+                              ? prev.category
+                              : '',
+                          }));
+                        }}
+                        className={[
+                          'h-11 rounded-full text-sm font-extrabold transition',
+                          addFormData.type === 'income'
+                            ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+                            : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
+                        ].join(' ')}
+                      >
+                        รายรับ
+                      </button>
+                    </div>
+                  </div>
 
-	            <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
-	              <div className="text-center">
-	                <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
-	                <div className="mt-3 flex items-center justify-center gap-2">
-	                  <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
-	                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-	                    value={addFormData.amount}
-	                    onChange={(e) => setAddFormData((prev) => ({ ...prev, amount: e.target.value }))}
-	                    placeholder="0.00"
-	                    className="w-[240px] bg-transparent text-center text-6xl font-extrabold tracking-tight text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)]"
-	                    required
-	                  />
-	                </div>
-	              </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
+                    <div className="text-center">
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
+                      <div className="mt-3 flex items-center justify-center gap-2">
+                        <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          value={addFormData.amount}
+                          onChange={(e) => setAddFormData((prev) => ({ ...prev, amount: e.target.value }))}
+                          placeholder="0.00"
+                          className="w-[240px] bg-transparent text-center text-6xl font-extrabold tracking-tight text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)]"
+                          required
+                        />
+                      </div>
+                    </div>
 
-	              <div className="grid grid-cols-2 gap-4">
-	                <button
-	                  type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-	                    setShowVoiceModal(true);
-	                    resetVoiceState();
-	                  }}
-	                  className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-	                >
-	                  <Mic className="h-5 w-5 text-emerald-500" aria-hidden="true" />
-	                  อัดเสียง
-	                </button>
-	                <button
-	                  type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-	                    setShowSlipModal(true);
-	                    resetSlipState();
-	                  }}
-	                  className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-	                >
-	                  <ScanLine className="h-5 w-5 text-emerald-500" aria-hidden="true" />
-	                  สแกนใบเสร็จ
-	                </button>
-	              </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSlipError('');
+                          resetSlipState();
+                          setAddInlinePanel('voice');
+                          resetVoiceState();
+                          cleanupVoiceDevices();
+                          startVoiceRecording();
+                        }}
+                        className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      >
+                        <Mic className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+                        อัดเสียง
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVoiceError('');
+                          resetVoiceState();
+                          cleanupVoiceDevices();
+                          setAddInlinePanel('slip');
+                          resetSlipState();
+                          try { slipInputRef.current && slipInputRef.current.click(); } catch {}
+                        }}
+                        className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      >
+                        <ScanLine className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+                        สแกนใบเสร็จ
+                      </button>
+                    </div>
 
-	              <div>
-	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
-	                <div className="mt-4 grid grid-cols-4 gap-4">
-                  {(categories || [])
-                    .filter((c) => c?.type === addFormData.type)
-                    .slice(0, 8)
-                    .map((c) => {
-                      const selected = addFormData.category === c._id;
-                      return (
+                    <input
+                      ref={slipInputRef}
+                      id="add-slip-upload-input-inline"
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setSlipFile(f);
+                        setSlipError('');
+                        if (slipPreviewUrl) {
+                          try { URL.revokeObjectURL(slipPreviewUrl); } catch {}
+                        }
+                        if (f) {
+                          const url = URL.createObjectURL(f);
+                          setSlipPreviewUrl(url);
+                          setAddInlinePanel('slip');
+                        } else {
+                          setSlipPreviewUrl('');
+                        }
+                      }}
+                      disabled={slipLoading}
+                    />
+
+                    {addInlinePanel === 'voice' ? (
+                      <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">อัดเสียง</div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                              กดเริ่มอัด → กดหยุด ระบบจะถอดให้เลย
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceRecording || voiceLoading) return;
+                              cleanupVoiceDevices();
+                              resetVoiceState();
+                              setAddInlinePanel('none');
+                            }}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
+                            aria-label="ปิด"
+                            title="ปิด"
+                            disabled={voiceRecording || voiceLoading}
+                          >
+                            <X className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        </div>
+
+                        {voiceError ? (
+                          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                            {voiceError}
+                          </div>
+                        ) : null}
+
+                        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถานะ</div>
+                              <div className="mt-1 text-sm font-extrabold text-[color:var(--app-text)]">
+                                {voiceRecording ? 'กำลังอัดเสียง...' : voiceBlob ? 'อัดเสียงแล้ว' : 'พร้อมอัดเสียง'}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">เวลา</div>
+                              <div className="mt-1 text-sm font-extrabold tabular-nums text-[color:var(--app-text)]">
+                                {formatVoiceDuration(voiceSeconds)}
+                              </div>
+                            </div>
+                          </div>
+                          {voiceLoading ? (
+                            <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
+                              <span className="inline-flex h-4 w-4 rounded-full border-2 border-[color:var(--app-border)] border-t-violet-400 animate-spin" aria-hidden="true" />
+                              กำลังถอดข้อความ...
+                            </div>
+                          ) : null}
+                        </div>
+
                         <button
-                          key={c._id}
                           type="button"
                           onClick={() => {
-                            setAutoCategoryApplied('');
-                            setAddFormData((prev) => ({ ...prev, category: c._id }));
+                            if (voiceLoading) return;
+                            if (voiceRecording) stopVoiceRecording({ autoTranscribe: true });
+                            else startVoiceRecording();
                           }}
-                          className="flex flex-col items-center gap-2"
-                          aria-pressed={selected}
+                          disabled={voiceLoading}
+                          className={[
+                            'h-12 w-full rounded-2xl font-extrabold transition flex items-center justify-center gap-3',
+                            voiceRecording
+                              ? 'bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/25 hover:bg-rose-500/20'
+                              : 'bg-emerald-500 text-slate-950 hover:brightness-95',
+                            voiceLoading ? 'opacity-70 cursor-wait' : '',
+                          ].join(' ')}
                         >
-	                          <div
-	                            className={[
-	                              'h-14 w-14 rounded-full flex items-center justify-center ring-1 transition',
-	                              selected
-                                  ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/30 shadow-sm shadow-emerald-500/10'
-                                  : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
-	                            ].join(' ')}
-	                            aria-hidden="true"
-	                          >
-	                            <div className="scale-90">{renderIcon(c.icon || 'other')}</div>
-	                          </div>
-	                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)] truncate max-w-[76px]">{c.name}</div>
-	                        </button>
-	                      );
-	                    })}
-	                </div>
-	                {!addFormData.category ? (
-	                  <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted-2)]">* เลือกหมวดหมู่ก่อนบันทึก</div>
-	                ) : null}
-	              </div>
-	
-	              <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
-	                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-	                <div className="pl-8">
-	                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">
-	                    {(() => {
-                      const iso = String(addFormData.date || '');
-                      const today = toBangkokISODateKey(Date.now());
-                      const label = (() => {
-                        try {
-                          const d = iso ? new Date(`${iso}T00:00:00`) : new Date();
-                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-                        } catch {
-                          return iso || '-';
-                        }
-                      })();
-                      return iso === today ? `วันนี้, ${label}` : label;
-                    })()}
-	                  </div>
-	                </div>
-	                <button
-	                  type="button"
-	                  onClick={() => openDatePicker('add')}
-	                  className="absolute inset-0"
-	                  aria-label="เปิดตัวเลือกวันที่"
-	                />
-	              </div>
-	
-	              <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
-	                <StickyNote className="absolute left-4 top-4 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-	                <div className="pl-8">
-	                  <textarea
-	                    value={addFormData.notes}
-	                    onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
-	                    rows={2}
-	                    placeholder="ระบุรายละเอียด..."
-	                    className="w-full bg-transparent text-sm font-semibold text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)] resize-none"
-	                  />
-	                </div>
-	              </div>
+                          <Mic className="h-5 w-5" aria-hidden="true" />
+                          {voiceRecording ? 'หยุด (ถอดให้อัตโนมัติ)' : 'เริ่มอัดเสียง'}
+                        </button>
 
-              {error ? (
-                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
-                  {error}
-                </div>
-              ) : null}
-            </div>
+                        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4">
+                          <div className="text-xs font-semibold text-[color:var(--app-muted)]">ข้อความที่ถอดได้</div>
+                          <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
+                            {voiceTranscript ? voiceTranscript : '—'}
+                          </div>
+                        </div>
 
-	            <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-2 border-t border-[color:var(--app-border)] bg-[var(--app-surface)]">
-	              <button
-	                type="submit"
-	                className="h-14 w-full rounded-full bg-emerald-500 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/15 hover:brightness-95 disabled:opacity-60"
-	                disabled={!addFormData.category}
-	              >
-	                บันทึกรายการ
-	              </button>
-	            </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (voiceRecording || voiceLoading) return;
+                              cleanupVoiceDevices();
+                              resetVoiceState();
+                              setAddInlinePanel('none');
+                            }}
+                            className="h-12 flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-sm font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-60"
+                            disabled={voiceRecording || voiceLoading}
+                          >
+                            ยกเลิก
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              applyVoiceTranscriptToAddForm();
+                              setAddInlinePanel('none');
+                            }}
+                            disabled={!String(voiceTranscript || '').trim() || voiceRecording || voiceLoading}
+                            className="h-12 flex-1 rounded-2xl bg-emerald-500 px-4 text-sm font-extrabold text-slate-950 hover:brightness-95 disabled:opacity-60"
+                          >
+                            ใช้กรอกอัตโนมัติ
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {addInlinePanel === 'slip' ? (
+                      <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">อ่านสลิป</div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                              เลือกรูปแล้วระบบจะอ่านให้อัตโนมัติ
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (slipLoading) return;
+                              resetSlipState();
+                              setAddInlinePanel('none');
+                            }}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
+                            aria-label="ปิด"
+                            title="ปิด"
+                            disabled={slipLoading}
+                          >
+                            <X className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        </div>
+
+                        {slipError ? (
+                          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                            {slipError}
+                          </div>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() => { try { slipInputRef.current && slipInputRef.current.click(); } catch {} }}
+                          disabled={slipLoading}
+                          className={[
+                            'block w-full rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] overflow-hidden text-left',
+                            'hover:bg-[var(--app-surface-3)] transition',
+                            slipLoading ? 'opacity-80 cursor-wait' : '',
+                          ].join(' ')}
+                        >
+                          {slipPreviewUrl ? (
+                            <div className="relative">
+                              <img
+                                src={slipPreviewUrl}
+                                alt="slip preview"
+                                className="w-full max-h-[40vh] object-contain bg-black/10"
+                              />
+                              <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 via-black/20 to-transparent">
+                                <div className="text-xs font-extrabold text-white">แตะเพื่อเปลี่ยนรูป</div>
+                                <div className="mt-0.5 text-[11px] font-semibold text-white/70">ให้ยอดเงินและวันที่เห็นชัด</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4">
+                              <div className="flex items-center gap-3">
+                                <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
+                                  <Camera className="h-6 w-6" aria-hidden="true" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">ถ่ายรูป/อัปโหลดสลิป</div>
+                                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">รองรับสลิป/ใบเสร็จ (≤ 10MB)</div>
+                                </div>
+                                <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" aria-hidden="true" />
+                              </div>
+                            </div>
+                          )}
+                        </button>
+
+                        <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+                              {slipLoading ? 'กำลังอ่าน...' : slipFile ? 'พร้อมอ่านอัตโนมัติ' : 'รอเลือกรูป'}
+                            </div>
+                            {slipLoading ? (
+                              <div className="inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
+                                <span className="inline-flex h-4 w-4 rounded-full border-2 border-[color:var(--app-border)] border-t-emerald-400 animate-spin" aria-hidden="true" />
+                                โปรดรอสักครู่
+                              </div>
+                            ) : null}
+                          </div>
+                          {!slipLoading && slipError && slipFile ? (
+                            <div className="mt-2 flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={readSlip}
+                                className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                              >
+                                ลองอ่านอีกครั้ง
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div>
+                      <div className="text-sm font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
+                      <div className="mt-4 grid grid-cols-4 gap-4">
+                        {(() => {
+                          const list = (categories || []).filter((c) => c?.type === addFormData.type);
+                          const top = list.slice(0, 8);
+                          const selectedId = addFormData.category;
+                          if (selectedId && !top.some((c) => String(c?._id) === String(selectedId))) {
+                            const picked = list.find((c) => String(c?._id) === String(selectedId));
+                            if (picked) return [picked, ...top.slice(0, 7)];
+                          }
+                          return top;
+                        })().map((c) => {
+                          const selected = addFormData.category === c._id;
+                          return (
+                            <button
+                              key={c._id}
+                              type="button"
+                              onClick={() => {
+                                setAutoCategoryApplied('');
+                                setAddFormData((prev) => ({ ...prev, category: c._id }));
+                              }}
+                              className="flex flex-col items-center gap-2"
+                              aria-pressed={selected}
+                            >
+                              <div
+                                className={[
+                                  'h-14 w-14 rounded-full flex items-center justify-center ring-1 transition',
+                                  selected
+                                    ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/30 shadow-sm shadow-emerald-500/10'
+                                    : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
+                                ].join(' ')}
+                                aria-hidden="true"
+                              >
+                                <div className="scale-90">{renderIcon(c.icon || 'other')}</div>
+                              </div>
+                              <div className="text-[11px] font-semibold text-[color:var(--app-muted)] truncate max-w-[76px]">{c.name}</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {!addFormData.category ? (
+                        <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted-2)]">* เลือกหมวดหมู่ก่อนบันทึก</div>
+                      ) : null}
+                    </div>
+
+                    <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
+                      <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                      <div className="pl-8">
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+                          {(() => {
+                            const iso = String(addFormData.date || '');
+                            const today = toBangkokISODateKey(Date.now());
+                            const label = (() => {
+                              try {
+                                const d = iso ? new Date(`${iso}T00:00:00`) : new Date();
+                                return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+                              } catch {
+                                return iso || '-';
+                              }
+                            })();
+                            return iso === today ? `วันนี้, ${label}` : label;
+                          })()}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openDatePicker('add')}
+                        className="absolute inset-0"
+                        aria-label="เปิดตัวเลือกวันที่"
+                      />
+                    </div>
+
+                    <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
+                      <StickyNote className="absolute left-4 top-4 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                      <div className="pl-8">
+                        <textarea
+                          value={addFormData.notes}
+                          onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                          rows={2}
+                          placeholder="ระบุรายละเอียด..."
+                          className="w-full bg-transparent text-sm font-semibold text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)] resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    {error ? (
+                      <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                        {error}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-2 border-t border-[color:var(--app-border)] bg-[var(--app-surface)]">
+                    <button
+                      type="submit"
+                      className="h-14 w-full rounded-full bg-emerald-500 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/15 hover:brightness-95 disabled:opacity-60"
+                      disabled={!addFormData.category}
+                    >
+                      บันทึกรายการ
+                    </button>
+                  </div>
+              </>
           </form>
         </div>
       ), document.body)}
@@ -3004,11 +3237,11 @@ export default function Dashboard() {
       {/* Edit Transaction Modal */}
       {mounted && showEditModal && editingTransaction && createPortal((
 	        <div 
-	          className="fixed inset-0 bg-black/60 backdrop-blur-md z-[9999] animate-fadeIn flex items-end justify-center p-0"
+	          className="fixed inset-0 z-[9999] bg-slate-950/45 backdrop-blur-sm animate-fadeIn flex items-end justify-center p-0"
 	          onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
 	        >
 	          <div
-	            className="w-full bg-[var(--app-surface)] text-[color:var(--app-text)] shadow-2xl overflow-hidden animate-slideUp flex flex-col rounded-t-3xl sm:rounded-3xl sm:max-w-md h-[88dvh] max-h-[88dvh] sm:h-auto sm:max-h-[90dvh]"
+	            className="w-full bg-[var(--app-surface)] text-[color:var(--app-text)] shadow-2xl overflow-hidden animate-slideUp flex flex-col rounded-t-3xl sm:rounded-3xl sm:max-w-md h-[88dvh] max-h-[88dvh] sm:h-auto sm:max-h-[90dvh] border border-[color:var(--app-border)]"
 	            onClick={(e) => e.stopPropagation()}
 	            role="dialog"
 	            aria-modal="true"
@@ -3049,16 +3282,16 @@ export default function Dashboard() {
 	              <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-6 space-y-5">
 	              {error && (
 		                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
-		                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+		                  <svg className="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
 	                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
 	                  </svg>
-	                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
+	                  <p className="text-[color:var(--app-text)] font-semibold text-sm">{error}</p>
 	                </div>
 	              )}
 
               {/* Type Selection */}
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">ประเภท</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">ประเภท</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -3069,8 +3302,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       editFormData.type === 'income'
-                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        ? 'bg-emerald-500/15 border-emerald-400/40 text-[color:var(--app-text)]'
+                        : 'bg-[var(--app-surface-2)] border-[color:var(--app-border)] text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]'
                     }`}
                   >
                     รายรับ
@@ -3084,8 +3317,8 @@ export default function Dashboard() {
                     }))}
                     className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                       editFormData.type === 'expense'
-                        ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        ? 'bg-rose-500/15 border-rose-400/40 text-[color:var(--app-text)]'
+                        : 'bg-[var(--app-surface-2)] border-[color:var(--app-border)] text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]'
                     }`}
                   >
                     รายจ่าย
@@ -3095,14 +3328,14 @@ export default function Dashboard() {
 
               {/* Amount Input */}
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">จำนวนเงิน</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">จำนวนเงิน</label>
                 <div className="relative">
                   <input
                     type="number"
                     step="0.01"
                     value={editFormData.amount}
                     onChange={(e) => setEditFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
+                    className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] placeholder:text-[color:var(--app-muted-2)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                     required
                   />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)] font-semibold">฿</span>
@@ -3111,11 +3344,11 @@ export default function Dashboard() {
 
               {/* Category Selection */}
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">หมวดหมู่</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">หมวดหมู่</label>
                 <select
                   value={editFormData.category}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
+                  className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
                   required
                 >
                   <option value="">กรุณาเลือกหมวดหมู่</option>
@@ -3131,15 +3364,15 @@ export default function Dashboard() {
 
               {/* Date Input */}
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">วันที่</label>
                 <button
                   type="button"
                   onClick={() => openDatePicker('edit')}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 hover:bg-white/10 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
+                  className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
                   aria-label="เปิดปฏิทินเลือกวันที่"
                 >
                   <div className="text-left min-w-0">
-                    <div className="text-sm font-extrabold text-slate-100 truncate">
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">
                       {(() => {
                         const iso = String(editFormData.date || '');
                         if (!iso) return 'เลือกวันที่';
@@ -3161,12 +3394,12 @@ export default function Dashboard() {
 
               {/* Notes Input */}
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">หมายเหตุ</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">หมายเหตุ</label>
                 <textarea
                   value={editFormData.notes}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
                   rows="3"
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
+                  className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] placeholder:text-[color:var(--app-muted-2)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
                   placeholder="เพิ่มรายละเอียด..."
 	                />
 	              </div>
@@ -3179,7 +3412,7 @@ export default function Dashboard() {
 		                <button
 		                  type="button"
 		                  onClick={() => setShowEditModal(false)}
-	                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
+	                  className="flex-1 px-6 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] font-semibold rounded-xl hover:bg-[var(--app-surface-3)] transition-colors"
 	                >
 	                  ยกเลิก
 	                </button>

@@ -1746,7 +1746,7 @@ export default function TransactionsPage() {
 	        {mounted && selectMode && createPortal((
 		          <div className="fixed inset-x-0 bottom-0 z-[95]">
 			            <div className="mx-auto w-full max-w-lg lg:max-w-6xl px-0 sm:px-4 lg:px-6">
-		              <div className="rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/30 backdrop-blur">
+		              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/30 backdrop-blur">
 	                <div className="flex items-center justify-between gap-3 px-4 pt-4">
 	                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">
 	                    เลือกแล้ว <span className="text-[color:var(--app-text)] font-extrabold">{selectedCount}</span> รายการ
@@ -1754,7 +1754,7 @@ export default function TransactionsPage() {
 	                  <button
 	                    type="button"
 	                    onClick={exitSelectMode}
-	                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
 	                    aria-label="ยกเลิกการเลือก"
 	                    title="ยกเลิก"
 	                  >
@@ -1770,7 +1770,7 @@ export default function TransactionsPage() {
 		                    className={[
 		                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
 		                      selectedCount === 0
-		                        ? 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
+		                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-muted-2)] opacity-60 cursor-not-allowed'
 		                        : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
 		                    ].join(' ')}
 		                    title={selectedCount === 0 ? 'เลือกอย่างน้อย 1 รายการ' : 'แก้ประเภท/หมวดหมู่ของรายการที่เลือก'}
@@ -1789,7 +1789,7 @@ export default function TransactionsPage() {
 	                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
 	                      selectedCount > 0
 	                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30'
-	                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed',
+	                        : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-muted-2)] opacity-60 cursor-not-allowed',
 	                    ].join(' ')}
 	                  >
 	                    <span className="inline-flex items-center justify-center gap-2">
@@ -1850,14 +1850,14 @@ export default function TransactionsPage() {
                 ) : null}
 
                   <div className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 shadow-sm shadow-black/10">
-                    <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">ตั้งค่าปลายทาง</div>
                         <div className="mt-0.5 truncate text-sm font-extrabold text-[color:var(--app-text)]">ประเภท + หมวดหมู่</div>
                       </div>
-                      <div className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                      <div className="shrink-0 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-right">
                         <div className="text-[10px] font-extrabold text-[color:var(--app-muted-2)]">ใช้กับ</div>
-                        <div className="text-sm font-extrabold text-slate-100">{selectedCount} รายการ</div>
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{selectedCount} รายการ</div>
                       </div>
                     </div>
 

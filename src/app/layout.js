@@ -53,6 +53,7 @@ const isTokenValid = (token) => {
 export default function RootLayout({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
+  const [language, setLanguage] = useState('th'); // 'th' | 'en'
   const pathname = usePathname();
   const router = useRouter();
   
@@ -143,8 +144,61 @@ export default function RootLayout({ children }) {
     };
   }, []);
 
+  useEffect(() => {
+    const readLang = () => {
+      try {
+        const v = localStorage.getItem('balanz_lang');
+        setLanguage(v === 'en' ? 'en' : 'th');
+      } catch {
+        setLanguage('th');
+      }
+    };
+
+    readLang();
+    const onCustom = () => readLang();
+    const onStorage = (e) => {
+      if (e && e.key && e.key !== 'balanz_lang') return;
+      readLang();
+    };
+
+    window.addEventListener('balanz_lang_change', onCustom);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('balanz_lang_change', onCustom);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    try {
+      document.documentElement.lang = language === 'en' ? 'en' : 'th';
+    } catch {
+      // ignore
+    }
+  }, [language]);
+
   const isActive = (path) => pathname === path;
   const effectiveTheme = isLanding ? 'light' : (theme === 'light' ? 'light' : 'dark');
+  const t = (key) => {
+    const dict = {
+      th: {
+        nav_summary: 'สรุป',
+        nav_analytics: 'วิเคราะห์',
+        nav_budget: 'หมวด / งบ',
+        nav_transactions: 'รายการ',
+        nav_settings: 'ตั้งค่า',
+      },
+      en: {
+        nav_summary: 'Summary',
+        nav_analytics: 'Analytics',
+        nav_budget: 'Budget',
+        nav_transactions: 'Transactions',
+        nav_settings: 'Settings',
+      },
+    };
+    const d = dict[language] || dict.th;
+    return d[key] || dict.th[key] || key;
+  };
 
   // --- Bottom Nav Item Component ---
   const BottomNavItem = ({ href, icon, label }) => {
@@ -172,7 +226,7 @@ export default function RootLayout({ children }) {
   };
 
   return (
-   <html lang="th" suppressHydrationWarning>
+   <html lang={language === 'en' ? 'en' : 'th'} suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className={[
@@ -214,15 +268,15 @@ export default function RootLayout({ children }) {
                 'flex items-center justify-between relative',
               ].join(' ')}
             >
-              <BottomNavItem href="/dashboard" icon={<IconHome />} label="สรุป" />
+              <BottomNavItem href="/dashboard" icon={<IconHome />} label={t('nav_summary')} />
 
-              <BottomNavItem href="/analytics" icon={<IconAnalytics />} label="วิเคราห์" />
+              <BottomNavItem href="/analytics" icon={<IconAnalytics />} label={t('nav_analytics')} />
 
-              <BottomNavItem href="/budget" icon={<IconBudget />} label="หมวด / งบ" />
+              <BottomNavItem href="/budget" icon={<IconBudget />} label={t('nav_budget')} />
 
-              <BottomNavItem href="/transactions" icon={<IconList />} label="รายการ" />
+              <BottomNavItem href="/transactions" icon={<IconList />} label={t('nav_transactions')} />
 
-              <BottomNavItem href="/profile" icon={<IconSettings />} label="ตั้งค่า" />
+              <BottomNavItem href="/profile" icon={<IconSettings />} label={t('nav_settings')} />
             </div>
           </div>
         )}
