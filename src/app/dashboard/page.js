@@ -1,8 +1,8 @@
 "use client";
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon, Calendar, StickyNote, Mic, ScanLine } from 'lucide-react';
 
 import Currency from '../currency/page';
 import LoadingMascot from '@/components/LoadingMascot';
@@ -104,6 +104,27 @@ const ICON_MAP = {
   'battery': Battery, 'plug': Plug, 'wifi': Wifi, 'bluetooth': Bluetooth, 'signal': Signal,
 };
 
+const normalizeForMatch = (s) => {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()'"“”‘’\[\]\\|<>?]/g, '');
+};
+
+const AUTO_CATEGORY_RULES = [
+  { key: 'food', preferIcons: ['food', 'restaurant'], patterns: ['อาหาร', 'ข้าว', 'ก๋วย', 'ร้าน', 'ชาบู', 'หมูกระทะ', 'pizza', 'kfc', 'mcd', 'burger', 'grabfood', 'foodpanda', 'lineman'] },
+  { key: 'drink', preferIcons: ['drink', 'coffee'], patterns: ['กาแฟ', 'คาเฟ่', 'ชา', 'ชานม', 'starbucks', 'amazon', 'cafe'] },
+  { key: 'shopping', preferIcons: ['shopping'], patterns: ['ช้อป', 'shopping', 'market', 'lotus', 'bigc', '7-11', 'เซเว่น', 'เซเว่นอีเลฟเว่น', 'tops', 'makro'] },
+  { key: 'transport', preferIcons: ['transport', 'car'], patterns: ['รถ', 'bts', 'mrt', 'รถไฟ', 'แท็กซี่', 'taxi', 'grab', 'bolt', 'ทางด่วน', 'parking', 'จอดรถ'] },
+  { key: 'fuel', preferIcons: ['fuel', 'zap'], patterns: ['น้ำมัน', 'เติมน้ำมัน', 'gas', 'ptt', 'shell', 'esso', 'บางจาก'] },
+  { key: 'home', preferIcons: ['home'], patterns: ['ค่าเช่า', 'rent', 'บ้าน', 'คอนโด', 'หอ'] },
+  { key: 'bills', preferIcons: ['bills', 'zap'], patterns: ['ค่าไฟ', 'ค่าน้ำ', 'internet', 'wifi', 'โทรศัพท์', 'ค่าเน็ต', 'bill', 'invoice'] },
+  { key: 'health', preferIcons: ['health'], patterns: ['หมอ', 'โรงพยาบาล', 'ยา', 'pharmacy', 'clinic', 'ตรวจ'] },
+  { key: 'pet', preferIcons: ['pet'], patterns: ['สัตว์', 'หมา', 'แมว', 'pet', 'อาหารแมว', 'อาหารหมา'] },
+  { key: 'education', preferIcons: ['education'], patterns: ['เรียน', 'คอร์ส', 'course', 'tuition', 'หนังสือ'] },
+  { key: 'work', preferIcons: ['work'], patterns: ['งาน', 'office', 'โปรเจค', 'project'] },
+];
+
 function renderIcon(iconKey) {
   const IconComp = ICON_MAP[iconKey];
   if (IconComp) return <IconComp className="w-7 h-7" />;
@@ -185,6 +206,26 @@ export default function Dashboard() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingTransaction, setViewingTransaction] = useState(null);
+  const [showSlipModal, setShowSlipModal] = useState(false);
+  const [slipFile, setSlipFile] = useState(null);
+  const [slipPreviewUrl, setSlipPreviewUrl] = useState('');
+  const [slipLoading, setSlipLoading] = useState(false);
+  const [slipError, setSlipError] = useState('');
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [voiceAudioUrl, setVoiceAudioUrl] = useState('');
+  const [voiceBlob, setVoiceBlob] = useState(null);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const voiceRecorderRef = useRef(null);
+  const voiceStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const voiceStartMsRef = useRef(0);
+  const voiceAutoTranscribeRef = useRef(false);
+  const slipAutoReadKeyRef = useRef('');
+  const readSlipRef = useRef(null);
   const [categories, setCategories] = useState([]);
   const [budgetsByMonth, setBudgetsByMonth] = useState({}); // { [monthLabel]: { [categoryId]: number } }
   const [monthlyBudgetTotals, setMonthlyBudgetTotals] = useState({}); // { [monthLabel]: number }
@@ -196,6 +237,7 @@ export default function Dashboard() {
     date: '',
     notes: '',
   });
+  const [autoCategorize, setAutoCategorize] = useState(false);
   const [addFormData, setAddFormData] = useState({
     amount: '',
     type: 'expense',
@@ -203,6 +245,450 @@ export default function Dashboard() {
     date: toBangkokISODateKey(Date.now()),
     notes: '',
   });
+  const [autoCategoryApplied, setAutoCategoryApplied] = useState('');
+  const autoCatTimerRef = useRef(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerTarget, setDatePickerTarget] = useState('add'); // 'add' | 'edit'
+  const [datePickerMonth, setDatePickerMonth] = useState(() => {
+    const p = getBangkokDateParts(Date.now());
+    return { year: p?.year || new Date().getFullYear(), monthIndex: p?.monthIndex ?? new Date().getMonth() };
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const load = () => {
+      try {
+        const raw = localStorage.getItem('autoCategorize');
+        if (raw === null) {
+          // Default ON for faster logging.
+          setAutoCategorize(true);
+          return;
+        }
+        setAutoCategorize(JSON.parse(raw) === true);
+      } catch {
+        setAutoCategorize(true);
+      }
+    };
+    load();
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  useEffect(() => {
+    if (!slipPreviewUrl) return;
+    return () => {
+      try { URL.revokeObjectURL(slipPreviewUrl); } catch {}
+    };
+  }, [slipPreviewUrl]);
+
+  useEffect(() => {
+    if (!voiceAudioUrl) return;
+    return () => {
+      try { URL.revokeObjectURL(voiceAudioUrl); } catch {}
+    };
+  }, [voiceAudioUrl]);
+
+  useEffect(() => {
+    if (!showVoiceModal) return;
+    return () => {
+      try {
+        if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
+          voiceRecorderRef.current.stop();
+        }
+      } catch {}
+      try {
+        if (voiceStreamRef.current) {
+          voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+      } catch {}
+      voiceRecorderRef.current = null;
+      voiceStreamRef.current = null;
+      voiceChunksRef.current = [];
+      setVoiceRecording(false);
+      setVoiceSeconds(0);
+    };
+  }, [showVoiceModal]);
+
+  useEffect(() => {
+    if (!voiceRecording) return;
+    const tick = () => {
+      const start = voiceStartMsRef.current || Date.now();
+      setVoiceSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [voiceRecording]);
+
+  const resetSlipState = () => {
+    setSlipFile(null);
+    setSlipError('');
+    setSlipLoading(false);
+    slipAutoReadKeyRef.current = '';
+    setSlipPreviewUrl((prev) => {
+      try { if (prev) URL.revokeObjectURL(prev); } catch {}
+      return '';
+    });
+  };
+
+  const resetVoiceState = () => {
+    setVoiceError('');
+    setVoiceLoading(false);
+    setVoiceTranscript('');
+    setVoiceBlob(null);
+    setVoiceSeconds(0);
+    voiceStartMsRef.current = 0;
+    voiceAutoTranscribeRef.current = false;
+    setVoiceAudioUrl((prev) => {
+      try { if (prev) URL.revokeObjectURL(prev); } catch {}
+      return '';
+    });
+    voiceChunksRef.current = [];
+  };
+
+  const toggleAutoCategorize = () => {
+    setAutoCategorize((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('autoCategorize', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const suggestCategoryId = useMemo(() => (args) => {
+    const { type, notes } = args || {};
+    if (!type) return null;
+    const noteRaw = String(notes || '').trim();
+    if (!noteRaw) return null;
+    const noteNorm = normalizeForMatch(noteRaw);
+    if (!noteNorm) return null;
+
+    const list = (categories || []).filter((c) => c?.type === type && c?._id);
+    if (!list.length) return null;
+
+    let best = null;
+    for (const c of list) {
+      const name = String(c?.name || '').trim();
+      const icon = String(c?.icon || '').trim().toLowerCase();
+      const nameNorm = normalizeForMatch(name);
+      let score = 0;
+
+      if (name && noteRaw.includes(name)) score += 10;
+      if (nameNorm && noteNorm.includes(nameNorm)) score += 8;
+
+      const tokens = nameNorm ? nameNorm.split(/[^a-z0-9\u0E00-\u0E7F]+/).filter(Boolean) : [];
+      tokens.forEach((t) => {
+        if (t.length >= 2 && noteNorm.includes(t)) score += 3;
+      });
+
+      for (const rule of AUTO_CATEGORY_RULES) {
+        const matched = rule.patterns.some((p) => noteNorm.includes(normalizeForMatch(p)));
+        if (!matched) continue;
+        if (rule.preferIcons.includes(icon)) score += 4;
+        else score += 1;
+      }
+
+      if (!best || score > best.score) best = { id: c._id, name, score };
+    }
+
+    if (!best || best.score < 4) return null;
+    return best;
+  }, [categories]);
+
+  useEffect(() => {
+    if (!showAddModal) {
+      setAutoCategoryApplied('');
+      return;
+    }
+
+    if (!categories?.length) return;
+
+    if (!autoCategorize) return;
+    if (addFormData.category) return;
+
+    if (autoCatTimerRef.current) {
+      try { clearTimeout(autoCatTimerRef.current); } catch {}
+    }
+
+    autoCatTimerRef.current = setTimeout(() => {
+      const suggested = suggestCategoryId({ type: addFormData.type, notes: addFormData.notes });
+      if (!suggested?.id) return;
+      setAddFormData((prev) => (prev.category ? prev : { ...prev, category: suggested.id }));
+      setAutoCategoryApplied(suggested.name || '');
+    }, 220);
+
+    return () => {
+      if (autoCatTimerRef.current) {
+        try { clearTimeout(autoCatTimerRef.current); } catch {}
+        autoCatTimerRef.current = null;
+      }
+    };
+  }, [showAddModal, autoCategorize, addFormData.type, addFormData.notes, addFormData.category, categories, suggestCategoryId]);
+
+  const applySlipParsedToAddForm = (parsed) => {
+    const p = parsed && typeof parsed === 'object' ? parsed : {};
+    const direction = String(p.direction || '').toLowerCase();
+    const mappedType = direction === 'in' ? 'income' : direction === 'out' ? 'expense' : '';
+    const amount = Number(p.amount);
+    const nextAmount = Number.isFinite(amount) && amount > 0 ? String(amount) : '';
+    const nextDate = typeof p.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.date) ? p.date : '';
+    const nextNotes = typeof p.notes === 'string' ? p.notes : '';
+
+    setAddFormData((prev) => ({
+      ...prev,
+      type: mappedType || prev.type,
+      amount: nextAmount || prev.amount,
+      date: nextDate || prev.date,
+      notes: nextNotes || prev.notes,
+    }));
+    setAutoCategoryApplied('');
+  };
+
+  const startVoiceRecording = async () => {
+    if (voiceRecording) return;
+    setVoiceError('');
+    setVoiceTranscript('');
+    setVoiceBlob(null);
+    setVoiceAudioUrl('');
+    setVoiceSeconds(0);
+    voiceStartMsRef.current = Date.now();
+    voiceAutoTranscribeRef.current = false;
+    voiceChunksRef.current = [];
+
+    if (typeof window === 'undefined') return;
+    if (!navigator?.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setVoiceError('เบราว์เซอร์นี้ยังไม่รองรับการอัดเสียง');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceStreamRef.current = stream;
+
+      const opts = {};
+      try {
+        if (window.MediaRecorder?.isTypeSupported?.('audio/webm;codecs=opus')) {
+          opts.mimeType = 'audio/webm;codecs=opus';
+        } else if (window.MediaRecorder?.isTypeSupported?.('audio/webm')) {
+          opts.mimeType = 'audio/webm';
+        }
+      } catch {}
+
+      const recorder = new MediaRecorder(stream, opts);
+      voiceRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e?.data && e.data.size > 0) voiceChunksRef.current.push(e.data);
+      };
+      recorder.onerror = () => {
+        setVoiceError('เกิดข้อผิดพลาดในการอัดเสียง');
+      };
+      recorder.onstop = () => {
+        try {
+          const chunks = voiceChunksRef.current || [];
+          if (!chunks.length) return;
+          const mimeType = recorder.mimeType || 'audio/webm';
+          const blob = new Blob(chunks, { type: mimeType });
+          setVoiceBlob(blob);
+          const url = URL.createObjectURL(blob);
+          setVoiceAudioUrl(url);
+          if (voiceAutoTranscribeRef.current) {
+            voiceAutoTranscribeRef.current = false;
+            // Auto-transcribe after stopping (1-tap flow).
+            Promise.resolve()
+              .then(() => transcribeVoice(blob))
+              .catch(() => {});
+          }
+        } catch {}
+      };
+
+      recorder.start();
+      setVoiceRecording(true);
+    } catch (e) {
+      setVoiceError(e?.message ? String(e.message) : 'ไม่สามารถเปิดไมโครโฟนได้');
+      setVoiceRecording(false);
+      try {
+        if (voiceStreamRef.current) voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+      } catch {}
+      voiceStreamRef.current = null;
+      voiceRecorderRef.current = null;
+      voiceChunksRef.current = [];
+    }
+  };
+
+  const stopVoiceRecording = (opts) => {
+    if (!voiceRecording) return;
+    voiceAutoTranscribeRef.current = Boolean(opts?.autoTranscribe);
+    setVoiceRecording(false);
+    try {
+      if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
+        voiceRecorderRef.current.stop();
+      }
+    } catch {}
+    try {
+      if (voiceStreamRef.current) voiceStreamRef.current.getTracks().forEach((t) => t.stop());
+    } catch {}
+    voiceStreamRef.current = null;
+  };
+
+  const formatVoiceDuration = (sec) => {
+    const s = Math.max(0, Number(sec) || 0);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  };
+
+  const transcribeVoice = async (blobOverride) => {
+    if (voiceLoading) return;
+    const blob = blobOverride || voiceBlob;
+    if (!blob) {
+      setVoiceError('ยังไม่มีเสียงที่อัดไว้');
+      return;
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+    if (!token) {
+      window.location.href = '/login';
+      return;
+    }
+
+    try {
+      setVoiceLoading(true);
+      setVoiceError('');
+      const fd = new FormData();
+      fd.append('audio', blob, 'recording.webm');
+      const res = await fetch(`${API_BASE}/api/ai/transcribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || data?.message || 'ถอดเสียงไม่สำเร็จ');
+      }
+      const text = String(data?.text || '').trim();
+      setVoiceTranscript(text);
+    } catch (e) {
+      setVoiceError(e?.message ? String(e.message) : 'ถอดเสียงไม่สำเร็จ');
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  const parseISODateKey = (iso) => {
+    const parts = String(iso || '').split('-');
+    if (parts.length !== 3) return null;
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { year, monthIndex: month - 1, day };
+  };
+
+  const toISOFromParts = (year, monthIndex, day) => {
+    const yyyy = String(year).padStart(4, '0');
+    const mm = String(monthIndex + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const getBangkokWeekdayIndex = (year, monthIndex, day) => {
+    try {
+      const iso = toISOFromParts(year, monthIndex, day);
+      const d = new Date(`${iso}T00:00:00+07:00`);
+      const w = new Intl.DateTimeFormat('en-US', { timeZone: BANGKOK_TZ, weekday: 'short' }).format(d);
+      const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      return typeof map[w] === 'number' ? map[w] : d.getDay();
+    } catch {
+      const d = new Date(year, monthIndex, day);
+      return d.getDay();
+    }
+  };
+
+  const openDatePicker = (target = 'add') => {
+    const nextTarget = target === 'edit' ? 'edit' : 'add';
+    setDatePickerTarget(nextTarget);
+    const activeISO = nextTarget === 'edit' ? editFormData?.date : addFormData?.date;
+    const parsed = parseISODateKey(activeISO);
+    if (parsed) setDatePickerMonth({ year: parsed.year, monthIndex: parsed.monthIndex });
+    else {
+      const p = getBangkokDateParts(Date.now());
+      setDatePickerMonth({ year: p?.year || new Date().getFullYear(), monthIndex: p?.monthIndex ?? new Date().getMonth() });
+    }
+    setShowDatePicker(true);
+  };
+
+  const applyVoiceTranscriptToAddForm = () => {
+    const text = String(voiceTranscript || '').trim();
+    if (!text) return;
+    setAddFormData((prev) => ({ ...prev, notes: text }));
+    setShowVoiceModal(false);
+    setShowAddModal(true);
+  };
+
+  const readSlip = async () => {
+    if (slipLoading) return;
+    if (!slipFile) {
+      setSlipError('กรุณาเลือกรูปสลิปก่อน');
+      return;
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+    if (!token) {
+      window.location.href = '/login';
+      return;
+    }
+
+    try {
+      setSlipLoading(true);
+      setSlipError('');
+      const fd = new FormData();
+      fd.append('image', slipFile);
+
+      const res = await fetch(`${API_BASE}/api/ai/slip`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || data?.message || 'อ่านสลิปไม่สำเร็จ');
+      }
+      applySlipParsedToAddForm(data?.parsed || {});
+      setShowSlipModal(false);
+      setShowAddModal(true);
+      resetSlipState();
+    } catch (e) {
+      setSlipError(e?.message ? String(e.message) : 'อ่านสลิปไม่สำเร็จ');
+    } finally {
+      setSlipLoading(false);
+    }
+  };
+
+  readSlipRef.current = readSlip;
+
+  useEffect(() => {
+    if (!showSlipModal) {
+      slipAutoReadKeyRef.current = '';
+      return;
+    }
+    if (slipLoading) return;
+    if (!slipFile) return;
+    const key = `${slipFile.name}_${slipFile.size}_${slipFile.lastModified}`;
+    if (key === slipAutoReadKeyRef.current) return;
+    slipAutoReadKeyRef.current = key;
+    const id = setTimeout(() => {
+      try {
+        readSlipRef.current && readSlipRef.current();
+      } catch {
+        // ignore
+      }
+    }, 220);
+    return () => clearTimeout(id);
+  }, [showSlipModal, slipFile, slipLoading]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -857,6 +1343,56 @@ export default function Dashboard() {
       });
     }
 
+    // Category-level budget alerts (expense categories only)
+    if (hasBudget) {
+      const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+      const entries = Object.entries(monthBudgets || {});
+      if (entries.length) {
+        const spentByCategory = new Map();
+        const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+        for (const t of src) {
+          if (!t || t.type !== 'expense') continue;
+          const id = t.category?._id || t.category || '';
+          if (!id) continue;
+          spentByCategory.set(id, (spentByCategory.get(id) || 0) + (Number(t.amount) || 0));
+        }
+
+        const overList = [];
+        for (const [categoryId, rawBudget] of entries) {
+          const budget = Number(rawBudget) || 0;
+          if (budget <= 0) continue;
+          const cat = (categories || []).find((c) => c?._id === categoryId) || null;
+          const type = String(cat?.type || budgetCategoryTypeById?.[categoryId] || '').toLowerCase();
+          if (type && type !== 'expense') continue;
+          const spent = Math.max(0, Number(spentByCategory.get(categoryId) || 0));
+          if (spent <= budget) continue;
+          overList.push({
+            categoryId,
+            name: cat?.name || 'หมวดหมู่',
+            spent,
+            budget,
+            over: spent - budget,
+            pct: budget > 0 ? spent / budget : 0,
+          });
+        }
+
+        overList
+          .sort((a, b) => (b.over - a.over) || (b.pct - a.pct))
+          .slice(0, 2)
+          .forEach((r) => {
+            push({
+              id: `cat_budget_over_${selectedMonth}_${r.categoryId}`,
+              tone: 'rose',
+              icon: Target,
+              title: `เกินงบหมวด “${r.name}”`,
+              body: `ใช้ไป ${formatTHB(r.spent)} จากงบ ${formatTHB(r.budget)} • เกิน ${formatTHB(r.over)}`,
+              href: '/budget',
+              cta: 'ดูงบหมวดนี้',
+            });
+          });
+      }
+    }
+
     if (hasBudget && isCurrentMonth && expectedSpendSoFar > 0 && expense / expectedSpendSoFar >= 1.15) {
       push({
         id: `budget_pace_${selectedMonth}`,
@@ -939,6 +1475,10 @@ export default function Dashboard() {
     monthIncomeTotal,
     monthExpenseTotal,
     monthExpenseBudgetTotal,
+    budgetsByMonth,
+    categories,
+    budgetCategoryTypeById,
+    stats.transactionsAll,
     selectedParsed,
     daysInSelectedMonth,
     daysUntilReset,
@@ -1116,7 +1656,7 @@ export default function Dashboard() {
 
   return (
     <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
-      <div className="mx-auto w-full max-w-lg px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] space-y-4">
+      <div className="mx-auto w-full max-w-lg px-4 pt-5 pb-[calc(env(safe-area-inset-bottom)+88px)] space-y-4 lg:max-w-6xl lg:px-6 lg:space-y-6">
         {/* Top bar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -1458,482 +1998,956 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Income / Expense quick filter (tap to filter list + budgets) */}
-        <div className="grid grid-cols-2 gap-3">
-          {(() => {
-            const expense = Math.max(0, Number(monthExpenseTotal) || 0);
-            const expenseBudget = Math.max(0, Number(monthExpenseBudgetTotal) || 0);
-            const expHasTarget = expenseBudget > 0;
-            const expPct = expHasTarget ? Math.round((expense / expenseBudget) * 100) : null;
-            const expPctClamped = expHasTarget ? Math.max(0, Math.min(100, (expense / expenseBudget) * 100)) : 0;
-            const expDiff = expenseBudget - expense;
-            const expActive = recentTxnType === 'expense';
+        {/* Desktop layout: split into 2 columns; mobile stays stacked */}
+        <div className="space-y-4 lg:grid lg:grid-cols-12 lg:gap-6 lg:space-y-0">
+          <div className="space-y-4 lg:col-span-5">
+            {/* Income / Expense quick filter (tap to filter list + budgets) */}
+            <div className="grid grid-cols-2 gap-3 lg:gap-4">
+              {(() => {
+                const expense = Math.max(0, Number(monthExpenseTotal) || 0);
+                const expenseBudget = Math.max(0, Number(monthExpenseBudgetTotal) || 0);
+                const expHasTarget = expenseBudget > 0;
+                const expPct = expHasTarget ? Math.round((expense / expenseBudget) * 100) : null;
+                const expPctClamped = expHasTarget ? Math.max(0, Math.min(100, (expense / expenseBudget) * 100)) : 0;
+                const expDiff = expenseBudget - expense;
+                const expActive = recentTxnType === 'expense';
 
-            const income = Math.max(0, Number(monthIncomeTotal) || 0);
-            const incomeTarget = Math.max(0, Number(monthIncomeBudgetTotal) || 0);
-            const incHasTarget = incomeTarget > 0;
-            const incPct = incHasTarget ? Math.round((income / incomeTarget) * 100) : null;
-            const incPctClamped = incHasTarget ? Math.max(0, Math.min(100, (income / incomeTarget) * 100)) : 0;
-            const incDiff = incomeTarget - income;
-            const incActive = recentTxnType === 'income';
-            const incVisualPct = incHasTarget ? incPctClamped : (income > 0 ? 100 : 8);
-            const incVisualPctClamped = Math.max(1, Math.min(100, Number(incVisualPct) || 0));
+                const income = Math.max(0, Number(monthIncomeTotal) || 0);
+                const incomeTarget = Math.max(0, Number(monthIncomeBudgetTotal) || 0);
+                const incHasTarget = incomeTarget > 0;
+                const incPct = incHasTarget ? Math.round((income / incomeTarget) * 100) : null;
+                const incPctClamped = incHasTarget ? Math.max(0, Math.min(100, (income / incomeTarget) * 100)) : 0;
+                const incDiff = incomeTarget - income;
+                const incActive = recentTxnType === 'income';
+                const incVisualPct = incHasTarget ? incPctClamped : (income > 0 ? 100 : 8);
+                const incVisualPctClamped = Math.max(1, Math.min(100, Number(incVisualPct) || 0));
 
-            return (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setRecentTxnType((p) => (p === 'expense' ? 'all' : 'expense'))}
-                  className={[
-                    'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
-                    expActive
-                      ? 'border-rose-400/30 bg-rose-500/10 focus:ring-rose-400/25'
-                      : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
-                  ].join(' ')}
-                  aria-pressed={expActive}
-                >
-                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายจ่าย</div>
-                  <div className="mt-1 text-xl font-extrabold text-rose-300">{formatTHB(expense)}</div>
-                  {expHasTarget ? (
-                    <>
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setRecentTxnType((p) => (p === 'expense' ? 'all' : 'expense'))}
+                      className={[
+                        'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
+                        expActive
+                          ? 'border-rose-400/30 bg-rose-500/10 focus:ring-rose-400/25'
+                          : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
+                      ].join(' ')}
+                      aria-pressed={expActive}
+                    >
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายจ่าย</div>
+                      <div className="mt-1 text-xl font-extrabold text-rose-300">{formatTHB(expense)}</div>
+                      {expHasTarget ? (
+                        <>
+                          <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                            {expDiff >= 0 ? `เหลือ ${formatTHB(expDiff)} จากงบ` : `เกิน ${formatTHB(Math.abs(expDiff))} จากงบ`} • {expPct}%
+                          </div>
+                          <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                            <div className="h-full rounded-full bg-rose-400" style={{ width: `${expPctClamped}%` }} />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อดูเฉพาะรายจ่าย</div>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRecentTxnType((p) => (p === 'income' ? 'all' : 'income'))}
+                      className={[
+                        'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
+                        incActive
+                          ? 'border-emerald-400/30 bg-emerald-500/10 focus:ring-emerald-400/25'
+                          : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
+                      ].join(' ')}
+                      aria-pressed={incActive}
+                    >
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายรับ</div>
+                      <div className="mt-1 text-xl font-extrabold text-emerald-300">{formatTHB(income)}</div>
                       <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                        {expDiff >= 0 ? `เหลือ ${formatTHB(expDiff)} จากงบ` : `เกิน ${formatTHB(Math.abs(expDiff))} จากงบ`} • {expPct}%
+                        {incHasTarget
+                          ? (incDiff >= 0 ? `เหลือ ${formatTHB(incDiff)} จากเป้า` : `เกิน ${formatTHB(Math.abs(incDiff))} จากเป้า`)
+                          : 'แตะเพื่อดูเฉพาะรายรับ'}
                       </div>
                       <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
-                        <div className="h-full rounded-full bg-rose-400" style={{ width: `${expPctClamped}%` }} />
+                        <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incVisualPctClamped}%` }} />
                       </div>
-                    </>
-                  ) : (
-                    <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อดูเฉพาะรายจ่าย</div>
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Budget */}
+            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm shadow-black/10">
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-extrabold text-[color:var(--app-text)]">{budgetCardTitle}</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
+                  {budgetRows.length > 5 && (
+                    <Link href="/budget" className="text-xs font-extrabold text-sky-300 hover:text-sky-200">
+                      ดูทั้งหมด
+                    </Link>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setRecentTxnType((p) => (p === 'income' ? 'all' : 'income'))}
-                  className={[
-                    'rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition focus:outline-none focus:ring-2',
-                    incActive
-                      ? 'border-emerald-400/30 bg-emerald-500/10 focus:ring-emerald-400/25'
-                      : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/20',
-                  ].join(' ')}
-                  aria-pressed={incActive}
-                >
-                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายรับ</div>
-                  <div className="mt-1 text-xl font-extrabold text-emerald-300">{formatTHB(income)}</div>
-                  <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                    {incHasTarget
-                      ? (incDiff >= 0 ? `เหลือ ${formatTHB(incDiff)} จากเป้า` : `เกิน ${formatTHB(Math.abs(incDiff))} จากเป้า`)
-                      : 'แตะเพื่อดูเฉพาะรายรับ'}
-                  </div>
-                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
-                    <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incVisualPctClamped}%` }} />
-                  </div>
-                </button>
-              </>
-            );
-          })()}
-        </div>
-
-        {/* Budget */}
-        <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-sm shadow-black/10">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-extrabold text-[color:var(--app-text)]">{budgetCardTitle}</div>
-            <div className="flex items-center gap-3">
-              <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
-              {budgetRows.length > 5 && (
-                <Link href="/budget" className="text-xs font-extrabold text-sky-300 hover:text-sky-200">
-                  ดูทั้งหมด
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {/* Summary grid (match reference UI) */}
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-              <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
-              <div className="mt-1 flex items-end gap-2">
-                <div className="text-2xl font-extrabold text-[color:var(--app-text)]">{formatTHB(todaySpend)}</div>
-                <div className="pb-1 text-sm font-semibold text-[color:var(--app-muted-2)]">
-                  {dailyTargetToday > 0 ? `ใช้ได้ต่อวัน ${formatTHB(dailyTargetToday)}` : 'ยังไม่มีรายรับเดือนนี้'}
                 </div>
               </div>
-              <div className="mt-3 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-400"
-                  style={{ width: `${dailyTargetToday > 0 ? Math.max(0, Math.min(100, (todaySpend / dailyTargetToday) * 100)) : 0}%` }}
-                />
-              </div>
-            </div>
 
-            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-              <div className="text-xs font-semibold text-slate-400">คงเหลือเดือนนี้</div>
-              <div className={`mt-1 text-3xl font-extrabold ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
-                {loading ? '—' : formatTHB(monthRemaining)}
-              </div>
-            </div>
-          </div>
-
-          {showIncomeRowsWithoutTarget ? (
-            <div className="mt-4 space-y-4">
-              {incomeMonthCategoryRows.slice(0, 5).map((r) => (
-                <div key={r.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
-                        <div className="scale-90">{renderIcon(r.icon)}</div>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
-                          <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
-                        </div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                          รับแล้ว {formatTHB(r.received)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-extrabold text-emerald-300">{formatTHB(r.received)}</div>
+              {/* Summary grid (match reference UI) */}
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
+                  <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
+                  <div className="mt-1 flex items-end gap-2">
+                    <div className="text-2xl font-extrabold text-[color:var(--app-text)]">{formatTHB(todaySpend)}</div>
+                    <div className="pb-1 text-sm font-semibold text-[color:var(--app-muted-2)]">
+                      {dailyTargetToday > 0 ? `ใช้ได้ต่อวัน ${formatTHB(dailyTargetToday)}` : 'ยังไม่มีรายรับเดือนนี้'}
                     </div>
                   </div>
-                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: r.color, opacity: r.alpha }} />
-                  </div>
-                </div>
-              ))}
-
-              
-            </div>
-          ) : budgetRows.length > 0 ? (
-            <div className="mt-4 space-y-4">
-              {budgetRows.slice(0, 5).map((r) => (
-                <div key={r.id}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
-                        <div className="scale-90">{renderIcon(r.icon)}</div>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
-                          <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
-                        </div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                          {budgetCardType === 'income'
-                            ? `เป้า ${formatTHB(r.budget)} • ได้แล้ว ${formatTHB(r.received)}`
-                            : `งบ ${formatTHB(r.budget)} • ใช้ไป ${formatTHB(r.spent)}`}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-extrabold text-slate-100">
-                        {budgetCardType === 'income' ? '' : `${Math.round(r.pct * 100)}%`}
-                      </div>
-                      <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                        {budgetCardType === 'income'
-                          ? `เหลือ ${formatTHB(Math.max(0, r.budget - r.received))} จากเป้า`
-                          : `เหลือ ${formatTHB(Math.max(0, r.budget - r.spent))}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                  <div className="mt-3 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
                     <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: budgetCardType === 'income' ? '100%' : `${Math.round(r.pct * 100)}%`,
-                        backgroundColor: r.color,
-                        opacity: budgetCardType === 'income' ? (r.alpha ?? 1) : 1,
-                      }}
+                      className="h-full rounded-full bg-emerald-400"
+                      style={{ width: `${dailyTargetToday > 0 ? Math.max(0, Math.min(100, (todaySpend / dailyTargetToday) * 100)) : 0}%` }}
                     />
                   </div>
                 </div>
-              ))}
-            </div>
-          ) : null}
-	        </div>
 
-        {/* Recent Transactions Section */}
-        <div>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-1 rounded-full bg-emerald-400" />
-              <h2 className="text-lg sm:text-xl font-extrabold text-[color:var(--app-text)]">ธุรกรรมล่าสุด</h2>
-            </div>
-            <Link href="/transactions" className="text-sm font-extrabold text-emerald-300 hover:text-emerald-200">
-              ดูทั้งหมด
-            </Link>
-          </div>
-          
-          <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 sm:p-5 shadow-sm shadow-black/10">
-            
-            {loading ? (
-              <div className="text-center py-10">
-                <LoadingMascot label="กำลังโหลด..." size={72} />
+                <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
+                  <div className="text-xs font-semibold text-slate-400">คงเหลือเดือนนี้</div>
+                  <div className={`mt-1 text-3xl font-extrabold ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
+                    {loading ? '—' : formatTHB(monthRemaining)}
+                  </div>
+                </div>
               </div>
-            ) : recentTransactionsFiltered.length === 0 ? (
-              <div className="text-center py-10">
-                <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                </svg>
-                <p className="text-slate-200 text-sm font-extrabold">ยังไม่มีธุรกรรม</p>
-                <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการใหม่ แล้วกลับมาดูอีกครั้ง</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentTransactionsFiltered.map((txn, index) => (
-                  <div
-                    key={txn._id}
-                    onClick={() => handleView(txn)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleView(txn);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    className="group w-full cursor-pointer rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-3)] p-4 text-left shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] hover:shadow-md transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0 flex-1">
-                        <div
-                          className={[
-                            'h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0',
-                            txn.type === 'income'
-                              ? 'bg-gradient-to-br from-emerald-500 to-green-500'
-                              : 'bg-gradient-to-br from-rose-500 to-rose-600',
-                          ].join(' ')}
-                          aria-hidden="true"
-                        >
-                          {renderIcon(txn.category?.icon)}
-                        </div>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
-                                {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
-                              </div>
-                              <div className="mt-1 truncate text-xs font-semibold text-slate-400">
-                                {txn.notes || '—'}
-                              </div>
+              {showIncomeRowsWithoutTarget ? (
+                <div className="mt-4 space-y-4">
+                  {incomeMonthCategoryRows.slice(0, 5).map((r) => (
+                    <div key={r.id}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
+                            <div className="scale-90">{renderIcon(r.icon)}</div>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                              <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                              รับแล้ว {formatTHB(r.received)}
                             </div>
                           </div>
-                          <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                            {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-extrabold text-emerald-300">{formatTHB(r.received)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: '100%', backgroundColor: r.color, opacity: r.alpha }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : budgetRows.length > 0 ? (
+                <div className="mt-4 space-y-4">
+                  {budgetRows.slice(0, 5).map((r) => (
+                    <div key={r.id}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-10 w-10 rounded-2xl bg-white/5 ring-1 ring-white/10 flex items-center justify-center shrink-0">
+                            <div className="scale-90">{renderIcon(r.icon)}</div>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                              <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                              {budgetCardType === 'income'
+                                ? `เป้า ${formatTHB(r.budget)} • ได้แล้ว ${formatTHB(r.received)}`
+                                : `งบ ${formatTHB(r.budget)} • ใช้ไป ${formatTHB(r.spent)}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-extrabold text-slate-100">
+                            {budgetCardType === 'income' ? '' : `${Math.round(r.pct * 100)}%`}
+                          </div>
+                          <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                            {budgetCardType === 'income'
+                              ? `เหลือ ${formatTHB(Math.max(0, r.budget - r.received))} จากเป้า`
+                              : `เหลือ ${formatTHB(Math.max(0, r.budget - r.spent))}`}
                           </div>
                         </div>
                       </div>
+                      <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: budgetCardType === 'income' ? '100%' : `${Math.round(r.pct * 100)}%`,
+                            backgroundColor: r.color,
+                            opacity: budgetCardType === 'income' ? (r.alpha ?? 1) : 1,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
 
-                      <div className="shrink-0 text-right">
-                        <div className="text-sm font-extrabold" style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
-                          {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
+          {/* Recent Transactions Section */}
+          <div className="lg:col-span-7">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-1 rounded-full bg-emerald-400" />
+                <h2 className="text-lg sm:text-xl font-extrabold text-[color:var(--app-text)]">ธุรกรรมล่าสุด</h2>
+              </div>
+              <Link href="/transactions" className="text-sm font-extrabold text-emerald-300 hover:text-emerald-200">
+                ดูทั้งหมด
+              </Link>
+            </div>
+
+            <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 sm:p-5 shadow-sm shadow-black/10">
+              {loading ? (
+                <div className="text-center py-10">
+                  <LoadingMascot label="กำลังโหลด..." size={72} />
+                </div>
+              ) : recentTransactionsFiltered.length === 0 ? (
+                <div className="text-center py-10">
+                  <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                  </svg>
+                  <p className="text-slate-200 text-sm font-extrabold">ยังไม่มีธุรกรรม</p>
+                  <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการใหม่ แล้วกลับมาดูอีกครั้ง</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recentTransactionsFiltered.map((txn, index) => (
+                    <div
+                      key={txn._id}
+                      onClick={() => handleView(txn)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleView(txn);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className="group w-full cursor-pointer rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-3)] p-4 text-left shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] hover:shadow-md transition active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <div
+                            className={[
+                              'h-11 w-11 rounded-2xl flex items-center justify-center text-white shadow-sm shrink-0',
+                              txn.type === 'income'
+                                ? 'bg-gradient-to-br from-emerald-500 to-green-500'
+                                : 'bg-gradient-to-br from-rose-500 to-rose-600',
+                            ].join(' ')}
+                            aria-hidden="true"
+                          >
+                            {renderIcon(txn.category?.icon)}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
+                                  {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
+                                </div>
+                                <div className="mt-1 truncate text-xs font-semibold text-slate-400">
+                                  {txn.notes || '—'}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                              {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-2 flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleEdit(txn); }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                            title="แก้ไข"
-                            aria-label="แก้ไข"
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleDelete(txn._id); }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
-                            title="ลบ"
-                            aria-label="ลบ"
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                          </button>
+
+                        <div className="shrink-0 text-right">
+                          <div className="text-sm font-extrabold" style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
+                            {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
+                          </div>
+                          <div className="mt-2 flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleEdit(txn); }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                              title="แก้ไข"
+                              aria-label="แก้ไข"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDelete(txn._id); }}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
+                              title="ลบ"
+                              aria-label="ลบ"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
       </div>
       
     
+      {/* Floating Add Button */}
+      <button
+        type="button"
+        onClick={() => {
+          setSlipError('');
+          setVoiceError('');
+          setError('');
+          resetSlipState();
+          resetVoiceState();
+          setAutoCategoryApplied('');
+          setAddFormData({
+            amount: '',
+            type: 'expense',
+            category: '',
+            date: toBangkokISODateKey(Date.now()),
+            notes: '',
+          });
+          setShowAddModal(true);
+          setShowDatePicker(false);
+        }}
+        className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-[60] inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500 text-slate-950 shadow-2xl shadow-black/40 ring-1 ring-emerald-300/30 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 lg:right-8"
+        aria-label="เพิ่มรายการ"
+        title="เพิ่มรายการ"
+      >
+        <Plus className="h-6 w-6" aria-hidden="true" />
+      </button>
 
-      {/* Add Transaction Modal */}
-      {showAddModal && (
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fadeIn"
-          onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
+      {/* Slip Reader Modal */}
+      {mounted && showSlipModal && createPortal((
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0"
+          onClick={(e) => e.target === e.currentTarget && !slipLoading && setShowSlipModal(false)}
         >
-          <div className="bg-[var(--app-surface)] text-[color:var(--app-text)] border border-[color:var(--app-border)] rounded-3xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-hidden animate-slideUp">
-            {/* Modal Header */}
-            <div className="relative bg-gradient-to-br from-teal-500 via-teal-600 to-teal-700 text-white p-6 overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16"></div>
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -ml-12 -mb-12"></div>
-              
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg">
-                    <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/>
-                    </svg>
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
+              <div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">อ่านสลิป</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เลือกรูปแล้วระบบจะอ่านให้อัตโนมัติ</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!slipLoading) setShowSlipModal(false); }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
+                aria-label="ปิด"
+                disabled={slipLoading}
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {slipError ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                  {slipError}
+                </div>
+              ) : null}
+
+              <input
+                id="slip-upload-input"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] || null;
+                  setSlipFile(f);
+                  setSlipError('');
+                  if (slipPreviewUrl) {
+                    try { URL.revokeObjectURL(slipPreviewUrl); } catch {}
+                  }
+                  if (f) {
+                    const url = URL.createObjectURL(f);
+                    setSlipPreviewUrl(url);
+                  } else {
+                    setSlipPreviewUrl('');
+                  }
+                }}
+                disabled={slipLoading}
+              />
+
+              <label
+                htmlFor="slip-upload-input"
+                className={[
+                  'block w-full rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] overflow-hidden cursor-pointer',
+                  'hover:bg-[var(--app-surface-3)] transition',
+                  slipLoading ? 'opacity-80 cursor-wait' : '',
+                ].join(' ')}
+              >
+                {slipPreviewUrl ? (
+                  <div className="relative">
+                    <img
+                      src={slipPreviewUrl}
+                      alt="slip preview"
+                      className="w-full max-h-[48vh] object-contain bg-black/20"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/70 via-black/20 to-transparent">
+                      <div className="text-xs font-extrabold text-white">แตะเพื่อเปลี่ยนรูป</div>
+                      <div className="mt-0.5 text-[11px] font-semibold text-white/70">ให้ยอดเงินและวันที่เห็นชัด</div>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">เพิ่มรายการใหม่</h2>
-                    <p className="text-white/80 text-sm">บันทึกรายรับหรือรายจ่าย</p>
+                ) : (
+                  <div className="p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
+                        <Camera className="h-6 w-6" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">ถ่ายรูป/อัปโหลดสลิป</div>
+                        <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">รองรับสลิป/ใบเสร็จ (≤ 10MB)</div>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" aria-hidden="true" />
+                    </div>
+                  </div>
+                )}
+              </label>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+                    {slipLoading ? 'กำลังอ่าน...' : slipFile ? 'พร้อมอ่านอัตโนมัติ' : 'รอเลือกรูป'}
+                  </div>
+                  {slipLoading ? (
+                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
+                      <span className="inline-flex h-4 w-4 rounded-full border-2 border-white/20 border-t-emerald-300 animate-spin" aria-hidden="true" />
+                      โปรดรอสักครู่
+                    </div>
+                  ) : null}
+                </div>
+                {!slipLoading && slipError && slipFile ? (
+                  <div className="mt-2 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={readSlip}
+                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                    >
+                      ลองอ่านอีกครั้ง
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 bg-white/5 p-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { if (!slipLoading) setShowSlipModal(false); }}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10 disabled:opacity-60"
+                disabled={slipLoading}
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Voice Modal */}
+      {mounted && showVoiceModal && createPortal((
+        <div
+          className="fixed inset-0 z-[9999] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0"
+          onClick={(e) => e.target === e.currentTarget && !voiceRecording && !voiceLoading && setShowVoiceModal(false)}
+        >
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
+              <div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">อัดเสียง</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">กดเริ่มอัด → กดหยุด ระบบจะถอดให้เลย</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!voiceRecording && !voiceLoading) setShowVoiceModal(false); }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
+                aria-label="ปิด"
+                disabled={voiceRecording || voiceLoading}
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {voiceError ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                  {voiceError}
+                </div>
+              ) : null}
+
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถานะ</div>
+                    <div className="mt-1 text-sm font-extrabold text-[color:var(--app-text)]">
+                      {voiceRecording ? 'กำลังอัดเสียง...' : voiceBlob ? 'อัดเสียงแล้ว' : 'พร้อมอัดเสียง'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">เวลา</div>
+                    <div className="mt-1 text-sm font-extrabold text-slate-100 tabular-nums">
+                      {formatVoiceDuration(voiceSeconds)}
+                    </div>
                   </div>
                 </div>
+                {voiceLoading ? (
+                  <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
+                    <span className="inline-flex h-4 w-4 rounded-full border-2 border-white/20 border-t-violet-300 animate-spin" aria-hidden="true" />
+                    กำลังถอดข้อความ...
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceLoading) return;
+                  if (voiceRecording) stopVoiceRecording({ autoTranscribe: true });
+                  else startVoiceRecording();
+                }}
+                disabled={voiceLoading}
+                className={[
+                  'h-14 w-full rounded-3xl font-extrabold transition flex items-center justify-center gap-3',
+                  voiceRecording
+                    ? 'bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/25 hover:bg-rose-500/20'
+                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
+                  voiceLoading ? 'opacity-70 cursor-wait' : '',
+                ].join(' ')}
+              >
+                <Mic className="h-5 w-5" aria-hidden="true" />
+                {voiceRecording ? 'หยุด (ถอดให้อัตโนมัติ)' : 'เริ่มอัดเสียง'}
+              </button>
+
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs font-semibold text-[color:var(--app-muted)]">ข้อความที่ถอดได้</div>
+                <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
+                  {voiceTranscript ? voiceTranscript : '—'}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 bg-white/5 p-4 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => { if (!voiceRecording && !voiceLoading) setShowVoiceModal(false); }}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10 disabled:opacity-60"
+                disabled={voiceRecording || voiceLoading}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={applyVoiceTranscriptToAddForm}
+                disabled={!String(voiceTranscript || '').trim() || voiceRecording || voiceLoading}
+                className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:brightness-95 disabled:opacity-60"
+              >
+                ใช้เป็นหมายเหตุ
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Add Transaction Modal */}
+      {mounted && showAddModal && createPortal((
+        <div
+          className="fixed inset-0 z-[10005] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
+          onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
+        >
+          <form
+            onSubmit={handleAddSubmit}
+            className="w-full sm:max-w-md max-h-[92dvh] flex flex-col bg-gradient-to-b from-[#06211C] via-[#041614] to-[#041614] text-slate-100 rounded-t-[32px] sm:rounded-[32px] border border-emerald-400/10 shadow-2xl shadow-black/50 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative px-5 pt-5 pb-4 sm:pt-6 sm:pb-5">
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="absolute left-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
+                aria-label="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <div className="text-center text-base font-extrabold tracking-wide">เพิ่มรายการ</div>
+            </div>
+
+            <div className="px-5">
+              <div className="grid grid-cols-2 rounded-full border border-emerald-400/10 bg-emerald-500/5 p-1">
                 <button
-                  onClick={() => setShowAddModal(false)}
-                  className="p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
-                  aria-label="ปิด"
+                  type="button"
+                  onClick={() => {
+                    setAutoCategoryApplied('');
+                    setAddFormData((prev) => ({
+                      ...prev,
+                      type: 'expense',
+                      category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'expense')
+                        ? prev.category
+                        : '',
+                    }));
+                  }}
+                  className={[
+                    'h-11 rounded-full text-sm font-extrabold transition',
+                    addFormData.type === 'expense'
+                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+                      : 'text-white/60 hover:bg-white/5',
+                  ].join(' ')}
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
+                  รายจ่าย
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAutoCategoryApplied('');
+                    setAddFormData((prev) => ({
+                      ...prev,
+                      type: 'income',
+                      category: prev.category && (categories || []).some((c) => c?._id === prev.category && c?.type === 'income')
+                        ? prev.category
+                        : '',
+                    }));
+                  }}
+                  className={[
+                    'h-11 rounded-full text-sm font-extrabold transition',
+                    addFormData.type === 'income'
+                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+                      : 'text-white/60 hover:bg-white/5',
+                  ].join(' ')}
+                >
+                  รายรับ
                 </button>
               </div>
             </div>
 
-            {/* Modal Body */}
-            <form onSubmit={handleAddSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[calc(90vh-120px)]">
-              {error && (
-                <div className="p-4 bg-rose-500/10 border border-rose-400/20 rounded-xl flex items-start gap-3">
-                  <svg className="w-5 h-5 text-rose-200 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"/>
-                  </svg>
-                  <p className="text-rose-200 font-semibold text-sm">{error}</p>
-                </div>
-              )}
-
-              {/* Type Selection */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">ประเภท</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setAddFormData(prev => ({ 
-                      ...prev, 
-                      type: 'income',
-                      category: categories.find(cat => cat.type === 'income')?._id || ''
-                    }))}
-                    className={`p-3 rounded-xl border-2 font-semibold transition-all ${
-                      addFormData.type === 'income'
-                        ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                    }`}
-                  >
-                    รายรับ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddFormData(prev => ({ 
-                      ...prev, 
-                      type: 'expense',
-                      category: categories.find(cat => cat.type === 'expense')?._id || ''
-                    }))}
-                    className={`p-3 rounded-xl border-2 font-semibold transition-all ${
-                      addFormData.type === 'expense'
-                        ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                    }`}
-                  >
-                    รายจ่าย
-                  </button>
-                </div>
-              </div>
-
-              {/* Amount Input */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">จำนวนเงิน</label>
-                <div className="relative">
+            <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
+              <div className="text-center">
+                <div className="text-xs font-semibold text-white/70">จำนวนเงิน</div>
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
                   <input
                     type="number"
+                    inputMode="decimal"
                     step="0.01"
                     value={addFormData.amount}
-                    onChange={(e) => setAddFormData(prev => ({ ...prev, amount: e.target.value }))}
-                    className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
+                    onChange={(e) => setAddFormData((prev) => ({ ...prev, amount: e.target.value }))}
                     placeholder="0.00"
+                    className="w-[240px] bg-transparent text-center text-6xl font-extrabold tracking-tight text-white outline-none placeholder:text-white/30"
                     required
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)] font-semibold">฿</span>
                 </div>
               </div>
 
-              {/* Category Selection */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">หมวดหมู่</label>
-                <select
-                  value={addFormData.category}
-                  onChange={(e) => setAddFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                >
-                  <option value="">เลือกหมวดหมู่</option>
-                  {categories
-                    .filter(cat => cat.type === addFormData.type)
-                    .map(cat => (
-                      <option key={cat._id} value={cat._id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              {/* Date Input */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
-                <input
-                  type="date"
-                  value={addFormData.date}
-                  onChange={(e) => setAddFormData(prev => ({ ...prev, date: e.target.value }))}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                />
-              </div>
-
-              {/* Notes Input */}
-              <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">หมายเหตุ</label>
-                <textarea
-                  value={addFormData.notes}
-                  onChange={(e) => setAddFormData(prev => ({ ...prev, notes: e.target.value }))}
-                  rows="3"
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
-                  placeholder="เพิ่มรายละเอียด..."
-                />
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex gap-3 pt-2">
+              <div className="grid grid-cols-2 gap-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setShowVoiceModal(true);
+                    resetVoiceState();
+                  }}
+                  className="h-14 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 hover:bg-emerald-500/15 font-extrabold flex items-center justify-center gap-2"
                 >
-                  ยกเลิก
+                  <Mic className="h-5 w-5" aria-hidden="true" />
+                  อัดเสียง
                 </button>
                 <button
-                  type="submit"
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
+                  type="button"
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setShowSlipModal(true);
+                    resetSlipState();
+                  }}
+                  className="h-14 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 hover:bg-emerald-500/15 font-extrabold flex items-center justify-center gap-2"
                 >
-                  เพิ่มรายการ
+                  <ScanLine className="h-5 w-5" aria-hidden="true" />
+                  สแกนใบเสร็จ
                 </button>
               </div>
-            </form>
+
+              <div>
+                <div className="text-sm font-extrabold text-white">หมวดหมู่</div>
+                <div className="mt-4 grid grid-cols-4 gap-4">
+                  {(categories || [])
+                    .filter((c) => c?.type === addFormData.type)
+                    .slice(0, 8)
+                    .map((c) => {
+                      const selected = addFormData.category === c._id;
+                      return (
+                        <button
+                          key={c._id}
+                          type="button"
+                          onClick={() => {
+                            setAutoCategoryApplied('');
+                            setAddFormData((prev) => ({ ...prev, category: c._id }));
+                          }}
+                          className="flex flex-col items-center gap-2"
+                          aria-pressed={selected}
+                        >
+                          <div
+                            className={[
+                              'h-14 w-14 rounded-full flex items-center justify-center ring-1 transition',
+                              selected ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/30 shadow-sm shadow-emerald-500/10' : 'bg-white/5 text-slate-100 ring-white/10 hover:bg-white/10',
+                            ].join(' ')}
+                            aria-hidden="true"
+                          >
+                            <div className="scale-90">{renderIcon(c.icon || 'other')}</div>
+                          </div>
+                          <div className="text-[11px] font-semibold text-white/80 truncate max-w-[76px]">{c.name}</div>
+                        </button>
+                      );
+                    })}
+                </div>
+                {!addFormData.category ? (
+                  <div className="mt-3 text-[11px] font-semibold text-white/45">* เลือกหมวดหมู่ก่อนบันทึก</div>
+                ) : null}
+              </div>
+
+              <div className="relative rounded-2xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-4">
+                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/50" aria-hidden="true" />
+                <div className="pl-8">
+                  <div className="text-sm font-extrabold text-white">
+                    {(() => {
+                      const iso = String(addFormData.date || '');
+                      const today = toBangkokISODateKey(Date.now());
+                      const label = (() => {
+                        try {
+                          const d = iso ? new Date(`${iso}T00:00:00`) : new Date();
+                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+                        } catch {
+                          return iso || '-';
+                        }
+                      })();
+                      return iso === today ? `วันนี้, ${label}` : label;
+                    })()}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openDatePicker('add')}
+                  className="absolute inset-0"
+                  aria-label="เปิดตัวเลือกวันที่"
+                />
+              </div>
+
+              <div className="relative rounded-2xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-4">
+                <StickyNote className="absolute left-4 top-4 h-5 w-5 text-white/50" aria-hidden="true" />
+                <div className="pl-8">
+                  <textarea
+                    value={addFormData.notes}
+                    onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                    rows={2}
+                    placeholder="ระบุรายละเอียด..."
+                    className="w-full bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/30 resize-none"
+                  />
+                </div>
+              </div>
+
+              {error ? (
+                <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                  {error}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-2 border-t border-white/10 bg-black/10">
+              <button
+                type="submit"
+                className="h-14 w-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 text-slate-950 font-extrabold text-base hover:brightness-95 disabled:opacity-60"
+                disabled={!addFormData.category}
+              >
+                บันทึกรายการ
+              </button>
+            </div>
+          </form>
+        </div>
+      ), document.body)}
+
+      {/* Date Picker Modal (custom calendar) */}
+      {mounted && showDatePicker && createPortal((
+        <div
+          className="fixed inset-0 z-[10006] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
+          onClick={(e) => e.target === e.currentTarget && setShowDatePicker(false)}
+        >
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-emerald-400/10 bg-gradient-to-b from-[#06211C] via-[#041614] to-[#041614] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+              <div>
+                <div className="text-sm font-extrabold">
+                  เลือกวันที่{datePickerTarget === 'edit' ? ' (แก้ไขรายการ)' : ''}
+                </div>
+                <div className="text-[11px] font-semibold text-white/60">บันทึกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDatePicker(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                aria-label="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            {(() => {
+              const FUTURE_DAYS_LIMIT = 365;
+              const todayKey = toBangkokISODateKey(Date.now());
+              const maxKey = toBangkokISODateKey(Date.now() + FUTURE_DAYS_LIMIT * 86400000);
+              const todayParsed = parseISODateKey(todayKey) || { year: new Date().getFullYear(), monthIndex: new Date().getMonth(), day: new Date().getDate() };
+              const maxParsed = parseISODateKey(maxKey) || todayParsed;
+              const activeISO = datePickerTarget === 'edit' ? editFormData?.date : addFormData?.date;
+              const selectedParsed = parseISODateKey(activeISO) || todayParsed;
+              const { year, monthIndex } = datePickerMonth || todayParsed;
+
+              const firstWeekday = getBangkokWeekdayIndex(year, monthIndex, 1); // 0=Sun
+              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+              const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
+
+              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+              const isBeyondMax = (d) => {
+                const iso = toISOFromParts(year, monthIndex, d);
+                return iso > maxKey;
+              };
+
+              const selectDay = (d) => {
+                if (isBeyondMax(d)) return;
+                const iso = toISOFromParts(year, monthIndex, d);
+                if (datePickerTarget === 'edit') setEditFormData((prev) => ({ ...prev, date: iso }));
+                else setAddFormData((prev) => ({ ...prev, date: iso }));
+                setShowDatePicker(false);
+              };
+
+              const goPrev = () => {
+                const m = monthIndex - 1;
+                if (m >= 0) setDatePickerMonth({ year, monthIndex: m });
+                else setDatePickerMonth({ year: year - 1, monthIndex: 11 });
+              };
+
+              const goNext = () => {
+                if (!canGoNext) return;
+                const m = monthIndex + 1;
+                if (m <= 11) setDatePickerMonth({ year, monthIndex: m });
+                else setDatePickerMonth({ year: year + 1, monthIndex: 0 });
+              };
+
+              const cells = [];
+              for (let i = 0; i < firstWeekday; i++) cells.push(null);
+              for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+              while (cells.length % 7 !== 0) cells.push(null);
+
+              return (
+                <>
+                  <div className="px-5 pt-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={goPrev}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        aria-label="เดือนก่อนหน้า"
+                      >
+                        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                      </button>
+
+                      <div className="min-w-0 flex-1 text-center">
+                        <div className="text-sm font-extrabold">{monthLabel}</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-white/60">แตะวันที่เพื่อเลือก</div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        disabled={!canGoNext}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
+                        aria-label="เดือนถัดไป"
+                      >
+                        <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-7 gap-1.5">
+                      {weekdayTH.map((w) => (
+                        <div key={w} className="text-center text-[11px] font-extrabold text-white/55">
+                          {w}
+                        </div>
+                      ))}
+
+                      {cells.map((d, idx) => {
+                        if (!d) return <div key={`e-${idx}`} className="h-10" />;
+                        const iso = toISOFromParts(year, monthIndex, d);
+                        const selected = iso === String(addFormData?.date || '');
+                        const today = iso === todayKey;
+                        const disabled = iso > maxKey;
+                        return (
+                          <button
+                            key={iso}
+                            type="button"
+                            onClick={() => selectDay(d)}
+                            disabled={disabled}
+                            className={[
+                              'h-10 rounded-2xl text-sm font-extrabold transition',
+                              'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                              disabled
+                                ? 'bg-white/0 text-white/25 cursor-not-allowed'
+                                : selected
+                                  ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
+                                  : today
+                                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
+                                    : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
+                            ].join(' ')}
+                            aria-pressed={selected}
+                            aria-label={`เลือกวันที่ ${d}`}
+                          >
+                            {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (datePickerTarget === 'edit') setEditFormData((prev) => ({ ...prev, date: todayKey }));
+                        else setAddFormData((prev) => ({ ...prev, date: todayKey }));
+                        setShowDatePicker(false);
+                      }}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                    >
+                      วันนี้
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDatePicker(false)}
+                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                    >
+                      เสร็จสิ้น
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Edit Transaction Modal */}
       {mounted && showEditModal && editingTransaction && createPortal((
@@ -2066,14 +3080,31 @@ export default function Dashboard() {
               {/* Date Input */}
               <div>
                 <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
-                <input
-                  type="date"
-                  value={editFormData.date}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, date: e.target.value }))}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                />
+                <button
+                  type="button"
+                  onClick={() => openDatePicker('edit')}
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 hover:bg-white/10 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
+                  aria-label="เปิดปฏิทินเลือกวันที่"
+                >
+                  <div className="text-left min-w-0">
+                    <div className="text-sm font-extrabold text-slate-100 truncate">
+                      {(() => {
+                        const iso = String(editFormData.date || '');
+                        if (!iso) return 'เลือกวันที่';
+                        try {
+                          const d = new Date(`${iso}T00:00:00`);
+                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+                        } catch {
+                          return iso;
+                        }
+                      })()}
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+                  </div>
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
+                    <Calendar className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                </button>
               </div>
 
               {/* Notes Input */}

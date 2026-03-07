@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import LoadingMascot from '@/components/LoadingMascot';
 import {
@@ -21,6 +21,183 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050'
 const BANGKOK_TZ = 'Asia/Bangkok';
 const LEVEL_DAYS = 7;
 const USAGE_STATS_CACHE_KEY = 'balanz_usage_stats_cache_v1';
+
+const I18N = {
+  th: {
+    loading: 'กำลังโหลดข้อมูล...',
+    user_fallback: 'ผู้ใช้งาน',
+    usage_stats: 'สถิติการใช้งาน',
+    savings_goal: 'เป้าหมายการออม',
+    streak_days: '{count} วันต่อเนื่อง',
+    stats_calculating: 'กำลังคำนวณสถิติ...',
+    stats_failed: 'โหลดสถิติไม่สำเร็จ',
+    stats_logged_today: 'วันนี้จดแล้ว เยี่ยมมาก',
+    stats_log_today: 'จดวันนี้เพื่อรักษาสถิติ',
+    next_daily_log: 'สถิติการจดรายวันถัดไป',
+    next_level_in_days: 'เลเวลต่อไปใน {count} วัน',
+    updated_at: 'อัปเดตล่าสุด {time}',
+    dark_mode: 'โหมดกลางคืน',
+    reminder: 'เตือนจดประจำวัน',
+    language: 'ภาษา',
+    categories: 'ตั้งค่าหมวด',
+    clear_all: 'ลบรายการทั้งหมด',
+    reminder_on: 'เปิด {time}',
+    lang_th: 'ไทย',
+    lang_en: 'English',
+    logout: 'ออกจากระบบ',
+    footer: 'เวอร์ชัน 1.0.0 - สร้างด้วย ❤️ โดยทีม Balanz',
+
+    modal_reminder: 'เตือนจดประจำวัน',
+    modal_autocat: 'จัดหมวดด้วยความจำ',
+    modal_language: 'ภาษา',
+    modal_clear_all: 'ลบรายการทั้งหมด',
+    modal_categories: 'ตั้งค่าหมวด',
+
+    enable_daily_reminder: 'เปิดการเตือนรายวัน',
+    reminder_time: 'เวลาเตือน',
+    cancel: 'ยกเลิก',
+    save: 'บันทึก',
+
+    enable_autocat: 'เปิดจัดหมวดอัตโนมัติจากข้อความ/จำนวน',
+    autocat_desc: 'เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน',
+
+    language_desc: 'ตั้งค่าภาษาสำหรับแอป (บันทึกไว้ในเครื่องนี้)',
+
+    clear_all_warning: 'การลบนี้จะลบ “รายการทั้งหมด” ของคุณแบบถาวร และไม่สามารถกู้คืนได้',
+    type_delete_to_confirm: 'พิมพ์คำว่า DELETE เพื่อยืนยัน',
+    deleting: 'กำลังลบ...',
+    delete_all_btn: 'ลบทั้งหมด',
+
+    categories_desc: 'จัดการหมวดหมู่ของคุณ (เพิ่ม/แก้ไข/ลบ)',
+    close: 'ปิด',
+    go_to_categories: 'ไปที่หมวดหมู่',
+
+    leaderboard_title: 'อันดับการจดต่อเนื่อง',
+    leaderboard_loading: 'กำลังโหลดอันดับ...',
+    leaderboard_empty: 'ยังไม่มีข้อมูลอันดับ',
+    days: '{count} วัน',
+
+    logout_title: 'ออกจากระบบ',
+    logout_desc: 'คุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ',
+
+    login_required: 'กรุณาเข้าสู่ระบบ',
+    login_to_view_profile: 'กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์',
+    login_to_link: 'กรุณาเข้าสู่ระบบก่อนเชื่อมบัญชี',
+    login_to_view_stats: 'กรุณาเข้าสู่ระบบเพื่อดูสถิติ',
+    file_too_large: 'ไฟล์ใหญ่เกินไป (สูงสุด 5MB)',
+    avatar_uploaded: 'อัปโหลดรูปภาพสำเร็จ',
+    avatar_upload_failed: 'ไม่สามารถอัปโหลดรูปภาพ',
+    confirm_delete_avatar: 'คุณต้องการลบรูปโปรไฟล์ใช่หรือไม่?',
+    avatar_deleted: 'ลบรูปโปรไฟล์สำเร็จ',
+    profile_load_failed: 'ไม่สามารถโหลดข้อมูลโปรไฟล์',
+    save_success: 'บันทึกข้อมูลสำเร็จ',
+    save_failed: 'ไม่สามารถบันทึกข้อมูล',
+    linking_line: 'กำลังเชื่อม LINE...',
+    line_linked: 'เชื่อม LINE สำเร็จ',
+    link_failed: 'เชื่อมบัญชีไม่สำเร็จ',
+    txns_load_failed: 'ไม่สามารถโหลดธุรกรรมได้',
+    stats_load_failed: 'ไม่สามารถโหลดสถิติได้',
+    leaderboard_missing: 'Backend ยังไม่มี endpoint Leaderboard (ลองรีสตาร์ท server ที่พอร์ต 5050)',
+    leaderboard_failed: 'ไม่สามารถโหลดอันดับได้',
+    reminder_saved: 'บันทึกการเตือนเรียบร้อย',
+    autocat_saved: 'บันทึกการจัดหมวดเรียบร้อย',
+    language_saved: 'บันทึกภาษาเรียบร้อย',
+    delete_failed: 'ลบรายการไม่สำเร็จ',
+    deleted_all_success: 'ลบรายการทั้งหมดแล้ว ({count} รายการ)',
+  },
+  en: {
+    loading: 'Loading…',
+    user_fallback: 'User',
+    usage_stats: 'Usage stats',
+    savings_goal: 'Savings goal',
+    streak_days: '{count}-day streak',
+    stats_calculating: 'Calculating stats…',
+    stats_failed: 'Failed to load stats',
+    stats_logged_today: 'Logged today — nice!',
+    stats_log_today: 'Log today to keep your streak',
+    next_daily_log: 'Next daily logging',
+    next_level_in_days: 'Next level in {count} days',
+    updated_at: 'Updated {time}',
+    dark_mode: 'Dark mode',
+    reminder: 'Daily reminder',
+    language: 'Language',
+    categories: 'Categories',
+    clear_all: 'Delete all transactions',
+    reminder_on: 'On {time}',
+    lang_th: 'Thai',
+    lang_en: 'English',
+    logout: 'Log out',
+    footer: 'Version 1.0.0 — Made with ❤️ by Balanz',
+
+    modal_reminder: 'Daily reminder',
+    modal_autocat: 'Auto categorize',
+    modal_language: 'Language',
+    modal_clear_all: 'Delete all',
+    modal_categories: 'Categories',
+
+    enable_daily_reminder: 'Enable daily reminder',
+    reminder_time: 'Reminder time',
+    cancel: 'Cancel',
+    save: 'Save',
+
+    enable_autocat: 'Enable auto-categorization from text/amount',
+    autocat_desc: 'When enabled, we will try to guess the category from notes and amount.',
+
+    language_desc: 'Choose your app language (saved on this device)',
+
+    clear_all_warning: 'This will permanently delete all your transactions and cannot be undone.',
+    type_delete_to_confirm: 'Type DELETE to confirm',
+    deleting: 'Deleting…',
+    delete_all_btn: 'Delete all',
+
+    categories_desc: 'Manage your categories (add/edit/delete)',
+    close: 'Close',
+    go_to_categories: 'Go to categories',
+
+    leaderboard_title: 'Streak leaderboard',
+    leaderboard_loading: 'Loading leaderboard…',
+    leaderboard_empty: 'No leaderboard data yet',
+    days: '{count} days',
+
+    logout_title: 'Log out',
+    logout_desc: 'You will be logged out and need to sign in again to continue.',
+
+    login_required: 'Please sign in',
+    login_to_view_profile: 'Please sign in to view your profile',
+    login_to_link: 'Please sign in before linking your account',
+    login_to_view_stats: 'Please sign in to view stats',
+    file_too_large: 'File too large (max 5MB)',
+    avatar_uploaded: 'Avatar uploaded',
+    avatar_upload_failed: 'Failed to upload avatar',
+    confirm_delete_avatar: 'Delete your profile photo?',
+    avatar_deleted: 'Profile photo deleted',
+    profile_load_failed: 'Failed to load profile',
+    save_success: 'Saved successfully',
+    save_failed: 'Failed to save',
+    linking_line: 'Linking LINE…',
+    line_linked: 'LINE linked',
+    link_failed: 'Failed to link account',
+    txns_load_failed: 'Failed to load transactions',
+    stats_load_failed: 'Failed to load stats',
+    leaderboard_missing: 'Backend is missing the Leaderboard endpoint (try restarting the server on port 5050).',
+    leaderboard_failed: 'Failed to load leaderboard',
+    reminder_saved: 'Reminder saved',
+    autocat_saved: 'Auto-categorize saved',
+    language_saved: 'Language saved',
+    delete_failed: 'Delete failed',
+    deleted_all_success: 'Deleted all transactions ({count})',
+  },
+};
+
+const formatI18n = (template, vars) => {
+  if (!template) return '';
+  const text = String(template);
+  const data = vars && typeof vars === 'object' ? vars : {};
+  return text.replace(/\{(\w+)\}/g, (_, k) => {
+    const v = data[k];
+    return v === undefined || v === null ? '' : String(v);
+  });
+};
 
 const toBangkokISODateKey = (dateInput) => {
   const d = new Date(dateInput);
@@ -94,6 +271,42 @@ export default function Profile() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteAllLoading, setDeleteAllLoading] = useState(false);
 
+  const t = useCallback((key, vars) => {
+    const dict = I18N[language] || I18N.th;
+    const template = dict?.[key] ?? I18N.th?.[key] ?? key;
+    return formatI18n(template, vars);
+  }, [language]);
+
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
+    try {
+      document.documentElement.lang = language === 'en' ? 'en' : 'th';
+    } catch {}
+  }, [language]);
+
+  // Lock background scroll when any modal is open.
+  useEffect(() => {
+    const locked = Boolean(activeModal || rankingOpen || confirmLogoutOpen);
+    if (!locked) return;
+
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
+  }, [activeModal, rankingOpen, confirmLogoutOpen]);
+
   useEffect(() => {
     try {
       const rEn = localStorage.getItem('reminderEnabled');
@@ -125,7 +338,7 @@ export default function Profile() {
         setRankingLoading(true);
         setRankingError('');
         const token = localStorage.getItem('token');
-        if (!token) throw new Error('กรุณาเข้าสู่ระบบ');
+        if (!token) throw new Error(tRef.current('login_required'));
 
         const res = await fetch(`${API_BASE}/api/leaderboard/streak?limit=10`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -138,20 +351,20 @@ export default function Profile() {
             contentType.includes('text/html') ||
             /Cannot\s+GET\s+\/api\/leaderboard\/streak/i.test(text);
           if (looksLikeMissingRoute) {
-            throw new Error('Backend ยังไม่มี endpoint Leaderboard (ลองรีสตาร์ท server ที่พอร์ต 5050)');
+            throw new Error(tRef.current('leaderboard_missing'));
           }
-          throw new Error(text || 'ไม่สามารถโหลดอันดับได้');
+          throw new Error(text || tRef.current('leaderboard_failed'));
         }
         const data = await res.json();
         const list = Array.isArray(data?.leaderboard) ? data.leaderboard : [];
         const mapped = list.map((u) => ({
-          name: u?.name || 'ผู้ใช้งาน',
+          name: u?.name || tRef.current('user_fallback'),
           days: Number(u?.days ?? u?.streakDays) || 0,
         }));
         if (!cancelled) setRankingData(mapped);
       } catch (err) {
         if (!cancelled && err?.name !== 'AbortError') {
-          setRankingError(err?.message ? String(err.message) : 'ไม่สามารถโหลดอันดับได้');
+          setRankingError(err?.message ? String(err.message) : tRef.current('leaderboard_failed'));
           setRankingData([]);
         }
       } finally {
@@ -186,7 +399,7 @@ export default function Profile() {
     try {
       localStorage.setItem('reminderEnabled', JSON.stringify(reminderEnabled));
       localStorage.setItem('reminderTime', reminderTime);
-      setSuccess('บันทึกการเตือนเรียบร้อย');
+      setSuccess(t('reminder_saved'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (e) {}
     closeModal();
@@ -195,7 +408,7 @@ export default function Profile() {
   const saveAutoCategorize = () => {
     try {
       localStorage.setItem('autoCategorize', JSON.stringify(autoCategorize));
-      setSuccess('บันทึกการจัดหมวดเรียบร้อย');
+      setSuccess(t('autocat_saved'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (e) {}
     closeModal();
@@ -209,7 +422,7 @@ export default function Profile() {
       document.documentElement.lang = language === 'en' ? 'en' : 'th';
       window.dispatchEvent(new Event('balanz_lang_change'));
     } catch {}
-    setSuccess('บันทึกภาษาเรียบร้อย');
+    setSuccess(t('language_saved'));
     setTimeout(() => setSuccess(''), 3000);
     closeModal();
   };
@@ -220,21 +433,21 @@ export default function Profile() {
       setDeleteAllLoading(true);
       setError('');
       const token = localStorage.getItem('token');
-      if (!token) throw new Error('กรุณาเข้าสู่ระบบ');
+      if (!token) throw new Error(t('login_required'));
       const res = await fetch(`${API_BASE}/api/transactions/all`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.message || 'ลบรายการไม่สำเร็จ');
+        throw new Error(data?.message || t('delete_failed'));
       }
-      setSuccess(`ลบรายการทั้งหมดแล้ว (${Number(data?.deletedCount) || 0} รายการ)`);
+      setSuccess(t('deleted_all_success', { count: Number(data?.deletedCount) || 0 }));
       setTimeout(() => setSuccess(''), 3500);
       setDeleteConfirmText('');
       closeModal();
     } catch (err) {
-      setError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+      setError(err?.message ? String(err.message) : t('delete_failed'));
     } finally {
       setDeleteAllLoading(false);
     }
@@ -246,7 +459,7 @@ export default function Profile() {
       try {
         const token = localStorage.getItem('token');
         if (!token) {
-          setError('กรุณาเข้าสู่ระบบเพื่อดูโปรไฟล์');
+          setError(tRef.current('login_to_view_profile'));
           setLoading(false);
           return;
         }
@@ -268,11 +481,11 @@ export default function Profile() {
             if (localAvatar) setAvatarUrl(localAvatar);
           }
         } else {
-          setError(data.message || 'ไม่สามารถโหลดข้อมูลโปรไฟล์');
+          setError(data.message || tRef.current('profile_load_failed'));
         }
         setLoading(false);
       } catch (error) {
-        setError('ไม่สามารถโหลดข้อมูลโปรไฟล์');
+        setError(tRef.current('profile_load_failed'));
         setLoading(false);
       }
     };
@@ -290,10 +503,10 @@ export default function Profile() {
     const run = async () => {
       try {
         const token = localStorage.getItem('token');
-        if (!token) throw new Error('กรุณาเข้าสู่ระบบก่อนเชื่อมบัญชี');
+        if (!token) throw new Error(tRef.current('login_to_link'));
 
         setError('');
-        setSuccess('กำลังเชื่อม LINE...');
+        setSuccess(tRef.current('linking_line'));
         const res = await fetch(`${API_BASE}/api/auth/link-line-messaging`, {
           method: 'POST',
           headers: {
@@ -304,17 +517,17 @@ export default function Profile() {
           signal: controller.signal,
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data?.message || 'เชื่อมบัญชีไม่สำเร็จ');
+        if (!res.ok) throw new Error(data?.message || tRef.current('link_failed'));
 
         if (!cancelled) {
-          setSuccess('เชื่อม LINE สำเร็จ');
+          setSuccess(tRef.current('line_linked'));
           setTimeout(() => setSuccess(''), 3000);
           // remove linkCode from URL
           try { router.replace('/profile'); } catch {}
         }
       } catch (e) {
         if (!cancelled && e?.name !== 'AbortError') {
-          setError(e?.message ? String(e.message) : 'เชื่อมบัญชีไม่สำเร็จ');
+          setError(e?.message ? String(e.message) : tRef.current('link_failed'));
           setSuccess('');
           try { router.replace('/profile'); } catch {}
         }
@@ -331,7 +544,7 @@ export default function Profile() {
   const refreshUsageStats = useCallback(async (signal) => {
     const token = localStorage.getItem('token');
     if (!token) {
-      setUsageStats((prev) => ({ ...prev, loading: false, error: 'กรุณาเข้าสู่ระบบเพื่อดูสถิติ' }));
+      setUsageStats((prev) => ({ ...prev, loading: false, error: tRef.current('login_to_view_stats') }));
       return;
     }
 
@@ -342,7 +555,7 @@ export default function Profile() {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(text || 'ไม่สามารถโหลดธุรกรรมได้');
+      throw new Error(text || tRef.current('txns_load_failed'));
     }
     const transactions = await res.json();
     const list = Array.isArray(transactions) ? transactions : [];
@@ -416,7 +629,7 @@ export default function Profile() {
       setUsageStats((prev) => ({
         ...prev,
         loading: false,
-        error: err?.name === 'AbortError' ? '' : (err?.message ? String(err.message) : 'ไม่สามารถโหลดสถิติได้'),
+        error: err?.name === 'AbortError' ? '' : (err?.message ? String(err.message) : tRef.current('stats_load_failed')),
       }));
     });
 
@@ -456,13 +669,13 @@ export default function Profile() {
       if (res.ok) {
         setUser({ name: data.name, email: data.email });
         try { localStorage.setItem('name', data.name); } catch {}
-        setSuccess('บันทึกข้อมูลสำเร็จ');
+        setSuccess(t('save_success'));
         setTimeout(() => setSuccess(''), 3000);
       } else {
-        setError(data.message || 'ไม่สามารถบันทึกข้อมูล');
+        setError(data.message || t('save_failed'));
       }
     } catch (error) {
-      setError('ไม่สามารถบันทึกข้อมูล');
+      setError(t('save_failed'));
     }
   };
 
@@ -476,7 +689,7 @@ export default function Profile() {
     if (!file) return;
     
     if (file.size > 5 * 1024 * 1024) {
-      setError('ไฟล์ใหญ่เกินไป (สูงสุด 5MB)');
+      setError(t('file_too_large'));
       return;
     }
     
@@ -505,21 +718,21 @@ export default function Profile() {
       if (res.ok && data?.avatarUrl) {
         setAvatarUrl(data.avatarUrl);
         try { localStorage.setItem('avatarUrl', data.avatarUrl); } catch {}
-        setSuccess('อัปโหลดรูปภาพสำเร็จ');
+        setSuccess(t('avatar_uploaded'));
         setTimeout(() => setSuccess(''), 3000);
       } else {
         try { localStorage.setItem('avatarUrl', avatarUrl); } catch {}
       }
     } catch (err) {
       console.error('Upload avatar failed', err);
-      setError('ไม่สามารถอัปโหลดรูปภาพ');
+      setError(t('avatar_upload_failed'));
     } finally {
       setUploading(false);
     }
   };
 
   const handleDeleteAvatar = async () => {
-    if (!confirm('คุณต้องการลบรูปโปรไฟล์ใช่หรือไม่?')) return;
+    if (!confirm(t('confirm_delete_avatar'))) return;
 
     try {
       setUploading(true);
@@ -529,7 +742,7 @@ export default function Profile() {
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => {});
 
-      setSuccess('ลบรูปโปรไฟล์สำเร็จ');
+      setSuccess(t('avatar_deleted'));
       setTimeout(() => setSuccess(''), 3000);
     } finally {
       setUploading(false);
@@ -553,7 +766,7 @@ export default function Profile() {
   if (loading) {
     return (
       <div className="min-h-screen bg-transparent flex items-center justify-center">
-        <LoadingMascot label="กำลังโหลดข้อมูล..." size={88} />
+        <LoadingMascot label={t('loading')} size={88} />
       </div>
     );
   }
@@ -569,28 +782,7 @@ export default function Profile() {
 
   return (
     <div className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
-      <div className="mx-auto w-full max-w-md px-3 sm:px-4 pb-24 pt-8">
-        <div className="rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.25)]">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="h-16 w-16 rounded-full bg-[var(--app-surface-2)] ring-2 ring-emerald-400/50 p-0.5">
-                <div className="h-full w-full overflow-hidden rounded-full bg-[var(--app-surface)]">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full flex items-center justify-center text-[color:var(--app-muted)]">
-                      <User className="h-7 w-7" />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-lg font-extrabold text-[color:var(--app-text)]">{user.name || 'ผู้ใช้งาน'}</div>
-            </div>
-          </div>
-        </div>
+      <div className="mx-auto w-full max-w-md lg:max-w-6xl px-3 sm:px-4 lg:px-6 pb-24 pt-8">
 
         {(error || success) && (
           <div
@@ -603,120 +795,151 @@ export default function Profile() {
           </div>
         )}
 
-        <div className="mt-4 rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.18)]">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถิติการใช้งาน</div>           
-          </div>
-          <div className="mt-3 text-lg font-extrabold text-[color:var(--app-text)]">เป้าหมายการออม</div>
-
-          <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
-            <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20">
-              <Flame className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-extrabold text-[color:var(--app-text)]">{streakDays} วันต่อเนื่อง</div>
-              <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
-                {usageStats.loading
-                  ? 'กำลังคำนวณสถิติ...'
-                  : usageStats.error
-                    ? 'โหลดสถิติไม่สำเร็จ'
-                    : usageStats.loggedToday
-                      ? 'วันนี้จดแล้ว เยี่ยมมาก'
-                      : 'จดวันนี้เพื่อรักษาสถิติ'}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <div className="flex items-center justify-between text-xs font-semibold text-[color:var(--app-muted)]">
-              <span>สถิติการจดรายวันถัดไป</span>
-              <span className="text-emerald-300">{progressPercent}%</span>
-            </div>
-            <div className="mt-2 h-2.5 w-full rounded-full bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
-            </div>
-            <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted-2)]">เลเวลต่อไปใน {nextLevelInDays} วัน</div>
-            {usageStatsUpdatedAt ? (
-              <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                อัปเดตล่าสุด {new Date(usageStatsUpdatedAt).toLocaleString('th-TH')}
-              </div>
-            ) : null}
-            {usageStats.error ? (
-              <div className="mt-2 text-[11px] font-semibold text-rose-200/90">
-                {usageStats.error}
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition"
-          >
-            <div className="flex items-center gap-3">
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
-                <Moon className="h-5 w-5" />
-              </div>
-              <div className="text-sm font-extrabold">โหมดกลางคืน</div>
-            </div>
-            <div
-              className={[
-                'relative inline-flex h-7 w-12 items-center rounded-full transition',
-                theme === 'dark' ? 'bg-emerald-500' : 'bg-white/10 ring-1 ring-white/10',
-              ].join(' ')}
-              aria-hidden="true"
-            >
-              <span
-                className={[
-                  'inline-block h-5 w-5 transform rounded-full bg-white shadow transition',
-                  theme === 'dark' ? 'translate-x-6' : 'translate-x-1',
-                ].join(' ')}
-              />
-            </div>
-          </button>
-
-          {[
-            { key: 'reminder', label: 'เตือนจดประจำวัน', icon: BellRing, right: reminderEnabled ? `เปิด ${reminderTime}` : '', action: () => openModal('reminder') },
-            { key: 'language', label: 'ภาษา', icon: Languages, right: language === 'en' ? 'English' : 'ไทย', action: () => openModal('language') },
-            { key: 'categories', label: 'ตั้งค่าหมวด', icon: LayoutGrid, right: '', action: () => router.push('/budget') },
-            { key: 'clearAll', label: 'ลบรายการทั้งหมด', icon: Trash2, right: '', action: () => openModal('clearAll') },
-          ].map(({ key, label, icon: Icon, right, action }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={action}
-              className={[
-                'w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition',
-                key === 'clearAll' ? 'border-rose-400/25 bg-rose-500/10 hover:bg-rose-500/15' : '',
-              ].join(' ')}
-            >
-              <div className="flex items-center gap-3">
-                <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
-                  <Icon className="h-5 w-5" />
+        <div className="mt-4 lg:mt-6 lg:grid lg:grid-cols-12 lg:gap-6">
+          <div className="space-y-4 lg:col-span-5 lg:space-y-6 lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="h-16 w-16 rounded-full bg-[var(--app-surface-2)] ring-2 ring-emerald-400/50 p-0.5">
+                    <div className="h-full w-full overflow-hidden rounded-full bg-[var(--app-surface)]">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-[color:var(--app-muted)]">
+                          <User className="h-7 w-7" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-sm font-extrabold">{label}</div>
-              </div>
-              <div className="flex items-center gap-3">
-                {right ? <div className="text-xs font-semibold text-[color:var(--app-muted)]">{right}</div> : null}
-                <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" />
-              </div>
-            </button>
-          ))}
-        </div>
 
-        <div className="mt-6">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-4 text-rose-200 font-extrabold hover:bg-rose-500/15 transition inline-flex items-center justify-center gap-3"
-          >
-            <LogOut className="h-5 w-5" />
-            ออกจากระบบ
-          </button>
-          <div className="mt-5 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
-            เวอร์ชัน 1.0.0 - สร้างด้วย ❤️ โดยทีม Balanz
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-lg font-extrabold text-[color:var(--app-text)]">{user.name || t('user_fallback')}</div>
+                  {displayEmail ? (
+                    <div className="mt-1 truncate text-xs font-semibold text-[color:var(--app-muted)]">{displayEmail}</div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_18px_40px_-28px_rgba(0,0,0,0.18)]">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('usage_stats')}</div>
+              </div>
+              <div className="mt-3 text-lg font-extrabold text-[color:var(--app-text)]">{t('savings_goal')}</div>
+
+              <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white/5 p-3 ring-1 ring-white/10">
+                <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20">
+                  <Flame className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('streak_days', { count: streakDays })}</div>
+                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
+                    {usageStats.loading
+                      ? t('stats_calculating')
+                      : usageStats.error
+                        ? t('stats_failed')
+                        : usageStats.loggedToday
+                          ? t('stats_logged_today')
+                          : t('stats_log_today')}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs font-semibold text-[color:var(--app-muted)]">
+                  <span>{t('next_daily_log')}</span>
+                  <span className="text-emerald-300">{progressPercent}%</span>
+                </div>
+                <div className="mt-2 h-2.5 w-full rounded-full bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] overflow-hidden">
+                  <div className="h-full rounded-full bg-emerald-400" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
+                </div>
+                <div className="mt-2 text-xs font-semibold text-[color:var(--app-muted-2)]">{t('next_level_in_days', { count: nextLevelInDays })}</div>
+                {usageStatsUpdatedAt ? (
+                  <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                    {t('updated_at', { time: new Date(usageStatsUpdatedAt).toLocaleString(language === 'en' ? 'en-US' : 'th-TH') })}
+                  </div>
+                ) : null}
+                {usageStats.error ? (
+                  <div className="mt-2 text-[11px] font-semibold text-rose-200/90">
+                    {usageStats.error}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4 lg:col-span-7 lg:mt-0 lg:space-y-6">
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
+                    <Moon className="h-5 w-5" />
+                  </div>
+                  <div className="text-sm font-extrabold">{t('dark_mode')}</div>
+                </div>
+                <div
+                  className={[
+                    'relative inline-flex h-7 w-12 items-center rounded-full transition',
+                    theme === 'dark' ? 'bg-emerald-500' : 'bg-white/10 ring-1 ring-white/10',
+                  ].join(' ')}
+                  aria-hidden="true"
+                >
+                  <span
+                    className={[
+                      'inline-block h-5 w-5 transform rounded-full bg-white shadow transition',
+                      theme === 'dark' ? 'translate-x-6' : 'translate-x-1',
+                    ].join(' ')}
+                  />
+                </div>
+              </button>
+
+              {[
+                { key: 'reminder', label: t('reminder'), icon: BellRing, right: reminderEnabled ? t('reminder_on', { time: reminderTime }) : '', action: () => openModal('reminder') },
+                { key: 'language', label: t('language'), icon: Languages, right: language === 'en' ? t('lang_en') : t('lang_th'), action: () => openModal('language') },
+                { key: 'categories', label: t('categories'), icon: LayoutGrid, right: '', action: () => router.push('/budget') },
+                { key: 'clearAll', label: t('clear_all'), icon: Trash2, right: '', action: () => openModal('clearAll') },
+              ].map(({ key, label, icon: Icon, right, action }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={action}
+                  className={[
+                    'w-full flex items-center justify-between rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition',
+                    key === 'clearAll' ? 'border-rose-400/25 bg-rose-500/10 hover:bg-rose-500/15' : '',
+                  ].join(' ')}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="text-sm font-extrabold">{label}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {right ? <div className="text-xs font-semibold text-[color:var(--app-muted)]">{right}</div> : null}
+                    <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" />
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-4 text-rose-200 font-extrabold hover:bg-rose-500/15 transition inline-flex items-center justify-center gap-3"
+              >
+                <LogOut className="h-5 w-5" />
+                {t('logout')}
+              </button>
+              <div className="mt-5 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
+                {t('footer')}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -727,56 +950,56 @@ export default function Profile() {
           <div className="absolute inset-0 bg-black/50" onClick={closeModal}></div>
 	          <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
 	            <div className="flex items-start justify-between">
-	              <h3 className="text-lg font-extrabold">
-	                {activeModal === 'reminder'
-	                  ? 'เตือนจดประจำวัน'
-	                  : activeModal === 'autocat'
-	                    ? 'จัดหมวดด้วยความจำ'
-	                    : activeModal === 'language'
-	                      ? 'ภาษา'
-	                      : activeModal === 'clearAll'
-	                        ? 'ลบรายการทั้งหมด'
-	                        : 'ตั้งค่าหมวด'}
-	              </h3>
+		              <h3 className="text-lg font-extrabold">
+		                {activeModal === 'reminder'
+		                  ? t('modal_reminder')
+		                  : activeModal === 'autocat'
+		                    ? t('modal_autocat')
+		                    : activeModal === 'language'
+		                      ? t('modal_language')
+		                      : activeModal === 'clearAll'
+		                        ? t('modal_clear_all')
+		                        : t('modal_categories')}
+		              </h3>
 	              <button onClick={closeModal} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
 	            </div>
 	            <div className="mt-4">
               {activeModal === 'reminder' && (
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3">
-                    <input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} className="w-4 h-4" />
-                    <span className="text-sm font-semibold">เปิดการเตือนรายวัน</span>
-                  </label>
-                  <div>
-                    <label className="text-xs text-[color:var(--app-muted)] font-semibold">เวลาเตือน</label>
-                    <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="mt-1 w-full px-3 py-2 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)]" />
-                  </div>
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
-                    <button onClick={saveReminder} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
-                  </div>
-                </div>
-              )}
-
-	              {activeModal === 'autocat' && (
-	                <div className="space-y-3">
 	                  <label className="flex items-center gap-3">
-	                    <input type="checkbox" checked={autoCategorize} onChange={(e) => setAutoCategorize(e.target.checked)} className="w-4 h-4" />
-	                    <span className="text-sm font-semibold">เปิดจัดหมวดอัตโนมัติจากข้อความ/จำนวน</span>
+	                    <input type="checkbox" checked={reminderEnabled} onChange={(e) => setReminderEnabled(e.target.checked)} className="w-4 h-4" />
+	                    <span className="text-sm font-semibold">{t('enable_daily_reminder')}</span>
 	                  </label>
-	                  <p className="text-xs text-slate-400 font-semibold">เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน</p>
+	                  <div>
+	                    <label className="text-xs text-[color:var(--app-muted)] font-semibold">{t('reminder_time')}</label>
+	                    <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} className="mt-1 w-full px-3 py-2 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)]" />
+	                  </div>
 	                  <div className="flex justify-end gap-2 mt-4">
-	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
-	                    <button onClick={saveAutoCategorize} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
+	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">{t('cancel')}</button>
+	                    <button onClick={saveReminder} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">{t('save')}</button>
 	                  </div>
 	                </div>
 	              )}
 
+	              {activeModal === 'autocat' && (
+	                <div className="space-y-3">
+		                  <label className="flex items-center gap-3">
+		                    <input type="checkbox" checked={autoCategorize} onChange={(e) => setAutoCategorize(e.target.checked)} className="w-4 h-4" />
+		                    <span className="text-sm font-semibold">{t('enable_autocat')}</span>
+		                  </label>
+		                  <p className="text-xs text-slate-400 font-semibold">{t('autocat_desc')}</p>
+		                  <div className="flex justify-end gap-2 mt-4">
+		                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">{t('cancel')}</button>
+		                    <button onClick={saveAutoCategorize} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">{t('save')}</button>
+		                  </div>
+		                </div>
+		              )}
+
 	              {activeModal === 'language' && (
 	                <div className="space-y-3">
-	                  <p className="text-xs font-semibold text-[color:var(--app-muted)]">
-	                    ตั้งค่าภาษาสำหรับแอป (บันทึกไว้ในเครื่องนี้)
-	                  </p>
+		                  <p className="text-xs font-semibold text-[color:var(--app-muted)]">
+		                    {t('language_desc')}
+		                  </p>
 
 	                  <div className="space-y-2">
 	                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
@@ -787,8 +1010,8 @@ export default function Profile() {
 	                        checked={language === 'th'}
 	                        onChange={() => setLanguage('th')}
 	                      />
-	                      <div className="text-sm font-extrabold">ไทย</div>
-	                    </label>
+		                      <div className="text-sm font-extrabold">{t('lang_th')}</div>
+		                    </label>
 
 	                    <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
 	                      <input
@@ -798,53 +1021,53 @@ export default function Profile() {
 	                        checked={language === 'en'}
 	                        onChange={() => setLanguage('en')}
 	                      />
-	                      <div className="text-sm font-extrabold">English</div>
-	                    </label>
-	                  </div>
+		                      <div className="text-sm font-extrabold">{t('lang_en')}</div>
+		                    </label>
+		                  </div>
 
-	                  <div className="flex justify-end gap-2 mt-4">
-	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
-	                    <button onClick={saveLanguage} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">บันทึก</button>
-	                  </div>
-	                </div>
-	              )}
+		                  <div className="flex justify-end gap-2 mt-4">
+		                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">{t('cancel')}</button>
+		                    <button onClick={saveLanguage} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">{t('save')}</button>
+		                  </div>
+		                </div>
+		              )}
 
 	              {activeModal === 'clearAll' && (
 	                <div className="space-y-3">
-	                  <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-rose-200 text-sm font-semibold">
-	                    การลบนี้จะลบ “รายการทั้งหมด” ของคุณแบบถาวร และไม่สามารถกู้คืนได้
-	                  </div>
-	                  <div>
-	                    <label className="text-xs font-semibold text-[color:var(--app-muted)]">พิมพ์คำว่า DELETE เพื่อยืนยัน</label>
-	                    <input
-	                      value={deleteConfirmText}
-	                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+		                  <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-rose-200 text-sm font-semibold">
+		                    {t('clear_all_warning')}
+		                  </div>
+		                  <div>
+		                    <label className="text-xs font-semibold text-[color:var(--app-muted)]">{t('type_delete_to_confirm')}</label>
+		                    <input
+		                      value={deleteConfirmText}
+		                      onChange={(e) => setDeleteConfirmText(e.target.value)}
 	                      className="mt-1 w-full h-11 rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/30"
 	                      placeholder="DELETE"
 	                    />
-	                  </div>
-	                  <div className="flex justify-end gap-2 mt-4">
-	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ยกเลิก</button>
-	                    <button
-	                      onClick={deleteAllTransactions}
-	                      disabled={deleteAllLoading || deleteConfirmText !== 'DELETE'}
-	                      className="px-4 py-2 bg-rose-500 text-white rounded-xl font-extrabold disabled:opacity-50"
-	                    >
-	                      {deleteAllLoading ? 'กำลังลบ...' : 'ลบทั้งหมด'}
-	                    </button>
+		                  </div>
+		                  <div className="flex justify-end gap-2 mt-4">
+			                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">{t('cancel')}</button>
+			                    <button
+			                      onClick={deleteAllTransactions}
+		                      disabled={deleteAllLoading || deleteConfirmText !== 'DELETE'}
+			                      className="px-4 py-2 bg-rose-500 text-white rounded-xl font-extrabold disabled:opacity-50"
+		                    >
+		                      {deleteAllLoading ? t('deleting') : t('delete_all_btn')}
+		                    </button>
+		                  </div>
+		                </div>
+		              )}
+
+	              {activeModal === 'categories' && (
+		                <div className="space-y-3">
+		                  <p className="text-sm font-semibold text-slate-200">{t('categories_desc')}</p>
+		                  <div className="flex justify-end gap-2 mt-4">
+	                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">{t('close')}</button>
+	                    <button onClick={() => { closeModal(); router.push('/categories'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">{t('go_to_categories')}</button>
 	                  </div>
 	                </div>
 	              )}
-
-	              {activeModal === 'categories' && (
-	                <div className="space-y-3">
-	                  <p className="text-sm font-semibold text-slate-200">จัดการหมวดหมู่ของคุณ (เพิ่ม/แก้ไข/ลบ)</p>
-	                  <div className="flex justify-end gap-2 mt-4">
-                    <button onClick={closeModal} className="px-4 py-2 text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] font-semibold">ปิด</button>
-                    <button onClick={() => { closeModal(); router.push('/categories'); }} className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-xl font-extrabold">ไปที่หมวดหมู่</button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -855,7 +1078,7 @@ export default function Profile() {
           <div className="absolute inset-0 bg-black/50" onClick={() => setRankingOpen(false)}></div>
           <div className="bg-[var(--app-surface)] border border-[color:var(--app-border)] rounded-2xl shadow-2xl z-10 w-full max-w-md mx-auto p-5 max-h-[90vh] overflow-auto text-[color:var(--app-text)]">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-extrabold">อันดับการจดต่อเนื่อง</h3>
+              <h3 className="text-lg font-extrabold">{t('leaderboard_title')}</h3>
               <button onClick={() => setRankingOpen(false)} className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">✕</button>
             </div>
 
@@ -920,7 +1143,7 @@ export default function Profile() {
 
               {rankingLoading ? (
                 <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 text-sm font-semibold text-[color:var(--app-muted)]">
-                  กำลังโหลดอันดับ...
+                  {t('leaderboard_loading')}
                 </div>
               ) : rankingError ? (
                 <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-3 text-sm font-semibold text-rose-200">
@@ -928,7 +1151,7 @@ export default function Profile() {
                 </div>
               ) : rankingData.length === 0 ? (
                 <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 text-sm font-semibold text-[color:var(--app-muted)]">
-                  ยังไม่มีข้อมูลอันดับ
+                  {t('leaderboard_empty')}
                 </div>
               ) : null}
 
@@ -940,7 +1163,7 @@ export default function Profile() {
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center ring-1 ${i === 0 ? 'bg-rose-500/15 text-rose-200 ring-rose-400/20' : i === 1 ? 'bg-sky-500/15 text-sky-200 ring-sky-400/20' : 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20'} font-extrabold`}>{i + 1}</div>
                       <div className="flex-1">
                         <div className="text-sm font-extrabold text-[color:var(--app-text)]">{u.name}</div>
-                        <div className="text-xs text-[color:var(--app-muted)] font-semibold mt-1">{u.days} วัน</div>
+                        <div className="text-xs text-[color:var(--app-muted)] font-semibold mt-1">{t('days', { count: u.days })}</div>
                       </div>
                       <div className="text-sm font-semibold text-[color:var(--app-muted)]">#{i + 1}</div>
                     </div>
@@ -949,7 +1172,7 @@ export default function Profile() {
               </div>
 
               <div className="mt-6 flex justify-end">
-                <button onClick={() => setRankingOpen(false)} className="px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] text-[color:var(--app-text)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">ปิด</button>
+                <button onClick={() => setRankingOpen(false)} className="px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] text-[color:var(--app-text)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">{t('close')}</button>
               </div>
             </div>
           </div>
@@ -965,19 +1188,19 @@ export default function Profile() {
                 <LogOut className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-extrabold text-[color:var(--app-text)]">ออกจากระบบ</h3>
-                <p className="text-sm text-[color:var(--app-muted)] mt-1 font-semibold">คุณจะถูกออกจากระบบและต้องเข้าสู่ระบบใหม่เพื่อใช้งานต่อ</p>
+                <h3 className="text-lg font-extrabold text-[color:var(--app-text)]">{t('logout_title')}</h3>
+                <p className="text-sm text-[color:var(--app-muted)] mt-1 font-semibold">{t('logout_desc')}</p>
               </div>
             </div>
 
             <div className="mt-6 flex gap-3">
-              <button onClick={cancelLogout} className="flex-1 px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">ยกเลิก</button>
+              <button onClick={cancelLogout} className="flex-1 px-4 py-2 bg-[var(--app-surface-2)] border border-[color:var(--app-border)] rounded-xl hover:bg-[var(--app-surface-3)] font-extrabold">{t('cancel')}</button>
               <button
                 onClick={() => { setConfirmLogoutOpen(false); performLogout(); }}
                 className="flex-1 px-4 py-2 bg-gradient-to-r from-rose-500 to-rose-600 text-white rounded-xl flex items-center justify-center gap-2 font-extrabold"
               >
                 <LogOut className="w-4 h-4" />
-                ออกจากระบบ
+                {t('logout')}
               </button>
             </div>
           </div>

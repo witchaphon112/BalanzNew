@@ -37,10 +37,16 @@ import {
   CheckSquare,
   Square,
   ListChecks,
+  AlertTriangle,
   X,
 } from 'lucide-react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+
+const MONTH_NAMES_TH = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
 
 const moneyFormatter = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (v) => {
@@ -106,6 +112,7 @@ const CategoryIcon = ({ iconName, className = 'w-6 h-6' }) => {
 
 export default function TransactionsPage() {
   const [mounted, setMounted] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [bootLoading, setBootLoading] = useState(true);
@@ -124,6 +131,11 @@ export default function TransactionsPage() {
   const [openDropdown, setOpenDropdown] = useState(null); // 'category' | 'date' | 'type' | null
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [editDatePickerMonth, setEditDatePickerMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), monthIndex: d.getMonth() };
+  });
   const [categories, setCategories] = useState([]);
   // Multi-select: [] means "ทั้งหมด"
   const [filterCategory, setFilterCategory] = useState([]); // string[] (categoryId | 'other')
@@ -137,7 +149,13 @@ export default function TransactionsPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkTargetType, setBulkTargetType] = useState('expense'); // 'expense' | 'income'
   const [bulkDate, setBulkDate] = useState('');
+  const [showBulkDatePicker, setShowBulkDatePicker] = useState(false);
+  const [bulkDatePickerMonth, setBulkDatePickerMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), monthIndex: d.getMonth() };
+  });
   const filtersRef = useRef(null);
   const touchRef = useRef({ x: 0, y: 0, id: null, moved: false });
   const touchClearRef = useRef(null);
@@ -149,9 +167,76 @@ export default function TransactionsPage() {
     notes: '',
   });
 
+  const parseISODateKey = (iso) => {
+    const parts = String(iso || '').split('-');
+    if (parts.length !== 3) return null;
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { year, monthIndex: month - 1, day };
+  };
+
+  const toISOFromParts = (year, monthIndex, day) => {
+    const yyyy = String(year).padStart(4, '0');
+    const mm = String(monthIndex + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const openEditDatePicker = () => {
+    const parsed = parseISODateKey(editFormData?.date);
+    if (parsed) setEditDatePickerMonth({ year: parsed.year, monthIndex: parsed.monthIndex });
+    else {
+      const d = new Date();
+      setEditDatePickerMonth({ year: d.getFullYear(), monthIndex: d.getMonth() });
+    }
+    setShowEditDatePicker(true);
+  };
+
+  const openBulkDatePicker = () => {
+    const parsed = parseISODateKey(bulkDate);
+    if (parsed) setBulkDatePickerMonth({ year: parsed.year, monthIndex: parsed.monthIndex });
+    else {
+      const d = new Date();
+      setBulkDatePickerMonth({ year: d.getFullYear(), monthIndex: d.getMonth() });
+    }
+    setShowBulkDatePicker(true);
+  };
+
+  useEffect(() => {
+    if (!showEditModal) setShowEditDatePicker(false);
+  }, [showEditModal]);
+
+  useEffect(() => {
+    if (!showBulkDateModal) setShowBulkDatePicker(false);
+  }, [showBulkDateModal]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.('(min-width: 1024px)');
+    if (!mq) return;
+
+    const apply = () => setIsDesktop(Boolean(mq.matches));
+    apply();
+
+    try {
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    } catch {
+      mq.addListener?.(apply);
+      return () => mq.removeListener?.(apply);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    setShowFilters(true);
+  }, [isDesktop]);
 
   const selectedCount = selectedTxnIds.size;
   const txnById = useMemo(() => {
@@ -167,12 +252,11 @@ export default function TransactionsPage() {
     selectedTxns.forEach((t) => { if (t?.type) set.add(t.type); });
     return set;
   }, [selectedTxns]);
-  const canBulkEditCategory = selectedCount > 0 && selectedTypeSet.size === 1;
-  const bulkType = canBulkEditCategory ? Array.from(selectedTypeSet)[0] : '';
+  const selectionHasMixedTypes = selectedCount > 0 && selectedTypeSet.size > 1;
   const bulkCategories = useMemo(() => {
-    if (!bulkType) return [];
-    return (categories || []).filter((c) => c?.type === bulkType);
-  }, [categories, bulkType]);
+    return (categories || []).filter((c) => c?.type === bulkTargetType);
+  }, [categories, bulkTargetType]);
+  const canBulkSaveCategory = selectedCount > 0 && Boolean(bulkCategoryId) && (bulkCategories || []).length > 0;
 
   const exitSelectMode = () => {
     setSelectMode(false);
@@ -265,9 +349,11 @@ export default function TransactionsPage() {
   };
 
   const handleBulkUpdateCategory = async () => {
-    if (!canBulkEditCategory) return;
+    if (selectedCount === 0) return;
+    if (!bulkTargetType) return;
     if (!bulkCategoryId) return;
-    if (!confirm(`แก้หมวดของ ${selectedCount} รายการที่เลือกใช่ไหม?`)) return;
+    const targetLabel = bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย';
+    if (!confirm(`แก้ประเภทเป็น "${targetLabel}" และแก้หมวดหมู่ของ ${selectedCount} รายการที่เลือกใช่ไหม?`)) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -275,7 +361,7 @@ export default function TransactionsPage() {
       await Promise.all(ids.map((id) => fetch(`${API_BASE}/api/transactions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ category: bulkCategoryId }),
+        body: JSON.stringify({ type: bulkTargetType, category: bulkCategoryId }),
       })));
       await fetchTransactions(token);
       setShowBulkCategoryModal(false);
@@ -441,10 +527,17 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     if (!showBulkCategoryModal) return;
-    if (bulkCategoryId) return;
+    const preferredType = selectedTypeSet.size === 1 ? Array.from(selectedTypeSet)[0] : 'expense';
+    setBulkTargetType(preferredType === 'income' ? 'income' : 'expense');
+  }, [showBulkCategoryModal, selectedTypeSet]);
+
+  useEffect(() => {
+    if (!showBulkCategoryModal) return;
+    const allowed = new Set((bulkCategories || []).map((c) => String(c?._id || '')).filter(Boolean));
+    if (bulkCategoryId && allowed.has(String(bulkCategoryId))) return;
     const first = bulkCategories?.[0]?._id || '';
-    if (first) setBulkCategoryId(first);
-  }, [showBulkCategoryModal, bulkCategoryId, bulkCategories]);
+    setBulkCategoryId(first);
+  }, [showBulkCategoryModal, bulkTargetType, bulkCategories, bulkCategoryId]);
 
   useEffect(() => {
     if (!showBulkDateModal) return;
@@ -976,6 +1069,416 @@ export default function TransactionsPage() {
     );
   };
 
+  const filtersVisible = isDesktop || showFilters;
+  const filtersCard = (
+    <div ref={filtersRef} className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="ค้นหารายการ..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-12 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] py-3 pl-12 pr-4 text-sm font-semibold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowFilters(v => !v)}
+          className={[
+            'lg:hidden inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
+            showFilters
+              ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100 shadow-black/10 hover:bg-emerald-500/20 focus:ring-emerald-400/35'
+              : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
+          ].join(' ')}
+          aria-label={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
+          title={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
+        >
+          <SlidersHorizontal className="h-5 w-5" />
+        </button>
+      </div>
+
+      {filtersVisible && (
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {/* Category */}
+          <div className="relative">
+            <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
+              <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+              หมวดหมู่
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(v => (v === 'category' ? null : 'category'))}
+              className={[
+                filterButtonBase,
+                categoryApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
+              ].join(' ')}
+              aria-haspopup="listbox"
+              aria-expanded={openDropdown === 'category'}
+            >
+              <span className="truncate flex-1">{selectedCategoryLabel}</span>
+              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
+                <ChevronDown className="h-4 w-4" />
+              </span>
+            </button>
+            {openDropdown === 'category' && (
+              <div className={dropdownPanelBase} role="listbox" aria-label="หมวดหมู่">
+                <button
+                  type="button"
+                  className={[dropdownItemBase, filterCategory.length === 0 ? dropdownActive : ''].join(' ')}
+                  onClick={() => setFilterCategory([])}
+                >
+                  <span>ทั้งหมด</span>
+                  {filterCategory.length === 0 && <span className="text-emerald-300">✓</span>}
+                </button>
+
+                {filterType === 'all' ? (
+                  <>
+                    {sortedCategories.expense.length > 0 && (
+                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายจ่าย</div>
+                    )}
+                    {sortedCategories.expense.map((cat) => (
+                      <button
+                        key={cat._id}
+                        type="button"
+                        className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
+                        onClick={() => toggleFilterCategory(cat._id)}
+                      >
+                        <span className="truncate inline-flex items-center gap-2">
+                          <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
+                          {cat.name}
+                        </span>
+                        {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
+                      </button>
+                    ))}
+
+                    {sortedCategories.income.length > 0 && (
+                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายรับ</div>
+                    )}
+                    {sortedCategories.income.map((cat) => (
+                      <button
+                        key={cat._id}
+                        type="button"
+                        className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
+                        onClick={() => toggleFilterCategory(cat._id)}
+                      >
+                        <span className="truncate inline-flex items-center gap-2">
+                          <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
+                          {cat.name}
+                        </span>
+                        {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  sortedCategories.displayed.map((cat) => (
+                    <button
+                      key={cat._id}
+                      type="button"
+                      className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
+                      onClick={() => toggleFilterCategory(cat._id)}
+                    >
+                      <span className="truncate inline-flex items-center gap-2">
+                        <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
+                        {cat.name}
+                      </span>
+                      {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
+                    </button>
+                  ))
+                )}
+
+                <div className="my-1 h-px bg-white/10" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={[dropdownItemBase, filterCategory.includes('other') ? dropdownActive : ''].join(' ')}
+                  onClick={() => toggleFilterCategory('other')}
+                >
+                  <span>อื่นๆ / ไม่ระบุ</span>
+                  {filterCategory.includes('other') && <span className="text-emerald-300">✓</span>}
+                </button>
+
+                <div className="sticky bottom-0 border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFilterCategory([])}
+                      className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                    >
+                      ล้าง
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="flex-1 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                    >
+                      เสร็จสิ้น
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Type */}
+          <div className="relative">
+            <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
+              <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
+              ประเภท
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(v => (v === 'type' ? null : 'type'))}
+              className={[
+                filterButtonBase,
+                typeApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
+              ].join(' ')}
+              aria-haspopup="listbox"
+              aria-expanded={openDropdown === 'type'}
+            >
+              <span className="truncate flex-1">{selectedTypeLabel}</span>
+              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
+                <ChevronDown className="h-4 w-4" />
+              </span>
+            </button>
+            {openDropdown === 'type' && (
+              <div className={dropdownPanelBase} role="listbox" aria-label="ประเภท">
+                <button
+                  type="button"
+                  className={[dropdownItemBase, filterType === 'all' ? dropdownActive : ''].join(' ')}
+                  onClick={() => { setFilterType('all'); setOpenDropdown(null); }}
+                >
+                  <span>ทั้งหมด</span>
+                  {filterType === 'all' && <span className="text-emerald-300">✓</span>}
+                </button>
+                <button
+                  type="button"
+                  className={[dropdownItemBase, filterType === 'expense' ? dropdownActive : ''].join(' ')}
+                  onClick={() => { setFilterType('expense'); setOpenDropdown(null); }}
+                >
+                  <span>รายจ่าย</span>
+                  {filterType === 'expense' && <span className="text-emerald-300">✓</span>}
+                </button>
+                <button
+                  type="button"
+                  className={[dropdownItemBase, filterType === 'income' ? dropdownActive : ''].join(' ')}
+                  onClick={() => { setFilterType('income'); setOpenDropdown(null); }}
+                >
+                  <span>รายรับ</span>
+                  {filterType === 'income' && <span className="text-emerald-300">✓</span>}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Date */}
+          <div className="relative sm:col-span-2">
+            <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
+              <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+              ช่วงเวลา
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(v => (v === 'date' ? null : 'date'))}
+              className={[
+                filterButtonBase,
+                dateApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
+              ].join(' ')}
+              aria-haspopup="dialog"
+              aria-expanded={openDropdown === 'date'}
+            >
+              <span className="truncate flex-1">{selectedDateLabel}</span>
+              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
+                <ChevronDown className="h-4 w-4" />
+              </span>
+            </button>
+
+	            {mounted && openDropdown === 'date' && createPortal((
+	              <div
+	                className={[
+                    'fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex justify-center overflow-hidden overscroll-contain',
+                    isDesktop ? 'items-center p-4' : 'items-end sm:items-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0',
+                  ].join(' ')}
+	                role="dialog"
+	                aria-label="เลือกช่วงเวลา"
+	                onClick={(e) => e.target === e.currentTarget && setOpenDropdown(null)}
+	              >
+	                <div
+                    className={[
+                      'bg-[var(--app-surface)] w-full overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)] flex flex-col',
+                      isDesktop ? 'max-w-lg rounded-3xl max-h-[88dvh]' : 'sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92dvh] sm:max-h-[88dvh]',
+                    ].join(' ')}
+                  >
+                  <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[color:var(--app-border)]">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ตัวกรอง</div>
+                      <div className="truncate text-base font-extrabold">ช่วงเวลา</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                      aria-label="ปิด"
+                    >
+                      <X className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto overscroll-contain">
+                    {/* Presets */}
+                    <div className="sticky top-0 z-[1] bg-[var(--app-surface)] border-b border-[color:var(--app-border)]">
+                      <div className="flex gap-2 overflow-x-auto px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        {[
+                          { key: 'today', label: 'วันนี้' },
+                          { key: 'yesterday', label: 'เมื่อวาน' },
+                          { key: 'thisWeek', label: 'สัปดาห์นี้' },
+                          { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
+                          { key: 'last7', label: '7 วันล่าสุด' },
+                          { key: 'currentMonth', label: 'เดือนนี้' },
+                          { key: 'lastMonth', label: 'เดือนที่แล้ว' },
+                          { key: 'reset', label: 'รีเซ็ต' },
+                        ].map((p) => (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => (p.key === 'today' || p.key === 'yesterday' ? applyDayPreset(p.key) : applyPreset(p.key))}
+                            className={[
+                              'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
+                              p.key === 'reset'
+                                ? 'border-rose-500/25 bg-rose-500/10 text-[color:var(--app-danger)] hover:bg-rose-500/15'
+                                : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]',
+                            ].join(' ')}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Selected range summary + inputs */}
+                    <div className="p-4">
+                      <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
+                          {(dateRange?.start || dateRange?.end) && (
+                            <button
+                              type="button"
+                              onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
+                              className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
+                            >
+                              ล้างช่วง
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
+                            {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
+                          </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                          <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
+                            {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 hidden grid-cols-2 gap-2 sm:grid">
+                          <label className="block">
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
+                            <input
+                              type="date"
+                              value={dateRange?.start || ''}
+                              onChange={(e) => setExplicitRange(e.target.value, dateRange?.end || '')}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            />
+                          </label>
+                          <label className="block">
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
+                            <input
+                              type="date"
+                              value={dateRange?.end || ''}
+                              min={dateRange?.start || undefined}
+                              onChange={(e) => setExplicitRange(dateRange?.start || '', e.target.value)}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            />
+                          </label>
+                        </div>
+
+                        {dateRange?.start && !dateRange?.end && (
+                          <button
+                            type="button"
+                            onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
+                            className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                          >
+                            ใช้วันเดียว (เริ่ม = สิ้นสุด)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Calendar */}
+                    <div className="px-4 pb-4">
+                      <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                            aria-label="เดือนก่อนหน้า"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <div className="min-w-0 flex-1 text-center">
+                            <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
+                              {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                            </div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                              {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                            aria-label="เดือนถัดไป"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3">
+                          {renderMonth(calendarMonth)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[color:var(--app-border)] bg-[var(--app-surface)] px-5 py-4 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
+                      className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                    >
+                      ล้าง
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenDropdown(null)}
+                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                    >
+                      เสร็จสิ้น
+                    </button>
+	                  </div>
+	                </div>
+	              </div>
+		            ), document.body)}
+	          </div>
+	        </div>
+	      )}
+    </div>
+  );
+
   if (bootLoading) {
     return (
       <main className="min-h-[100dvh] bg-transparent text-[color:var(--app-text)] flex items-center justify-center p-6">
@@ -986,10 +1489,10 @@ export default function TransactionsPage() {
 
   return (
     <main className="min-h-[100dvh] bg-[var(--app-bg)] text-[color:var(--app-text)]">
-      <div className="mx-auto w-full max-w-lg">
+      <div className="mx-auto w-full max-w-lg lg:max-w-6xl">
         {/* Sticky header */}
           <div className="sticky top-0 z-[40] bg-[var(--app-bg)] backdrop-blur">
-            <div className="px-4 pt-4 pb-3">
+            <div className="px-4 lg:px-6 pt-4 pb-3">
               <div className="relative flex items-center justify-between gap-3">
                 <div className="w-11 shrink-0" aria-hidden="true" />
 
@@ -1003,411 +1506,26 @@ export default function TransactionsPage() {
 	                  onClick={exportToCSV}
 	                  className="flex-row gap-2 rounded-2xl !border-emerald-500 !bg-emerald-500 !text-white shadow-sm shadow-black/10 hover:brightness-95 focus-visible:ring-emerald-400/35"
 	                />
-	              </div>
-	            </div>
+		              </div>
+		            </div>
 
-	            <div ref={filtersRef} className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1">
-                  <svg className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="ค้นหารายการ..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-12 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] py-3 pl-12 pr-4 text-sm font-semibold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowFilters(v => !v)}
-                  className={[
-                    'inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
-                    showFilters
-                      ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100 shadow-black/10 hover:bg-emerald-500/20 focus:ring-emerald-400/35'
-                      : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
-                  ].join(' ')}
-                  aria-label={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
-                  title={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
-                >
-                  <SlidersHorizontal className="h-5 w-5" />
-	                </button>
-	              </div>
-	
-	              {showFilters && (
-	                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-	                {/* Category */}
-                <div className="relative">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                    <Tag className="h-3.5 w-3.5" aria-hidden="true" />
-                    หมวดหมู่
+                {!isDesktop && (
+                  <div className="mt-4">
+                    {filtersCard}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpenDropdown(v => (v === 'category' ? null : 'category'))}
-                    className={[
-                      filterButtonBase,
-                      categoryApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
-                    ].join(' ')}
-                    aria-haspopup="listbox"
-                    aria-expanded={openDropdown === 'category'}
-                  >
-                    <span className="truncate flex-1">{selectedCategoryLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
-                      <ChevronDown className="h-4 w-4" />
-                    </span>
-                  </button>
-                  {openDropdown === 'category' && (
-                    <div className={dropdownPanelBase} role="listbox" aria-label="หมวดหมู่">
-                      <button
-                        type="button"
-                        className={[dropdownItemBase, filterCategory.length === 0 ? dropdownActive : ''].join(' ')}
-                        onClick={() => setFilterCategory([])}
-                      >
-                        <span>ทั้งหมด</span>
-                        {filterCategory.length === 0 && <span className="text-emerald-300">✓</span>}
-                      </button>
-
-                      {filterType === 'all' ? (
-                        <>
-                          {sortedCategories.expense.length > 0 && (
-                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายจ่าย</div>
-                          )}
-                          {sortedCategories.expense.map((cat) => (
-                            <button
-                              key={cat._id}
-                              type="button"
-                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
-                              onClick={() => toggleFilterCategory(cat._id)}
-                            >
-                              <span className="truncate inline-flex items-center gap-2">
-                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
-                                {cat.name}
-                              </span>
-                              {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
-                            </button>
-                          ))}
-
-                          {sortedCategories.income.length > 0 && (
-                            <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายรับ</div>
-                          )}
-                          {sortedCategories.income.map((cat) => (
-                            <button
-                              key={cat._id}
-                              type="button"
-                              className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
-                              onClick={() => toggleFilterCategory(cat._id)}
-                            >
-                              <span className="truncate inline-flex items-center gap-2">
-                                <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
-                                {cat.name}
-                              </span>
-                              {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
-                            </button>
-                          ))}
-                        </>
-                      ) : (
-                        sortedCategories.displayed.map((cat) => (
-                          <button
-                            key={cat._id}
-                            type="button"
-                            className={[dropdownItemBase, filterCategory.includes(cat._id) ? dropdownActive : ''].join(' ')}
-                            onClick={() => toggleFilterCategory(cat._id)}
-                          >
-                            <span className="truncate inline-flex items-center gap-2">
-                              <CategoryIcon iconName={cat.icon} className="w-4 h-4 text-[color:var(--app-muted)]" />
-                              {cat.name}
-                            </span>
-                            {filterCategory.includes(cat._id) && <span className="text-emerald-300">✓</span>}
-                          </button>
-                        ))
-                      )}
-
-                      <div className="my-1 h-px bg-white/10" aria-hidden="true" />
-                      <button
-                        type="button"
-                        className={[dropdownItemBase, filterCategory.includes('other') ? dropdownActive : ''].join(' ')}
-                        onClick={() => toggleFilterCategory('other')}
-                      >
-                        <span>อื่นๆ / ไม่ระบุ</span>
-                        {filterCategory.includes('other') && <span className="text-emerald-300">✓</span>}
-                      </button>
-
-                      <div className="sticky bottom-0 border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-2">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setFilterCategory([])}
-                            className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-extrabold text-slate-100 hover:bg-white/10"
-                          >
-                            ล้าง
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOpenDropdown(null)}
-                            className="flex-1 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:brightness-95"
-                          >
-                            เสร็จสิ้น
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Type */}
-                <div className="relative">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                    <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
-                    ประเภท
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpenDropdown(v => (v === 'type' ? null : 'type'))}
-                    className={[
-                      filterButtonBase,
-                      typeApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
-                    ].join(' ')}
-                    aria-haspopup="listbox"
-                    aria-expanded={openDropdown === 'type'}
-                  >
-                    <span className="truncate flex-1">{selectedTypeLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
-                      <ChevronDown className="h-4 w-4" />
-                    </span>
-                  </button>
-                  {openDropdown === 'type' && (
-                    <div className={dropdownPanelBase} role="listbox" aria-label="ประเภท">
-                      <button
-                        type="button"
-                        className={[dropdownItemBase, filterType === 'all' ? dropdownActive : ''].join(' ')}
-                        onClick={() => { setFilterType('all'); setOpenDropdown(null); }}
-                      >
-                        <span>ทั้งหมด</span>
-                        {filterType === 'all' && <span className="text-emerald-300">✓</span>}
-                      </button>
-                      <button
-                        type="button"
-                        className={[dropdownItemBase, filterType === 'expense' ? dropdownActive : ''].join(' ')}
-                        onClick={() => { setFilterType('expense'); setOpenDropdown(null); }}
-                      >
-                        <span>รายจ่าย</span>
-                        {filterType === 'expense' && <span className="text-emerald-300">✓</span>}
-                      </button>
-                      <button
-                        type="button"
-                        className={[dropdownItemBase, filterType === 'income' ? dropdownActive : ''].join(' ')}
-                        onClick={() => { setFilterType('income'); setOpenDropdown(null); }}
-                      >
-                        <span>รายรับ</span>
-                        {filterType === 'income' && <span className="text-emerald-300">✓</span>}
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Date */}
-                <div className="relative sm:col-span-2">
-                  <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                    <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-                    ช่วงเวลา
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setOpenDropdown(v => (v === 'date' ? null : 'date'))}
-                    className={[
-                      filterButtonBase,
-                      dateApplied ? 'border-emerald-400/30' : 'border-[color:var(--app-border)]',
-                    ].join(' ')}
-                    aria-haspopup="listbox"
-                    aria-expanded={openDropdown === 'date'}
-                  >
-                    <span className="truncate flex-1">{selectedDateLabel}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-[color:var(--app-muted)]">
-                      <ChevronDown className="h-4 w-4" />
-                    </span>
-                  </button>
-                  {mounted && openDropdown === 'date' && createPortal((
-                    <div
-                      className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
-                      role="dialog"
-                      aria-label="เลือกช่วงเวลา"
-                      onClick={(e) => e.target === e.currentTarget && setOpenDropdown(null)}
-                    >
-                      <div className="bg-[var(--app-surface)] w-full sm:max-w-lg sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)] flex flex-col max-h-[92dvh] sm:max-h-[88dvh]">
-                        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[color:var(--app-border)]">
-                          <div className="min-w-0">
-                            <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ตัวกรอง</div>
-                            <div className="truncate text-base font-extrabold">ช่วงเวลา</div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setOpenDropdown(null)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                            aria-label="ปิด"
-                          >
-                            <X className="h-5 w-5" aria-hidden="true" />
-                          </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto overscroll-contain">
-                          {/* Presets */}
-                          <div className="sticky top-0 z-[1] bg-[var(--app-surface)] border-b border-[color:var(--app-border)]">
-                            <div className="flex gap-2 overflow-x-auto px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                              {[
-                                { key: 'today', label: 'วันนี้' },
-                                { key: 'yesterday', label: 'เมื่อวาน' },
-                                { key: 'thisWeek', label: 'สัปดาห์นี้' },
-                                { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
-                                { key: 'last7', label: '7 วันล่าสุด' },
-                                { key: 'currentMonth', label: 'เดือนนี้' },
-                                { key: 'lastMonth', label: 'เดือนที่แล้ว' },
-                                { key: 'reset', label: 'รีเซ็ต' },
-                              ].map((p) => (
-                                <button
-                                  key={p.key}
-                                  type="button"
-                                  onClick={() => (p.key === 'today' || p.key === 'yesterday' ? applyDayPreset(p.key) : applyPreset(p.key))}
-                                  className={[
-                                    'shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-extrabold transition motion-reduce:transition-none',
-                                    p.key === 'reset'
-                                      ? 'border-rose-500/25 bg-rose-500/10 text-[color:var(--app-danger)] hover:bg-rose-500/15'
-                                      : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]',
-                                  ].join(' ')}
-                                >
-                                  {p.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Selected range summary + inputs */}
-                          <div className="p-4">
-                            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
-                                {(dateRange?.start || dateRange?.end) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                                    className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
-                                  >
-                                    ล้างช่วง
-                                  </button>
-                                )}
-                              </div>
-                              <div className="mt-2 flex items-center gap-2">
-                                <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                                  {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
-                                </div>
-                                <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
-                                <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                                  {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
-                                </div>
-                              </div>
-
-                              <div className="mt-3 grid grid-cols-2 gap-2">
-                                <label className="block">
-                                  <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
-                                  <input
-                                    type="date"
-                                    value={dateRange?.start || ''}
-                                    onChange={(e) => setExplicitRange(e.target.value, dateRange?.end || '')}
-                                    className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                                  />
-                                </label>
-                                <label className="block">
-                                  <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
-                                  <input
-                                    type="date"
-                                    value={dateRange?.end || ''}
-                                    min={dateRange?.start || undefined}
-                                    onChange={(e) => setExplicitRange(dateRange?.start || '', e.target.value)}
-                                    className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 text-sm font-extrabold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                                  />
-                                </label>
-                              </div>
-
-                              {dateRange?.start && !dateRange?.end && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
-                                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                                >
-                                  ใช้วันเดียว (เริ่ม = สิ้นสุด)
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Calendar */}
-                          <div className="px-4 pb-4">
-                            <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
-                              <div className="flex items-center justify-between gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
-                                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                                  aria-label="เดือนก่อนหน้า"
-                                >
-                                  <ChevronLeft className="h-4 w-4" />
-                                </button>
-                                <div className="min-w-0 flex-1 text-center">
-                                  <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
-                                    {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
-                                  </div>
-                                  <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                                    {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
-                                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                                  aria-label="เดือนถัดไป"
-                                >
-                                  <ChevronRight className="h-4 w-4" />
-                                </button>
-                              </div>
-
-                              <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3">
-                                {renderMonth(calendarMonth)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="border-t border-[color:var(--app-border)] bg-[var(--app-surface)] px-5 py-4 flex items-center justify-between gap-2">
-                          <button
-                            type="button"
-                            onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
-                            className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                          >
-                            ล้าง
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOpenDropdown(null)}
-                            className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
-                          >
-                            เสร็จสิ้น
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ), document.body)}
-                </div>
-              </div>
-              )}
-          </div>
+                )}
         </div>
         </div>
 
-	        <div className="px-4 py-5">
-            <div className="mb-4 flex flex-col gap-2">
+	        <div className="px-4 lg:px-6 py-5">
+	            <div className="lg:grid lg:grid-cols-12 lg:gap-6">
+	              {isDesktop && (
+	                <div className="hidden lg:block lg:col-span-4 lg:sticky lg:top-24 lg:self-start">
+	                  {filtersCard}
+	                </div>
+	              )}
+              <div className={isDesktop ? 'lg:col-span-8' : ''}>
+                <div className="mb-4 flex flex-col gap-2">
               {!selectMode && (
                 <button
                   type="button"
@@ -1420,7 +1538,7 @@ export default function TransactionsPage() {
                   <ListChecks className="h-5 w-5 opacity-80" aria-hidden="true" />
                 </button>
               )}
-            </div>
+                </div>
 	        {/* Error Message */}
 	        {error && (
 	          <div className="mb-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-200 shadow-sm">
@@ -1490,7 +1608,7 @@ export default function TransactionsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-2 space-y-3">
+	                  <div className="mt-2 grid grid-cols-1 gap-3 lg:grid-cols-2">
                     {group.items.map(txn => {
                       const isSelected = selectedTxnIds.has(txn._id);
                       const isOpen = !selectMode && openSwipeId === txn._id;
@@ -1619,13 +1737,15 @@ export default function TransactionsPage() {
         </div>
 
 					        <div className={selectMode ? 'h-40' : 'h-24'} />
-			      </div>
-			      </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
 	        {/* Bottom popup actions (multi-select) */}
 	        {mounted && selectMode && createPortal((
 		          <div className="fixed inset-x-0 bottom-0 z-[95]">
-			            <div className="mx-auto w-full max-w-lg px-0 sm:px-4 ">
+			            <div className="mx-auto w-full max-w-lg lg:max-w-6xl px-0 sm:px-4 lg:px-6">
 		              <div className="rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/30 backdrop-blur">
 	                <div className="flex items-center justify-between gap-3 px-4 pt-4">
 	                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">
@@ -1642,23 +1762,23 @@ export default function TransactionsPage() {
 	                  </button>
 	                </div>
 
-	                <div className="grid grid-cols-3 gap-3 p-3 pt-3">
-	                  <button
-	                    type="button"
-	                    onClick={() => setShowBulkCategoryModal(true)}
-	                    disabled={!canBulkEditCategory}
-	                    className={[
-	                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
-	                      canBulkEditCategory
-	                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30'
-	                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed',
-	                    ].join(' ')}
-	                    title={canBulkEditCategory ? 'แก้หมวดหมู่' : 'เลือกได้เฉพาะรายการประเภทเดียว (รายรับหรือรายจ่าย)'}
-	                  >
-	                    <span className="inline-flex items-center justify-center gap-2">
-	                      <Tag className="h-5 w-5" aria-hidden="true" />
-	                      แก้หมวด
-	                    </span>
+		                <div className="grid grid-cols-3 gap-3 p-3 pt-3">
+		                  <button
+		                    type="button"
+		                    onClick={() => setShowBulkCategoryModal(true)}
+		                    disabled={selectedCount === 0}
+		                    className={[
+		                      'rounded-2xl border px-3 py-4 text-sm font-extrabold shadow-sm transition focus:outline-none focus:ring-2 motion-reduce:transition-none',
+		                      selectedCount === 0
+		                        ? 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
+		                        : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
+		                    ].join(' ')}
+		                    title={selectedCount === 0 ? 'เลือกอย่างน้อย 1 รายการ' : 'แก้ประเภท/หมวดหมู่ของรายการที่เลือก'}
+		                  >
+		                    <span className="inline-flex items-center justify-center gap-2">
+		                      <Tag className="h-5 w-5" aria-hidden="true" />
+		                      แก้หมวด
+		                    </span>
 	                  </button>
 
 	                  <button
@@ -1707,27 +1827,122 @@ export default function TransactionsPage() {
 	          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
           onClick={(e) => e.target === e.currentTarget && setShowBulkCategoryModal(false)}
         >
-          <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
-            <div className="px-5 pt-5 pb-4">
-              <div className="text-sm font-extrabold">แก้หมวด ({selectedCount})</div>
-              <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
-                {canBulkEditCategory ? `ประเภท: ${bulkType === 'income' ? 'รายรับ' : 'รายจ่าย'}` : 'เลือกได้เฉพาะรายการประเภทเดียว'}
-              </div>
+	          <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
+	            <div className="px-5 pt-5 pb-4">
+	              <div className="text-sm font-extrabold">แก้หมวด ({selectedCount})</div>
+	              <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
+	                เลือกประเภทปลายทาง แล้วเลือกหมวดหมู่
+	              </div>
 
-              <div className="mt-4">
-                <label className="text-xs font-bold text-[color:var(--app-muted)]">หมวดหมู่</label>
-                <select
-                  value={bulkCategoryId}
-                  onChange={(e) => setBulkCategoryId(e.target.value)}
-                  disabled={!canBulkEditCategory}
-                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-sm font-semibold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                >
-                  {bulkCategories.map((c) => (
-                    <option key={c._id} value={c._id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                {selectionHasMixedTypes ? (
+                  <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
+                    <div className="text-[11px] font-extrabold text-amber-300">คำเตือน</div>
+                    <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-text)]">
+                      รายการที่เลือกมีทั้งรายรับและรายจ่าย ระบบจะปรับเป็น
+                      {' '}
+                      <span className="font-extrabold text-slate-200">
+                        {bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                      </span>
+                      {' '}
+                      ทั้งหมด
+                    </div>
+                  </div>
+                ) : null}
+
+                  <div className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 shadow-sm shadow-black/10">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">ตั้งค่าปลายทาง</div>
+                        <div className="mt-0.5 truncate text-sm font-extrabold text-[color:var(--app-text)]">ประเภท + หมวดหมู่</div>
+                      </div>
+                      <div className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+                        <div className="text-[10px] font-extrabold text-[color:var(--app-muted-2)]">ใช้กับ</div>
+                        <div className="text-sm font-extrabold text-slate-100">{selectedCount} รายการ</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-xs font-bold text-[color:var(--app-muted)]">ประเภทปลายทาง</label>
+                      <div className="mt-2 flex rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-1">
+                        <button
+                          type="button"
+                          onClick={() => setBulkTargetType('expense')}
+                          className={[
+                            'flex-1 px-4 py-2 text-sm font-extrabold rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                            bulkTargetType === 'expense'
+                              ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25'
+                              : 'text-slate-300 hover:text-slate-100',
+                          ].join(' ')}
+                        >
+                          รายจ่าย
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBulkTargetType('income')}
+                          className={[
+                            'flex-1 px-4 py-2 text-sm font-extrabold rounded-2xl transition focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+                            bulkTargetType === 'income'
+                              ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25'
+                              : 'text-slate-300 hover:text-slate-100',
+                          ].join(' ')}
+                        >
+                          รายรับ
+                        </button>
+                      </div>
+                      <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                        เลือกแล้ว: <span className="font-extrabold text-slate-200">{bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="text-xs font-bold text-[color:var(--app-muted)]">หมวดหมู่ปลายทาง</label>
+
+                      {(bulkCategories || []).length === 0 ? (
+                        <div className="mt-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-extrabold text-amber-300">
+                                {bulkTargetType === 'income' ? 'ยังไม่มีหมวดรายรับ' : 'ยังไม่มีหมวดรายจ่าย'}
+                              </div>
+                              <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-text)]">
+                                ไปเพิ่มหมวดในหน้า “งบประมาณ” ก่อน แล้วกลับมาเลือกใหม่
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowBulkCategoryModal(false);
+                                  window.location.href = '/budget';
+                                }}
+                                className="mt-3 inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                              >
+                                ไปหน้า งบประมาณ
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-2 relative">
+                            <select
+                              value={bulkCategoryId}
+                              onChange={(e) => setBulkCategoryId(e.target.value)}
+                              className="h-12 w-full appearance-none rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 pr-11 text-sm font-semibold text-[color:var(--app-text)] shadow-sm hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                            >
+                              {bulkCategories.map((c) => (
+                                <option key={c._id} value={c._id}>{c.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--app-muted)]" aria-hidden="true" />
+                          </div>
+                          <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                            มี {bulkCategories.length} หมวด{bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+		            </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4 bg-[var(--app-surface)]">
               <button
@@ -1737,43 +1952,64 @@ export default function TransactionsPage() {
               >
                 ยกเลิก
               </button>
-              <button
-                type="button"
-                onClick={handleBulkUpdateCategory}
-                disabled={!canBulkEditCategory || !bulkCategoryId}
-                className={[
-                  'rounded-2xl px-4 py-3 text-sm font-extrabold shadow-sm',
-                  (!canBulkEditCategory || !bulkCategoryId)
-                    ? 'bg-emerald-500/30 text-slate-950/50 cursor-not-allowed'
-                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
-                ].join(' ')}
-              >
-                บันทึก
-              </button>
+	              <button
+	                type="button"
+	                onClick={handleBulkUpdateCategory}
+	                disabled={!canBulkSaveCategory}
+	                className={[
+	                  'rounded-2xl px-4 py-3 text-sm font-extrabold shadow-sm',
+	                  (!canBulkSaveCategory)
+	                    ? 'bg-emerald-500/30 text-slate-950/50 cursor-not-allowed'
+	                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
+	                ].join(' ')}
+	              >
+	                บันทึก
+	              </button>
             </div>
           </div>
         </div>
       ), document.body)}
 
       {/* Bulk Date Modal */}
-      {mounted && showBulkDateModal && createPortal((
-        <div
-          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
-          onClick={(e) => e.target === e.currentTarget && setShowBulkDateModal(false)}
-        >
+	      {mounted && showBulkDateModal && createPortal((
+	        <div
+	          className="fixed inset-0 z-[9999] bg-slate-950/30 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
+	          onClick={(e) => e.target === e.currentTarget && setShowBulkDateModal(false)}
+	        >
           <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
-            <div className="px-5 pt-5 pb-4">
-              <div className="text-sm font-extrabold">แก้วันที่ ({selectedCount})</div>
-              <div className="mt-4">
-                <label className="text-xs font-bold text-[color:var(--app-muted)]">วันที่</label>
-                <input
-                  type="date"
-                  value={bulkDate}
-                  onChange={(e) => setBulkDate(e.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-sm font-semibold text-[color:var(--app-text)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                />
-              </div>
-            </div>
+	            <div className="px-5 pt-5 pb-4">
+	              <div className="text-sm font-extrabold">แก้วันที่ ({selectedCount})</div>
+	              <div className="mt-4">
+	                <label className="text-xs font-bold text-[color:var(--app-muted)]">วันที่</label>
+	                <button
+	                  type="button"
+	                  onClick={openBulkDatePicker}
+	                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-left focus:outline-none focus:ring-2 focus:ring-emerald-400/30 hover:bg-[var(--app-surface-3)] transition flex items-center justify-between gap-3"
+	                  aria-label="เปิดปฏิทินเลือกวันที่"
+	                >
+	                  <div className="min-w-0">
+	                    <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">
+	                      {(() => {
+	                        const iso = String(bulkDate || '');
+	                        if (!iso) return 'เลือกวันที่';
+	                        const today = toLocalISODateKey(Date.now());
+	                        try {
+	                          const d = new Date(`${iso}T00:00:00`);
+	                          const label = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+	                          return iso === today ? `วันนี้, ${label}` : label;
+	                        } catch {
+	                          return iso;
+	                        }
+	                      })()}
+	                    </div>
+	                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+	                  </div>
+	                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
+	                    <CalendarDays className="h-5 w-5" aria-hidden="true" />
+	                  </div>
+	                </button>
+	              </div>
+	            </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4 bg-[var(--app-surface)]">
               <button
@@ -1797,15 +2033,177 @@ export default function TransactionsPage() {
                 บันทึก
               </button>
             </div>
-          </div>
-        </div>
-      ), document.body)}
+	          </div>
+	        </div>
+	      ), document.body)}
 
-      {/* Delete Confirm Modal */}
-      {mounted && showDeleteConfirmModal && createPortal((
-        <div
-          className="fixed inset-0 z-[10000] bg-slate-950/45 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
-          onClick={(e) => e.target === e.currentTarget && !deleteLoading && setShowDeleteConfirmModal(false)}
+	      {/* Bulk Date Picker Modal (custom calendar) */}
+	      {mounted && showBulkDatePicker && createPortal((
+	        <div
+	          className="fixed inset-0 z-[10002] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
+	          onClick={(e) => e.target === e.currentTarget && setShowBulkDatePicker(false)}
+	        >
+	          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
+	            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+	              <div>
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกวันที่</div>
+	                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แก้หลายรายการพร้อมกัน (เลือกย้อนหลัง/ล่วงหน้าได้ สูงสุด 1 ปี)</div>
+	              </div>
+	              <button
+	                type="button"
+	                onClick={() => setShowBulkDatePicker(false)}
+	                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+	                aria-label="ปิด"
+	              >
+	                <X className="h-5 w-5" aria-hidden="true" />
+	              </button>
+	            </div>
+
+	            {(() => {
+	              const FUTURE_DAYS_LIMIT = 365;
+	              const todayKey = toLocalISODateKey(Date.now());
+	              const maxKey = toLocalISODateKey(Date.now() + FUTURE_DAYS_LIMIT * 86400000);
+	              const todayParsed = parseISODateKey(todayKey) || { year: new Date().getFullYear(), monthIndex: new Date().getMonth(), day: new Date().getDate() };
+	              const maxParsed = parseISODateKey(maxKey) || todayParsed;
+	              const selectedParsed = parseISODateKey(bulkDate) || todayParsed;
+	              const { year, monthIndex } = bulkDatePickerMonth || selectedParsed;
+
+	              const firstWeekday = new Date(year, monthIndex, 1).getDay();
+	              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+	              const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
+	              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+	              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+	              const isBeyondMax = (d) => {
+	                const iso = toISOFromParts(year, monthIndex, d);
+	                return iso > maxKey;
+	              };
+
+	              const selectDay = (d) => {
+	                if (isBeyondMax(d)) return;
+	                const iso = toISOFromParts(year, monthIndex, d);
+	                setBulkDate(iso);
+	                setShowBulkDatePicker(false);
+	              };
+
+	              const goPrev = () => {
+	                const m = monthIndex - 1;
+	                if (m >= 0) setBulkDatePickerMonth({ year, monthIndex: m });
+	                else setBulkDatePickerMonth({ year: year - 1, monthIndex: 11 });
+	              };
+
+	              const goNext = () => {
+	                if (!canGoNext) return;
+	                const m = monthIndex + 1;
+	                if (m <= 11) setBulkDatePickerMonth({ year, monthIndex: m });
+	                else setBulkDatePickerMonth({ year: year + 1, monthIndex: 0 });
+	              };
+
+	              const cells = [];
+	              for (let i = 0; i < firstWeekday; i++) cells.push(null);
+	              for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+	              while (cells.length % 7 !== 0) cells.push(null);
+
+	              return (
+	                <>
+	                  <div className="px-5 pt-4">
+	                    <div className="flex items-center justify-between gap-2">
+	                      <button
+	                        type="button"
+	                        onClick={goPrev}
+	                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+	                        aria-label="เดือนก่อนหน้า"
+	                      >
+	                        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+	                      </button>
+
+	                      <div className="min-w-0 flex-1 text-center">
+	                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{monthLabel}</div>
+	                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
+	                      </div>
+
+	                      <button
+	                        type="button"
+	                        onClick={goNext}
+	                        disabled={!canGoNext}
+	                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
+	                        aria-label="เดือนถัดไป"
+	                      >
+	                        <ChevronRight className="h-5 w-5" aria-hidden="true" />
+	                      </button>
+	                    </div>
+
+	                    <div className="mt-4 grid grid-cols-7 gap-1.5">
+	                      {weekdayTH.map((w) => (
+	                        <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted)]">
+	                          {w}
+	                        </div>
+	                      ))}
+
+	                      {cells.map((d, idx) => {
+	                        if (!d) return <div key={`e-${idx}`} className="h-10" />;
+	                        const iso = toISOFromParts(year, monthIndex, d);
+	                        const selected = iso === String(bulkDate || '');
+	                        const today = iso === todayKey;
+	                        const disabled = iso > maxKey;
+	                        return (
+	                          <button
+	                            key={iso}
+	                            type="button"
+	                            onClick={() => selectDay(d)}
+	                            disabled={disabled}
+	                            className={[
+	                              'h-10 rounded-2xl text-sm font-extrabold transition',
+	                              'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+	                              disabled
+	                                ? 'bg-white/0 text-white/25 cursor-not-allowed'
+	                                : selected
+	                                  ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
+	                                  : today
+	                                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
+	                                    : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
+	                            ].join(' ')}
+	                            aria-pressed={selected}
+	                            aria-label={`เลือกวันที่ ${d}`}
+	                          >
+	                            {d}
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                  </div>
+
+	                  <div className="mt-5 border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        setBulkDate(todayKey);
+	                        setShowBulkDatePicker(false);
+	                      }}
+	                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+	                    >
+	                      วันนี้
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={() => setShowBulkDatePicker(false)}
+	                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+	                    >
+	                      เสร็จสิ้น
+	                    </button>
+	                  </div>
+	                </>
+	              );
+	            })()}
+	          </div>
+	        </div>
+	      ), document.body)}
+
+	      {/* Delete Confirm Modal */}
+	      {mounted && showDeleteConfirmModal && createPortal((
+	        <div
+	          className="fixed inset-0 z-[10000] bg-slate-950/45 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
+	          onClick={(e) => e.target === e.currentTarget && !deleteLoading && setShowDeleteConfirmModal(false)}
         >
           <div
             className="bg-[var(--app-surface)] w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]"
@@ -1982,14 +2380,31 @@ export default function TransactionsPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
-                <input
-                  type="date"
-                  value={editFormData.date}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, date: e.target.value }))}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                />
+                <button
+                  type="button"
+                  onClick={openEditDatePicker}
+                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 hover:bg-white/10 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
+                  aria-label="เปิดปฏิทินเลือกวันที่"
+                >
+                  <div className="text-left min-w-0">
+                    <div className="text-sm font-extrabold text-slate-100 truncate">
+                      {(() => {
+                        const iso = String(editFormData.date || '');
+                        if (!iso) return 'เลือกวันที่';
+                        try {
+                          const d = new Date(`${iso}T00:00:00`);
+                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+                        } catch {
+                          return iso;
+                        }
+                      })()}
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+                  </div>
+                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
+                    <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                </button>
               </div>
 
 	              <div>
@@ -2027,6 +2442,168 @@ export default function TransactionsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Edit Date Picker Modal (custom calendar) */}
+      {mounted && showEditDatePicker && createPortal((
+        <div
+          className="fixed inset-0 z-[10001] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
+          onClick={(e) => e.target === e.currentTarget && setShowEditDatePicker(false)}
+        >
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+              <div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกวันที่</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เลือกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditDatePicker(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                aria-label="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            {(() => {
+              const FUTURE_DAYS_LIMIT = 365;
+              const todayKey = toLocalISODateKey(Date.now());
+              const maxKey = toLocalISODateKey(Date.now() + FUTURE_DAYS_LIMIT * 86400000);
+              const todayParsed = parseISODateKey(todayKey) || { year: new Date().getFullYear(), monthIndex: new Date().getMonth(), day: new Date().getDate() };
+              const maxParsed = parseISODateKey(maxKey) || todayParsed;
+              const selectedParsed = parseISODateKey(editFormData?.date) || todayParsed;
+              const { year, monthIndex } = editDatePickerMonth || selectedParsed;
+
+              const firstWeekday = new Date(year, monthIndex, 1).getDay();
+              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+              const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
+              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+              const isBeyondMax = (d) => {
+                const iso = toISOFromParts(year, monthIndex, d);
+                return iso > maxKey;
+              };
+
+              const selectDay = (d) => {
+                if (isBeyondMax(d)) return;
+                const iso = toISOFromParts(year, monthIndex, d);
+                setEditFormData((prev) => ({ ...prev, date: iso }));
+                setShowEditDatePicker(false);
+              };
+
+              const goPrev = () => {
+                const m = monthIndex - 1;
+                if (m >= 0) setEditDatePickerMonth({ year, monthIndex: m });
+                else setEditDatePickerMonth({ year: year - 1, monthIndex: 11 });
+              };
+
+              const goNext = () => {
+                if (!canGoNext) return;
+                const m = monthIndex + 1;
+                if (m <= 11) setEditDatePickerMonth({ year, monthIndex: m });
+                else setEditDatePickerMonth({ year: year + 1, monthIndex: 0 });
+              };
+
+              const cells = [];
+              for (let i = 0; i < firstWeekday; i++) cells.push(null);
+              for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+              while (cells.length % 7 !== 0) cells.push(null);
+
+              return (
+                <>
+                  <div className="px-5 pt-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={goPrev}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        aria-label="เดือนก่อนหน้า"
+                      >
+                        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                      </button>
+
+                      <div className="min-w-0 flex-1 text-center">
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{monthLabel}</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={goNext}
+                        disabled={!canGoNext}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
+                        aria-label="เดือนถัดไป"
+                      >
+                        <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                      </button>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-7 gap-1.5">
+                      {weekdayTH.map((w) => (
+                        <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted)]">
+                          {w}
+                        </div>
+                      ))}
+
+                      {cells.map((d, idx) => {
+                        if (!d) return <div key={`e-${idx}`} className="h-10" />;
+                        const iso = toISOFromParts(year, monthIndex, d);
+                        const selected = iso === String(editFormData?.date || '');
+                        const today = iso === todayKey;
+                        const disabled = iso > maxKey;
+                        return (
+                          <button
+                            key={iso}
+                            type="button"
+                            onClick={() => selectDay(d)}
+                            disabled={disabled}
+                            className={[
+                              'h-10 rounded-2xl text-sm font-extrabold transition',
+                              'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                              disabled
+                                ? 'bg-white/0 text-white/25 cursor-not-allowed'
+                                : selected
+                                  ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
+                                  : today
+                                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
+                                    : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
+                            ].join(' ')}
+                            aria-pressed={selected}
+                            aria-label={`เลือกวันที่ ${d}`}
+                          >
+                            {d}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditFormData((prev) => ({ ...prev, date: todayKey }));
+                        setShowEditDatePicker(false);
+                      }}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                    >
+                      วันนี้
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditDatePicker(false)}
+                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                    >
+                      เสร็จสิ้น
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       ), document.body)}

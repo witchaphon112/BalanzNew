@@ -84,10 +84,12 @@ export default function Analytics() {
   const [currentMonthIndex, setCurrentMonthIndex] = useState(() => initialMonthIndex); // เริ่มที่เดือนปัจจุบัน
   const [compareMonthIndex, setCompareMonthIndex] = useState(() => Math.max(0, initialMonthIndex - 1));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerTarget, setMonthPickerTarget] = useState('current'); // 'current' | 'compare'
   const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [overviewMode, setOverviewMode] = useState('monthly'); // 'daily' | 'monthly'
+  const [expenseShareMode, setExpenseShareMode] = useState('top'); // 'top' | 'all'
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -105,6 +107,7 @@ export default function Analytics() {
 
   const selectedMonthObj = monthList[currentMonthIndex];
   const compareMonthObj = monthList[compareMonthIndex];
+  const activeMonthIndex = monthPickerTarget === 'compare' ? compareMonthIndex : currentMonthIndex;
 
   const monthIndexMap = useMemo(() => {
     const map = new Map();
@@ -362,6 +365,59 @@ export default function Analytics() {
     };
   }, [dailySeries, isMobile]);
 
+  const monthlySeries = useMemo(() => {
+    const totalsByKey = new Map(); // key: `${yyyy}-${mm}` where mm is 0-11
+    (transactions || []).forEach((t) => {
+      if (!t?.date) return;
+      const d = new Date(t.date);
+      if (Number.isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const row = totalsByKey.get(key) || { income: 0, expense: 0 };
+      if (t.type === 'income') row.income += Number(t.amount) || 0;
+      else row.expense += Number(t.amount) || 0;
+      totalsByKey.set(key, row);
+    });
+
+    const end = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : new Date();
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    const windowSize = isMobile ? 6 : 12;
+    const fmt = new Intl.DateTimeFormat('th-TH', { month: 'short', year: '2-digit' });
+
+    const labels = [];
+    const income = [];
+    const expense = [];
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (let i = windowSize - 1; i >= 0; i--) {
+      const d = new Date(endMonth.getFullYear(), endMonth.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      const row = totalsByKey.get(key) || { income: 0, expense: 0 };
+      labels.push(fmt.format(d));
+      income.push(row.income);
+      expense.push(row.expense);
+      totalIncome += row.income;
+      totalExpense += row.expense;
+    }
+
+    return { labels, income, expense, totalIncome, totalExpense, windowSize };
+  }, [transactions, selectedMonthObj, isMobile]);
+
+  const overviewTotals = useMemo(() => {
+    if (overviewMode === 'monthly') {
+      return {
+        income: monthlySeries.totalIncome,
+        expense: monthlySeries.totalExpense,
+        label: `${monthlySeries.windowSize} เดือนล่าสุด`,
+      };
+    }
+    return {
+      income: summary.income,
+      expense: summary.expense,
+      label: selectedMonthObj?.label || 'เดือนที่เลือก',
+    };
+  }, [overviewMode, monthlySeries, summary.income, summary.expense, selectedMonthObj]);
+
   // --- CHART CONFIG ---
   const pieLabels = useMemo(() => Object.keys(expenseByCategory), [expenseByCategory]);
   const pieValues = useMemo(() => Object.values(expenseByCategory), [expenseByCategory]);
@@ -399,14 +455,23 @@ export default function Analytics() {
         ]
       }
     : {
-        labels: ['รายรับ', 'รายจ่าย'],
-        datasets: [{
-          label: 'จำนวนเงิน (บาท)',
-          data: [summary.income, summary.expense],
-          backgroundColor: ['#22c55e', '#f43f5e'],
-          borderRadius: 12,
-          barThickness: 56,
-        }]
+        labels: monthlySeries.labels,
+        datasets: [
+          {
+            label: 'รายรับ',
+            data: monthlySeries.income,
+            backgroundColor: '#22c55e',
+            borderRadius: 10,
+            barThickness: 18,
+          },
+          {
+            label: 'รายจ่าย',
+            data: monthlySeries.expense,
+            backgroundColor: '#f43f5e',
+            borderRadius: 10,
+            barThickness: 18,
+          },
+        ],
       };
 
   const barChartOptions = {
@@ -426,26 +491,37 @@ export default function Analytics() {
           title: (items) => {
             const first = items?.[0];
             if (!first) return '';
-            return overviewMode === 'daily' ? String(first.label || '') : '';
+            return String(first.label || '');
           },
           label: (ctx) => {
             const v = ctx.raw ?? 0;
-            return `฿ ${formatCurrency(v)}`;
+            const label = ctx?.dataset?.label ? `${ctx.dataset.label}: ` : '';
+            return `${label}฿ ${formatCurrency(v)}`;
           }
         }
       }
     },
     interaction: { mode: 'index', intersect: false },
-    scales: overviewMode === 'daily'
-      ? {
-          y: {
-            display: true,
-            grid: { color: 'rgba(255, 255, 255, 0.08)' },
-            ticks: { color: 'rgba(226, 232, 240, 0.7)', maxTicksLimit: isMobile ? 4 : 6, callback: (v) => formatCurrency(v) }
-          },
-          x: { grid: { display: false }, ticks: { color: 'rgba(148, 163, 184, 0.8)', maxRotation: 0, autoSkip: true, maxTicksLimit: isMobile ? 6 : 12 } }
-        }
-      : { y: { display: false, grid: { display: false } }, x: { grid: { display: false }, ticks: { color: 'rgba(148, 163, 184, 0.8)' } } },
+    scales: {
+      y: {
+        display: true,
+        grid: { color: 'rgba(255, 255, 255, 0.08)' },
+        ticks: {
+          color: 'rgba(226, 232, 240, 0.7)',
+          maxTicksLimit: isMobile ? 4 : 6,
+          callback: (v) => formatCurrency(v),
+        },
+      },
+      x: {
+        grid: { display: false },
+        ticks: {
+          color: 'rgba(148, 163, 184, 0.8)',
+          maxRotation: overviewMode === 'daily' ? 0 : 0,
+          autoSkip: true,
+          maxTicksLimit: overviewMode === 'daily' ? (isMobile ? 6 : 12) : (isMobile ? 6 : 12),
+        },
+      },
+    },
   };
 
   const pieChartOptions = useMemo(() => ({
@@ -482,6 +558,13 @@ export default function Analytics() {
       .map(([name, amount]) => ({ name, amount: amount || 0 }));
     return items;
   }, [expenseByCategory, isMobile]);
+
+  const expenseListAll = useMemo(() => {
+    const items = Object.entries(expenseByCategory)
+      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+      .map(([name, amount]) => ({ name, amount: amount || 0 }));
+    return items;
+  }, [expenseByCategory]);
 
   const compareLineData = useMemo(() => {
     const labelA = compareMonthObj?.label || 'เดือนที่เลือก';
@@ -563,7 +646,7 @@ export default function Analytics() {
         ticks: { display: false },
       },
     },
-  }), [compareExpenseDaily.labels, formatTHB]);
+	  }), [compareExpenseDaily.labels]);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
@@ -573,7 +656,7 @@ export default function Analytics() {
 
   return (
     <main className="fixed inset-0 bg-[var(--app-bg)] text-[color:var(--app-text)] overflow-y-auto">
-      <div className="mx-auto w-full max-w-lg px-4 py-5 pb-24 space-y-4">
+      <div className="mx-auto w-full max-w-lg px-4 py-5 pb-24 space-y-4 lg:max-w-6xl lg:px-6 lg:space-y-6">
         {/* Header */}
         <div className="text-center">
           <h1 className="text-xl font-extrabold text-[color:var(--app-text)]">ภาพรวมการเงิน</h1>
@@ -597,6 +680,7 @@ export default function Analytics() {
               type="button"
               onClick={() => {
                 const d = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : new Date();
+                setMonthPickerTarget('current');
                 setMonthPickerYear(d.getFullYear());
                 setShowMonthPicker(true);
               }}
@@ -629,8 +713,12 @@ export default function Analytics() {
             <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
               <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
                 <div>
-                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกเดือน</div>
-                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+                    {monthPickerTarget === 'compare' ? 'เลือกเดือน (เทียบกับ)' : 'เลือกเดือน'}
+                  </div>
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">
+                    {monthPickerTarget === 'compare' ? 'แตะเพื่อเลือกเดือนสำหรับเปรียบเทียบ' : 'แตะเพื่อดูสรุปของเดือนนั้น'}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -680,7 +768,7 @@ export default function Analytics() {
 
                 <div className="mt-4 grid grid-cols-3 gap-2">
                   {monthPickerMonthsForYear.map((m) => {
-                    const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
+                    const isActive = typeof m.idx === 'number' && m.idx === activeMonthIndex;
                     const disabled = m.idx == null;
                     return (
                       <button
@@ -688,7 +776,10 @@ export default function Analytics() {
                         type="button"
                         disabled={disabled}
                         onClick={() => {
-                          if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
+                          if (typeof m.idx === 'number') {
+                            if (monthPickerTarget === 'compare') setCompareMonthIndex(m.idx);
+                            else setCurrentMonthIndex(m.idx);
+                          }
                           setShowMonthPicker(false);
                         }}
                         className={[
@@ -714,7 +805,10 @@ export default function Analytics() {
                   onClick={() => {
                     const now = new Date();
                     const idx = monthIndexMap.get(`${now.getFullYear()}-${now.getMonth()}`);
-                    if (typeof idx === 'number') setCurrentMonthIndex(idx);
+                    if (typeof idx === 'number') {
+                      if (monthPickerTarget === 'compare') setCompareMonthIndex(idx);
+                      else setCurrentMonthIndex(idx);
+                    }
                     setShowMonthPicker(false);
                   }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
@@ -740,7 +834,7 @@ export default function Analytics() {
         )}
 
         {/* Summary (stack like reference) */}
-        <div className="space-y-3">
+        <div className="space-y-3 sm:grid sm:grid-cols-3 sm:gap-3 sm:space-y-0">
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -779,9 +873,9 @@ export default function Analytics() {
         </div>
 
         {/* Charts */}
-	        <div className="space-y-3">
+	        <div className="space-y-3 lg:grid lg:grid-flow-dense lg:grid-cols-12 lg:gap-6 lg:space-y-0">
 	          {/* Compare expenses between 2 months */}
-	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
+	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-7 xl:col-span-8">
 	            <div className="flex items-start justify-between gap-3">
 	              <div className="min-w-0">
 	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เทียบรายจ่าย</div>
@@ -813,18 +907,20 @@ export default function Analytics() {
 	                        เทียบเดือน
 	                      </div>
 	                    </div>
-	                    <select
-	                      value={compareMonthIndex}
-	                      onChange={(e) => setCompareMonthIndex(Math.max(0, Math.min(monthList.length - 1, Number(e.target.value) || 0)))}
-	                      className="h-10 max-w-[170px] rounded-2xl border border-white/10 bg-[var(--app-surface)] px-3 text-[11px] font-extrabold text-slate-100 shadow-sm hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        const d = compareMonthObj?.value instanceof Date ? compareMonthObj.value : new Date();
+	                        setMonthPickerTarget('compare');
+	                        setMonthPickerYear(d.getFullYear());
+	                        setShowMonthPicker(true);
+	                      }}
+	                      className="h-10 max-w-[190px] rounded-2xl border border-white/10 bg-[var(--app-surface)] px-3 text-[11px] font-extrabold text-slate-100 shadow-sm hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 truncate"
 	                      aria-label="เลือกเดือนสำหรับเปรียบเทียบ"
+	                      aria-expanded={showMonthPicker && monthPickerTarget === 'compare'}
 	                    >
-	                      {monthList.map((m, idx) => (
-	                        <option key={`${m.label}-${idx}`} value={idx}>
-	                          {m.label}
-	                        </option>
-	                      ))}
-	                    </select>
+	                      {compareMonthObj?.label || 'เลือกเดือน'}
+	                    </button>
 	                  </div>
 
 	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">ใช้จ่ายไป</div>
@@ -882,64 +978,118 @@ export default function Analytics() {
 	            </div>
 	          </div>
 
-          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">กราฟรายรับ-รายจ่าย</div>
-                <div className="text-xs font-semibold text-slate-400">แตะ/วางเมาส์บนแท่งเพื่อดูรายละเอียด</div>
-              </div>
-              <div className="inline-flex items-center rounded-full bg-white/5 p-1 ring-1 ring-white/10">
-                <button
-                  type="button"
-                  onClick={() => setOverviewMode('daily')}
-                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'daily' ? 'bg-white/10 text-[color:var(--app-text)]' : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]'}`}
-                >
-                  รายวัน
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOverviewMode('monthly')}
-                  className={`px-3 py-1.5 text-xs font-extrabold rounded-full transition ${overviewMode === 'monthly' ? 'bg-white/10 text-[color:var(--app-text)]' : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]'}`}
-                >
-                  รวมเดือน
-                </button>
-              </div>
-            </div>
+	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-7 xl:col-span-8">
+	            <div className="flex items-center justify-between gap-3">
+	              <div className="min-w-0">
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">กราฟรายรับ-รายจ่าย</div>
+	                <div className="text-xs font-semibold text-slate-400">
+	                  {overviewMode === 'daily'
+	                    ? `รายวัน • ${overviewTotals.label}`
+	                    : `รายเดือน • ${overviewTotals.label} (สิ้นสุดที่ ${selectedMonthObj?.label || 'เดือนที่เลือก'})`}
+	                </div>
+	              </div>
+	              <div className="relative inline-flex items-center rounded-full bg-white/5 p-1 ring-1 ring-white/10 shrink-0">
+	                <span
+	                  className={[
+	                    'absolute inset-y-1 rounded-full bg-white/10 transition-all duration-300',
+	                    overviewMode === 'daily'
+	                      ? 'left-1 w-[calc(50%-4px)]'
+	                      : 'left-[calc(50%+4px)] w-[calc(50%-4px)]',
+	                  ].join(' ')}
+	                  aria-hidden="true"
+	                />
+	                <button
+	                  type="button"
+	                  onClick={() => setOverviewMode('daily')}
+	                  aria-pressed={overviewMode === 'daily'}
+	                  className={[
+	                    'relative z-10 px-3 py-1.5 text-xs font-extrabold rounded-full transition min-w-[84px] text-center',
+	                    overviewMode === 'daily'
+	                      ? 'text-[color:var(--app-text)]'
+	                      : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]',
+	                  ].join(' ')}
+	                >
+	                  รายวัน
+	                </button>
+	                <button
+	                  type="button"
+	                  onClick={() => setOverviewMode('monthly')}
+	                  aria-pressed={overviewMode === 'monthly'}
+	                  className={[
+	                    'relative z-10 px-3 py-1.5 text-xs font-extrabold rounded-full transition min-w-[84px] text-center',
+	                    overviewMode === 'monthly'
+	                      ? 'text-[color:var(--app-text)]'
+	                      : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]',
+	                  ].join(' ')}
+	                >
+	                  รวมเดือน
+	                </button>
+	              </div>
+	            </div>
 
-            <div className="mt-4 h-56">
-              <Bar data={barData} options={barChartOptions} />
-            </div>
+	            <div className="mt-4">
+	              {overviewMode === 'daily' && dailySeries.labels.length === 0 ? (
+	                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
+	                  ไม่มีรายการในเดือนนี้
+	                </div>
+	              ) : (
+	                <div className="h-56">
+	                  <Bar data={barData} options={barChartOptions} />
+	                </div>
+	              )}
+	            </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-300">
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />รายรับ</span>
-              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />รายจ่าย</span>
-            </div>
+	            <div className="mt-4 grid grid-cols-3 gap-2">
+	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
+	                <div className="text-[11px] font-extrabold text-slate-400">รายรับ</div>
+	                <div className="mt-1 text-sm font-extrabold text-emerald-200">{formatTHB(overviewTotals.income, { decimals: 0 })}</div>
+	              </div>
+	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
+	                <div className="text-[11px] font-extrabold text-slate-400">รายจ่าย</div>
+	                <div className="mt-1 text-sm font-extrabold text-rose-200">{formatTHB(overviewTotals.expense, { decimals: 0 })}</div>
+	              </div>
+	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
+	                <div className="text-[11px] font-extrabold text-slate-400">คงเหลือ</div>
+	                <div
+	                  className={[
+	                    'mt-1 text-sm font-extrabold',
+	                    (overviewTotals.income - overviewTotals.expense) >= 0 ? 'text-emerald-100' : 'text-rose-100',
+	                  ].join(' ')}
+	                >
+	                  {formatTHB(overviewTotals.income - overviewTotals.expense, { decimals: 0 })}
+	                </div>
+	              </div>
+	            </div>
 
-            {overviewMode === 'daily' && dailySeries.labels.length > dailySeriesDisplay.labels.length && (
-              <div className="mt-2 text-[11px] font-semibold text-slate-400">
-                แสดงเฉพาะ {dailySeriesDisplay.labels.length} วันล่าสุดเพื่อให้อ่านง่าย
-              </div>
-            )}
-          </div>
+	            <div className="mt-3 flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-300">
+	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />รายรับ</span>
+	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />รายจ่าย</span>
+	            </div>
 
-          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
+	            {overviewMode === 'daily' && dailySeries.labels.length > dailySeriesDisplay.labels.length && (
+	              <div className="mt-2 text-[11px] font-semibold text-slate-400">
+	                แสดงเฉพาะ {dailySeriesDisplay.labels.length} วันล่าสุดเพื่อให้อ่านง่าย
+	              </div>
+	            )}
+	          </div>
+
+          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-5 xl:col-span-4 lg:row-span-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-sm font-extrabold text-[color:var(--app-text)]">สัดส่วนรายจ่าย</div>
-                <div className="text-xs font-semibold text-slate-400">แยกตามหมวดหมู่</div>
-              </div>
-              <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-slate-200 ring-1 ring-white/10">
-                <Layers className="h-5 w-5" />
-              </div>
+                <div className="text-xs font-semibold text-slate-400">
+                  {expenseShareMode === 'all' ? 'แยกตามหมวดหมู่ (ทั้งหมด)' : 'แยกตามหมวดหมู่ (ยอดนิยม)'}
+                </div>
+              </div>             
             </div>
 
             <div className="mt-4">
               {pieLabels.length === 0 ? (
-                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
+                <div className="h-56 lg:h-72 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
                   ไม่มีรายจ่ายในเดือนนี้
                 </div>
               ) : (
-                <div className="relative h-64">
+                <div className="relative h-64 lg:h-72">
                   <Doughnut data={pieData} options={pieChartOptions} />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                     <div className="text-[11px] font-semibold text-slate-400">รายจ่ายรวม</div>
@@ -950,8 +1100,8 @@ export default function Analytics() {
             </div>
 
             {pieLabels.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {topExpenseList.map(item => {
+              <div className={['mt-4 space-y-2', expenseShareMode === 'all' ? 'max-h-72 overflow-y-auto pr-1' : ''].join(' ')}>
+                {(expenseShareMode === 'all' ? expenseListAll : topExpenseList).map(item => {
                   const total = summary.expense || 0;
                   const pct = total > 0 ? Math.round((item.amount / total) * 100) : 0;
                   const color = pieColorByLabel[item.name] || '#64748b';

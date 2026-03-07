@@ -21,6 +21,9 @@ import {
   Music,
   Dumbbell,
   MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  LayoutGrid,
   Plus,
   Search,
   Trash2,
@@ -28,6 +31,9 @@ import {
   AlertTriangle,
   Info,
   X,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 // Utility for formatting currency
@@ -52,6 +58,67 @@ const monthLabelFromDate = (dateInput) => {
     const d = new Date(dateInput);
     if (Number.isNaN(d.getTime())) return '';
     return `${monthNamesTH[d.getMonth()]} ${d.getFullYear() + 543}`;
+  } catch {
+    return '';
+  }
+};
+
+const getDaysInMonth = (year, monthIndex) => {
+  const d = new Date(year, monthIndex + 1, 0);
+  const n = d.getDate();
+  return Number.isFinite(n) && n > 0 ? n : 30;
+};
+
+// Cutoff day: if > 0, any txn after cutoffDay counts into "next month" label.
+// Example: cutoffDay=25, 26 Mar => belongs to "เมษายน ...."
+const monthLabelFromDateWithCutoff = (dateInput, cutoffDay) => {
+  const n = Number(cutoffDay) || 0;
+  if (!Number.isFinite(n) || n <= 0) return monthLabelFromDate(dateInput);
+  try {
+    const d = new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return '';
+    let y = d.getFullYear();
+    let m = d.getMonth();
+    const effectiveCutoff = Math.min(Math.max(1, Math.round(n)), getDaysInMonth(y, m));
+    if (d.getDate() > effectiveCutoff) {
+      m += 1;
+      if (m > 11) {
+        m = 0;
+        y += 1;
+      }
+    }
+    return `${monthNamesTH[m]} ${y + 543}`;
+  } catch {
+    return monthLabelFromDate(dateInput);
+  }
+};
+
+const cycleRangeForMonthLabel = (selectedMonthLabel, cutoffDay) => {
+  const parsed = parseThaiMonthLabel(selectedMonthLabel);
+  if (!parsed) return null;
+  const { year, monthIndex } = parsed;
+  const cutoff = Number(cutoffDay) || 0;
+  if (!Number.isFinite(cutoff) || cutoff <= 0) {
+    const start = new Date(year, monthIndex, 1);
+    const end = new Date(year, monthIndex + 1, 0);
+    return { start, end };
+  }
+
+  const endDay = Math.min(Math.max(1, Math.round(cutoff)), getDaysInMonth(year, monthIndex));
+  const end = new Date(year, monthIndex, endDay);
+  const prev = new Date(year, monthIndex - 1, 1);
+  const prevY = prev.getFullYear();
+  const prevM = prev.getMonth();
+  const prevEndDay = Math.min(Math.max(1, Math.round(cutoff)), getDaysInMonth(prevY, prevM));
+  const start = new Date(prevY, prevM, prevEndDay + 1);
+  return { start, end };
+};
+
+const formatThaiDateShort = (dateInput) => {
+  try {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch {
     return '';
   }
@@ -87,6 +154,22 @@ const dateStringForSelectedMonth = (selectedMonthLabel) => {
   const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
   const day = Math.min(Math.max(1, now.getDate()), Math.max(1, daysInMonth || 1));
   return `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+};
+
+const dateStringForSelectedMonthWithCutoff = (selectedMonthLabel, cutoffDay) => {
+  const cutoff = Number(cutoffDay) || 0;
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  if (!Number.isFinite(cutoff) || cutoff <= 0) return dateStringForSelectedMonth(selectedMonthLabel) || todayIso;
+
+  const todayLabel = monthLabelFromDateWithCutoff(todayIso, cutoff);
+  if (todayLabel && todayLabel === selectedMonthLabel) return todayIso;
+
+  const parsed = parseThaiMonthLabel(selectedMonthLabel);
+  if (!parsed) return todayIso;
+  const { year, monthIndex } = parsed;
+  const effectiveCutoff = Math.min(Math.max(1, Math.round(cutoff)), getDaysInMonth(year, monthIndex));
+  return `${year}-${pad2(monthIndex + 1)}-${pad2(effectiveCutoff)}`;
 };
 
 const buildSmoothSvgPath = (points) => {
@@ -176,20 +259,59 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const [tempMonthIndex, setTempMonthIndex] = useState(12);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [monthScroll, setMonthScroll] = useState({ canLeft: false, canRight: false });
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerYear, setMonthPickerYear] = useState(() => new Date().getFullYear());
   // NOTE: Keep the first render deterministic between server and client to avoid hydration mismatch.
   // Load localStorage values in an effect instead of the useState initializer.
   const [sortBy, setSortBy] = useState('budget_desc');
   const [sortPrefReady, setSortPrefReady] = useState(false);
+  const [cutoffDay, setCutoffDay] = useState(0); // 0 = ตามเดือนปฏิทิน, 1-31 = ตัดรอบวันนั้นของทุกเดือน
+  const [cutoffPrefReady, setCutoffPrefReady] = useState(false);
+  const [categoryOrder, setCategoryOrder] = useState({ expense: [], income: [] }); // string[] by type
+  const [categoryOrderPrefReady, setCategoryOrderPrefReady] = useState(false);
+  const [showReorderModal, setShowReorderModal] = useState(false);
+  const [reorderDraftIds, setReorderDraftIds] = useState([]); // string[]
+  const reorderDragIdRef = useRef('');
+  const showReorderModalRef = useRef(false);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem('budget_sort_by');
-      const allowed = new Set(['budget_desc', 'budget_asc', 'spent_desc', 'remaining_desc', 'name_asc', 'name_desc']);
+      const allowed = new Set(['budget_desc', 'budget_asc', 'spent_desc', 'remaining_desc', 'name_asc', 'name_desc', 'custom']);
       if (raw && allowed.has(raw)) setSortBy(raw);
     } catch {
       // ignore
     } finally {
       setSortPrefReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('budget_cutoff_day_v1');
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 0 && n <= 31) setCutoffDay(Math.round(n));
+    } catch {
+      // ignore
+    } finally {
+      setCutoffPrefReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const expRaw = localStorage.getItem('budget_category_order_v1_expense');
+      const incRaw = localStorage.getItem('budget_category_order_v1_income');
+      const exp = expRaw ? JSON.parse(expRaw) : null;
+      const inc = incRaw ? JSON.parse(incRaw) : null;
+      setCategoryOrder({
+        expense: Array.isArray(exp) ? exp.map((x) => String(x)).filter(Boolean) : [],
+        income: Array.isArray(inc) ? inc.map((x) => String(x)).filter(Boolean) : [],
+      });
+    } catch {
+      setCategoryOrder({ expense: [], income: [] });
+    } finally {
+      setCategoryOrderPrefReady(true);
     }
   }, []);
 
@@ -277,6 +399,22 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
   const monthDragRef = useRef({ active: false, startX: 0, startScrollLeft: 0 });
   const suppressMonthClickRef = useRef(false);
   const monthScrollRafRef = useRef(0);
+  const cutoffInitAppliedRef = useRef(false);
+
+  const getCurrentCycleMonthIndex = useCallback(() => {
+    const label = monthLabelFromDateWithCutoff(Date.now(), cutoffDay);
+    const idx = (months || []).findIndex((m) => m === label);
+    return idx >= 0 ? idx : 12;
+  }, [months, cutoffDay]);
+
+  useEffect(() => {
+    if (!cutoffPrefReady) return;
+    if (cutoffInitAppliedRef.current) return;
+    cutoffInitAppliedRef.current = true;
+    const idx = getCurrentCycleMonthIndex();
+    setCurrentMonthIndex(idx);
+    setTempMonthIndex(idx);
+  }, [cutoffPrefReady, getCurrentCycleMonthIndex]);
 
   const updateMonthScroll = useCallback(() => {
     const el = monthTabsRef.current;
@@ -377,23 +515,61 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     e.stopPropagation();
   };
 
-  const budgetSparkline = useMemo(() => {
-    const parsed = parseThaiMonthLabel(selectedMonth);
-    if (!parsed) return null;
-    const { year, monthIndex } = parsed;
-    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-    if (!Number.isFinite(daysInMonth) || daysInMonth <= 0) return null;
+  const monthIndexMap = useMemo(() => {
+    const map = new Map();
+    (months || []).forEach((label, idx) => {
+      const p = parseThaiMonthLabel(label);
+      if (!p) return;
+      map.set(`${p.year}-${p.monthIndex}`, idx);
+    });
+    return map;
+  }, [months]);
 
-    const daily = new Array(daysInMonth).fill(0);
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    for (const key of monthIndexMap.keys()) {
+      const y = Number(String(key).split('-')[0]);
+      if (Number.isFinite(y)) years.add(y);
+    }
+    return Array.from(years.values()).sort((a, b) => b - a);
+  }, [monthIndexMap]);
+
+  const monthPickerMonthsForYear = useMemo(() => {
+    const y = Number(monthPickerYear);
+    return monthNamesTH.map((name, monthIndex) => {
+      const idx = monthIndexMap.get(`${y}-${monthIndex}`);
+      return { name, monthIndex, idx: typeof idx === 'number' ? idx : null };
+    });
+  }, [monthIndexMap, monthPickerYear]);
+
+  useEffect(() => {
+    if (!showMonthPicker) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowMonthPicker(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [showMonthPicker]);
+
+  const budgetSparkline = useMemo(() => {
+    const range = cycleRangeForMonthLabel(selectedMonth, cutoffDay);
+    if (!range?.start || !range?.end) return null;
+    const start = new Date(range.start.getFullYear(), range.start.getMonth(), range.start.getDate());
+    const end = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate());
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const daysInRange = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+
+    const daily = new Array(daysInRange).fill(0);
     for (const t of transactions || []) {
       if (!t || t.type !== selectedType) continue;
       const d = new Date(t.date);
       if (Number.isNaN(d.getTime())) continue;
-      if (d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
-      const day = d.getDate();
-      if (day < 1 || day > daysInMonth) continue;
+      const dm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      if (dm < start || dm > end) continue;
+      const idx = Math.round((dm.getTime() - start.getTime()) / 86400000);
+      if (idx < 0 || idx >= daily.length) continue;
       const amt = Number(t.amount) || 0;
-      daily[day - 1] += Math.max(0, amt);
+      daily[idx] += Math.max(0, amt);
     }
 
     let running = 0;
@@ -423,7 +599,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     const last = points[points.length - 1];
     const areaPath = `${dPath} L ${last.x} ${H} L ${first.x} ${H} Z`;
     return { dPath, areaPath };
-  }, [selectedMonth, transactions, selectedType]);
+  }, [selectedMonth, transactions, selectedType, cutoffDay]);
 
   // --- Data Fetching ---
   useEffect(() => {
@@ -515,15 +691,41 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     }
   }, [sortBy, sortPrefReady]);
 
+  useEffect(() => {
+    if (!cutoffPrefReady) return;
+    try {
+      localStorage.setItem('budget_cutoff_day_v1', String(Number(cutoffDay) || 0));
+    } catch {
+      // ignore
+    }
+  }, [cutoffDay, cutoffPrefReady]);
+
+  useEffect(() => {
+    if (!categoryOrderPrefReady) return;
+    try {
+      localStorage.setItem('budget_category_order_v1_expense', JSON.stringify(categoryOrder?.expense || []));
+      localStorage.setItem('budget_category_order_v1_income', JSON.stringify(categoryOrder?.income || []));
+    } catch {
+      // ignore
+    }
+  }, [categoryOrder, categoryOrderPrefReady]);
+
+  useEffect(() => {
+    showReorderModalRef.current = Boolean(showReorderModal);
+  }, [showReorderModal]);
+
 	    // --- Process Data for Display ---
 	    // Combine Categories + Budgets + Transactions for the selected month
-		    const processedData = useMemo(() => {
-		    const currentMonthTrans = (transactions || []).filter(t => {
-		      if (t?.type !== selectedType) return false;
-		      return monthLabelFromDate(t?.date) === selectedMonth;
-		    });
+			    const processedData = useMemo(() => {
+			    const currentMonthTrans = (transactions || []).filter(t => {
+			      if (t?.type !== selectedType) return false;
+			      return monthLabelFromDateWithCutoff(t?.date, cutoffDay) === selectedMonth;
+			    });
 
         const collator = new Intl.Collator('th-TH', { sensitivity: 'base', numeric: true });
+        const selectedTypeKeyLocal = selectedType === 'income' ? 'income' : 'expense';
+        const customOrder = Array.isArray(categoryOrder?.[selectedTypeKeyLocal]) ? categoryOrder[selectedTypeKeyLocal] : [];
+        const customIndex = new Map(customOrder.map((id, idx) => [String(id), idx]));
 
         const isIncome = selectedType === 'income';
         let totalReceived = 0;
@@ -567,60 +769,72 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             };
           });
 
-        const sortedItems = (() => {
-          if (isIncome) {
-            const incomeSortKey =
-              sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc'
-                ? sortBy
-                : 'budget_desc';
+	        const sortedItems = (() => {
+	          if (isIncome) {
+	            const incomeSortKey =
+	              sortBy === 'custom' || sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc'
+	                ? sortBy
+	                : 'budget_desc';
 
-            return [...list].sort((a, b) => {
-              switch (incomeSortKey) {
-                case 'budget_asc':
-                  return (Number(a?.received) || 0) - (Number(b?.received) || 0);
-                case 'name_asc':
+	            return [...list].sort((a, b) => {
+	              switch (incomeSortKey) {
+                  case 'custom': {
+                    const ai = customIndex.has(String(a?._id || '')) ? customIndex.get(String(a?._id || '')) : 999999;
+                    const bi = customIndex.has(String(b?._id || '')) ? customIndex.get(String(b?._id || '')) : 999999;
+                    if (ai !== bi) return ai - bi;
+                    return collator.compare(a?.name || '', b?.name || '');
+                  }
+	                case 'budget_asc':
+	                  return (Number(a?.received) || 0) - (Number(b?.received) || 0);
+	                case 'name_asc':
+	                  return collator.compare(a?.name || '', b?.name || '');
+	                case 'name_desc':
+	                  return collator.compare(b?.name || '', a?.name || '');
+	                case 'budget_desc':
+	                default:
+	                  return (Number(b?.received) || 0) - (Number(a?.received) || 0);
+	              }
+	            });
+	          }
+
+	          return [...list].sort((a, b) => {
+	            switch (sortBy) {
+                case 'custom': {
+                  const ai = customIndex.has(String(a?._id || '')) ? customIndex.get(String(a?._id || '')) : 999999;
+                  const bi = customIndex.has(String(b?._id || '')) ? customIndex.get(String(b?._id || '')) : 999999;
+                  if (ai !== bi) return ai - bi;
                   return collator.compare(a?.name || '', b?.name || '');
-                case 'name_desc':
-                  return collator.compare(b?.name || '', a?.name || '');
-                case 'budget_desc':
-                default:
-                  return (Number(b?.received) || 0) - (Number(a?.received) || 0);
-              }
-            });
-          }
+                }
+	              case 'budget_asc':
+	                return (Number(a?.budget) || 0) - (Number(b?.budget) || 0);
+	              case 'name_asc':
+	                return collator.compare(a?.name || '', b?.name || '');
+	              case 'name_desc':
+	                return collator.compare(b?.name || '', a?.name || '');
+	              case 'spent_desc':
+	                return (Number(b?.spent) || 0) - (Number(a?.spent) || 0);
+	              case 'remaining_desc':
+	                return (Number(b?.remaining) || 0) - (Number(a?.remaining) || 0);
+	              case 'budget_desc':
+	              default:
+	                return (Number(b?.budget) || 0) - (Number(a?.budget) || 0);
+	            }
+	          });
+	        })();
 
-          return [...list].sort((a, b) => {
-            switch (sortBy) {
-              case 'budget_asc':
-                return (Number(a?.budget) || 0) - (Number(b?.budget) || 0);
-              case 'name_asc':
-                return collator.compare(a?.name || '', b?.name || '');
-              case 'name_desc':
-                return collator.compare(b?.name || '', a?.name || '');
-              case 'spent_desc':
-                return (Number(b?.spent) || 0) - (Number(a?.spent) || 0);
-              case 'remaining_desc':
-                return (Number(b?.remaining) || 0) - (Number(a?.remaining) || 0);
-              case 'budget_desc':
-              default:
-                return (Number(b?.budget) || 0) - (Number(a?.budget) || 0);
-            }
-          });
-        })();
-
-        const overallMonthly = monthlyBudget[selectedMonth] ?? 0;
-        return {
-          items: sortedItems,
-          summary: {
+	        const overallMonthly = monthlyBudget[selectedMonth] ?? 0;
+	        return {
+	          items: sortedItems,
+	          summary: {
             totalReceived,
             totalSpent,
             txCount,
             totalBudget: sortedItems.reduce((s, c) => s + (Number(c?.budget) || 0), 0),
             remaining: sortedItems.reduce((s, c) => s + (Number(c?.remaining) || 0), 0),
-            overallMonthly,
-          },
-        };
-		    }, [categories, budgets, transactions, selectedMonth, monthlyBudget, selectedType, sortBy]);
+	            overallMonthly,
+	          },
+	        };
+			    }, [categories, budgets, transactions, selectedMonth, monthlyBudget, selectedType, sortBy, cutoffDay, categoryOrder]);
 
     // Summary headline: prefer "รายรับ" as the main base, and subtract actual expenses.
     // If no income budget is set, fall back to expense budgets (classic budget mode).
@@ -637,7 +851,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
       const incomeBudgetTotal = sumBudgetByCats(incomeCats);
       const expenseBudgetTotal = sumBudgetByCats(expenseCats);
 
-      const monthTxns = (transactions || []).filter((t) => monthLabelFromDate(t?.date) === selectedMonth);
+	      const monthTxns = (transactions || []).filter((t) => monthLabelFromDateWithCutoff(t?.date, cutoffDay) === selectedMonth);
       const incomeActualTotal = monthTxns
         .filter((t) => t?.type === 'income')
         .reduce((s, t) => s + (Number(t?.amount) || 0), 0);
@@ -666,7 +880,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         spentPct,
         spentPctClamped,
       };
-    }, [budgets, categories, transactions, selectedMonth]);
+	    }, [budgets, categories, transactions, selectedMonth, cutoffDay]);
 
 
   // --- Handlers ---
@@ -783,7 +997,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             amount: amountNum,
             type: 'income',
             category: editingCategoryMeta._id,
-            date: dateStringForSelectedMonth(selectedMonth),
+            date: dateStringForSelectedMonthWithCutoff(selectedMonth, cutoffDay),
             notes: String(incomeQuickNote || '').trim() || String(editingCategoryMeta?.name || ''),
           };
 
@@ -968,11 +1182,92 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
 	  const typeLabel = selectedType === 'expense' ? 'รายจ่าย' : 'รายรับ';
 	  const isIncomeMode = selectedType === 'income';
+    const selectedTypeKey = isIncomeMode ? 'income' : 'expense';
     const sortKeyForUI = useMemo(() => {
       if (!isIncomeMode) return sortBy;
-      if (sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc') return sortBy;
+      if (sortBy === 'custom' || sortBy === 'name_asc' || sortBy === 'name_desc' || sortBy === 'budget_asc') return sortBy;
       return 'budget_desc';
     }, [isIncomeMode, sortBy]);
+
+    const collatorTH = useMemo(() => new Intl.Collator('th-TH', { sensitivity: 'base', numeric: true }), []);
+    const categoryById = useMemo(() => {
+      const map = new Map();
+      (categories || []).forEach((c) => {
+        const id = c?._id ? String(c._id) : '';
+        if (!id) return;
+        map.set(id, c);
+      });
+      return map;
+    }, [categories]);
+
+    useEffect(() => {
+      const byType = { expense: [], income: [] };
+      (categories || []).forEach((c) => {
+        const id = c?._id ? String(c._id) : '';
+        if (!id) return;
+        const t = c?.type === 'income' ? 'income' : 'expense';
+        byType[t].push(id);
+      });
+
+      setCategoryOrder((prev) => {
+        const next = { ...(prev || {}) };
+        (['expense', 'income']).forEach((t) => {
+          const validIds = byType[t] || [];
+          const validSet = new Set(validIds);
+          const existing = Array.isArray(prev?.[t]) ? prev[t].map((x) => String(x)).filter(Boolean) : [];
+          const merged = [];
+          const seen = new Set();
+          existing.forEach((id) => {
+            if (!validSet.has(id) || seen.has(id)) return;
+            merged.push(id);
+            seen.add(id);
+          });
+          validIds.forEach((id) => {
+            if (seen.has(id)) return;
+            merged.push(id);
+            seen.add(id);
+          });
+          next[t] = merged;
+        });
+        return next;
+      });
+    }, [categories]);
+
+    const openReorderCategoriesModal = () => {
+      const list = (categories || [])
+        .filter((c) => (c?.type === 'income' ? 'income' : 'expense') === selectedTypeKey)
+        .map((c) => String(c?._id || ''))
+        .filter(Boolean);
+      const set = new Set(list);
+      const base = Array.isArray(categoryOrder?.[selectedTypeKey]) ? categoryOrder[selectedTypeKey].filter((id) => set.has(String(id))) : [];
+      const merged = [...base];
+      const seen = new Set(merged);
+      list.forEach((id) => {
+        if (seen.has(id)) return;
+        merged.push(id);
+        seen.add(id);
+      });
+      setReorderDraftIds(merged);
+      reorderDragIdRef.current = '';
+      setShowReorderModal(true);
+    };
+
+    const moveReorderDraft = (fromIdx, toIdx) => {
+      setReorderDraftIds((prev) => {
+        const src = Array.isArray(prev) ? [...prev] : [];
+        if (fromIdx < 0 || fromIdx >= src.length) return prev;
+        const clamped = Math.max(0, Math.min(src.length - 1, Number(toIdx) || 0));
+        if (fromIdx === clamped) return prev;
+        const [item] = src.splice(fromIdx, 1);
+        src.splice(clamped, 0, item);
+        return src;
+      });
+    };
+
+    useEffect(() => {
+      if (!showReorderModalRef.current) return;
+      setShowReorderModal(false);
+    }, [selectedTypeKey]);
 	  const budgetedItemCount = (processedData.items || []).filter((c) => (Number(c?.budget) || 0) > 0).length;
 	  const [categoryQuery, setCategoryQuery] = useState('');
 	  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'budgeted' | 'unbudgeted' | 'over'
@@ -1023,28 +1318,241 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
     if (!catId) return { received: 0, txCount: 0 };
     let received = 0;
     let txCount = 0;
-    for (const t of transactions || []) {
-      if (!t || t.type !== 'income') continue;
-      if (monthLabelFromDate(t.date) !== selectedMonth) continue;
-      const catVal = t.category && typeof t.category === 'object' ? t.category?._id : t.category;
-      if (String(catVal || '') !== String(catId)) continue;
-      const amt = Number(t.amount) || 0;
-      if (amt > 0) received += amt;
+	    for (const t of transactions || []) {
+	      if (!t || t.type !== 'income') continue;
+	      if (monthLabelFromDateWithCutoff(t.date, cutoffDay) !== selectedMonth) continue;
+	      const catVal = t.category && typeof t.category === 'object' ? t.category?._id : t.category;
+	      if (String(catVal || '') !== String(catId)) continue;
+	      const amt = Number(t.amount) || 0;
+	      if (amt > 0) received += amt;
       txCount += 1;
     }
     return { received, txCount };
-  }, [editingCategoryMeta?._id, transactions, selectedMonth]);
+	  }, [editingCategoryMeta?._id, transactions, selectedMonth, cutoffDay]);
 
   const handleClose = () => {
     if (typeof onClose === 'function') onClose();
     else window.history.back();
   };
 
-  return (
-    <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-y-auto [-webkit-overflow-scrolling:touch] bg-[var(--app-bg)] text-[color:var(--app-text)] font-sans">
-      {/* Top / Sticky header (removed sticky wrapper) */}
-      <>
-	        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+20px)]">
+  const categoryQueryTrimmed = String(categoryQuery || '').trim();
+
+  const renderCategoryCard = (cat) => {
+    const actual = isIncomeMode ? (Number(cat?.received) || 0) : (Number(cat?.spent) || 0);
+    const budget = Number(cat?.budget) || 0;
+    const remaining = budget - actual;
+    const pctRaw = budget > 0 ? (actual / budget) * 100 : 0;
+    const pct = isIncomeMode ? 100 : (budget > 0 ? Math.round(pctRaw) : 0);
+    const progress = isIncomeMode ? 1 : (budget > 0 ? clamp01(actual / budget) : 0);
+    const over = !isIncomeMode && budget > 0 && actual > budget;
+    const pctText = isIncomeMode ? '100%' : (budget > 0 ? `${Math.max(0, pct)}%` : '—');
+    const pctColor = isIncomeMode ? 'text-emerald-200' : over ? 'text-rose-300' : progress >= 0.85 ? 'text-amber-200' : 'text-emerald-200';
+    const barColor = isIncomeMode ? '#34D399' : over ? '#FB7185' : progress >= 0.85 ? '#FACC15' : '#22C55E';
+
+    const statusText = isIncomeMode
+      ? (budget > 0 ? 'มีเป้า' : 'ยังไม่มีเป้า')
+      : over
+        ? 'เกินงบ'
+        : budget <= 0
+          ? 'ยังไม่ตั้งงบ'
+          : progress >= 0.85
+            ? 'ใกล้เต็ม'
+            : '';
+
+    const statusTone = isIncomeMode
+      ? (budget > 0 ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200' : 'border-white/10 bg-white/5 text-slate-200')
+      : over
+        ? 'border-rose-400/25 bg-rose-500/10 text-rose-200'
+        : budget <= 0
+          ? 'border-white/10 bg-white/5 text-slate-200'
+          : progress >= 0.85
+            ? 'border-amber-400/25 bg-amber-500/10 text-amber-200'
+            : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200';
+
+    return (
+      <div
+        key={cat?._id}
+        onClick={() => openEditModal(cat)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openEditModal(cat);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        className={[
+          'w-full rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition',
+          'cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+          over ? 'border-rose-500/25 bg-[var(--app-surface)]' : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)]',
+        ].join(' ')}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl bg-white/5 ring-1 ring-white/10">
+              <CategoryIcon iconKey={cat?.icon} className="w-6 h-6 text-slate-200" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{cat?.name}</div>
+              <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
+                {isIncomeMode ? (
+                  <>
+                    {budget > 0 ? (
+                      <>
+                        เป้า <span className="text-slate-200">{formatCurrency(budget)}</span>
+                        {' • '}รับแล้ว <span className="text-emerald-200">{formatCurrency(actual)}</span>
+                      </>
+                    ) : (
+                      <>
+                        รับแล้ว <span className="text-emerald-200">{formatCurrency(actual)}</span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    เหลือ{' '}
+                    <span className={remaining < 0 ? 'text-rose-300' : 'text-emerald-200'}>
+                      {formatCurrency(remaining)}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              {!isIncomeMode ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditModal(cat);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                >
+                  แก้ไข
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEditCategoryMetaModal(cat);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                >
+                  แก้ไข
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col items-end gap-1">
+              <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
+              {statusText ? (
+                <div className={['rounded-full border px-2 py-0.5 text-[10px] font-extrabold', statusTone].join(' ')}>
+                  {statusText}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        {((!isIncomeMode && budget > 0) || isIncomeMode) ? (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
+              <div className="truncate">
+                {formatCurrency(actual)} <span className="text-[color:var(--app-muted-2)]">/ {formatCurrency(budget)}</span>
+              </div>
+            </div>
+            <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
+              <div
+                className="h-full rounded-full shadow-[0_10px_22px_-14px_rgba(34,197,94,0.8)]"
+                style={{
+                  width: isIncomeMode ? '100%' : `${Math.min(100, Math.max(0, pct))}%`,
+                  backgroundColor: barColor,
+                  opacity: 1,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderAddCategoryCard = ({ spanAll = false } = {}) => (
+    <button
+      type="button"
+      onClick={openAddCategoryModal}
+      className={[
+        'w-full cursor-pointer rounded-3xl border border-dashed border-white/20 bg-white/0 p-5 text-left',
+        'transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+        spanAll ? 'lg:col-span-full' : '',
+      ].join(' ')}
+      aria-label={`เพิ่มหมวด${typeLabel}`}
+    >
+      <div className="flex items-center gap-4">
+        <div className="h-12 w-12 rounded-2xl border border-dashed border-white/20 bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-200">
+          <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14m7-7H5" />
+          </svg>
+        </div>
+        <div className="min-w-0">
+          <div className="text-base font-extrabold text-[color:var(--app-text)]">เพิ่มหมวด{typeLabel}</div>
+          <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">แตะเพื่อเพิ่มหมวดใหม่</div>
+        </div>
+      </div>
+    </button>
+  );
+
+  const categorySections = useMemo(() => {
+    const list = Array.isArray(filteredCategories) ? filteredCategories : [];
+    if (!list.length) return [];
+
+    if (isIncomeMode) {
+      const withTarget = list.filter((c) => (Number(c?.budget) || 0) > 0);
+      const withoutTarget = list.filter((c) => (Number(c?.budget) || 0) <= 0);
+      const out = [];
+      if (withTarget.length) out.push({ id: 'income_target', title: 'มีเป้ารายรับ', items: withTarget });
+      if (withoutTarget.length) out.push({ id: 'income_no_target', title: 'ยังไม่มีเป้า', items: withoutTarget });
+      return out.length ? out : [{ id: 'all', title: null, items: list }];
+    }
+
+    if (categoryFilter !== 'all' || categoryQueryTrimmed) {
+      return [{ id: 'all', title: null, items: list }];
+    }
+
+    const over = list.filter((c) => Boolean(c?.isOverBudget) && (Number(c?.budget) || 0) > 0);
+    const near = list.filter((c) => {
+      const budget = Number(c?.budget) || 0;
+      const spent = Number(c?.spent) || 0;
+      if (budget <= 0) return false;
+      if (spent > budget) return false;
+      return spent / Math.max(1, budget) >= 0.85;
+    });
+    const budgeted = list.filter((c) => {
+      const budget = Number(c?.budget) || 0;
+      const spent = Number(c?.spent) || 0;
+      if (budget <= 0) return false;
+      if (spent > budget) return false;
+      return spent / Math.max(1, budget) < 0.85;
+    });
+    const unbudgeted = list.filter((c) => (Number(c?.budget) || 0) <= 0);
+
+    const out = [];
+    if (over.length) out.push({ id: 'over', title: 'เกินงบ', items: over });
+    if (near.length) out.push({ id: 'near', title: 'ใกล้เต็ม', items: near });
+    if (budgeted.length) out.push({ id: 'budgeted', title: 'ตั้งงบแล้ว', items: budgeted });
+    if (unbudgeted.length) out.push({ id: 'unbudgeted', title: 'ยังไม่ตั้งงบ', items: unbudgeted });
+    return out.length ? out : [{ id: 'all', title: null, items: list }];
+  }, [filteredCategories, isIncomeMode, categoryFilter, categoryQueryTrimmed]);
+
+		  return (
+		    <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-y-auto [-webkit-overflow-scrolling:touch] bg-[var(--app-bg)] text-[color:var(--app-text)] font-sans">
+		      {/* Top / Sticky header (removed sticky wrapper) */}
+		      <>
+		        <div className="mx-auto w-full max-w-lg px-4 pb-4 pt-[calc(env(safe-area-inset-top)+20px)] lg:max-w-6xl lg:px-6">
           {/* Title row */}
 	          <div className="relative flex items-center justify-center">
 	            <div className="text-center">
@@ -1067,76 +1575,264 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
             const tabs = yearMonths.length ? yearMonths : months.map((label, idx) => ({ label, idx }));
             return (
               <div className="mt-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">เดือน</div>
-                  <div className="text-xs font-extrabold text-[color:var(--app-text)]">พ.ศ. {selectedYear || '—'}</div>
+                {/* Desktop: calendar-style picker button */}
+                <div className="hidden lg:block">
+                  <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-2 shadow-sm shadow-black/10">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCurrentMonthIndex((p) => Math.max(0, p - 1))}
+                        disabled={currentMonthIndex === 0}
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
+                        aria-label="เดือนก่อนหน้า"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const p = parseThaiMonthLabel(selectedMonth);
+                          setMonthPickerYear(p?.year || new Date().getFullYear());
+                          setShowMonthPicker(true);
+                        }}
+                        className="min-w-0 flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-center hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                        aria-label="เปิดปฏิทินเลือกเดือน"
+                        aria-expanded={showMonthPicker}
+                      >
+                        <div className="flex items-center justify-center gap-2">
+                          <LayoutGrid className="h-4 w-4 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                          <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{selectedMonth}</div>
+                        </div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อเลือกเดือน</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentMonthIndex((p) => Math.min(months.length - 1, p + 1))}
+                        disabled={currentMonthIndex === months.length - 1}
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
+                        aria-label="เดือนถัดไป"
+                      >
+                        <ChevronRight className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-2 shadow-sm shadow-black/5">
-                  <div
-                    ref={monthTabsRef}
-                    className="flex gap-2 overflow-x-auto scroll-smooth snap-x snap-proximity pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
-                    onPointerDown={onMonthPointerDown}
-                    onPointerMove={onMonthPointerMove}
-                    onPointerUp={onMonthPointerUp}
-                    onPointerCancel={onMonthPointerUp}
-                    onPointerLeave={onMonthPointerUp}
-                    onClickCapture={onMonthClickCapture}
-                    onWheel={onMonthWheel}
-                    onScroll={scheduleUpdateMonthScroll}
-                  >
-                    {tabs.map(({ label, idx }) => {
-                      const monthName = String(label.split(' ')[0] || '');
-                      const mIdx = monthIndexFromThaiName(monthName);
-                      const short = mIdx >= 0 ? monthShortTH[mIdx] : monthName;
-                      const active = idx === currentMonthIndex;
-                      return (
-                        <button
-                          key={label}
-                          ref={active ? activeMonthRef : null}
-                          type="button"
-                          onClick={() => setCurrentMonthIndex(idx)}
-                          className={[
-                            'shrink-0 snap-center px-4 py-2 rounded-2xl text-sm font-extrabold transition',
-                            'border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
-                            active
-                              ? [
-                                  'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25',
-                                  'shadow-[0_10px_25px_-18px_rgba(16,185,129,0.9)]',
-                                  'focus:ring-emerald-300/40',
-                                ].join(' ')
-                              : [
-                                  'border-white/10 bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10',
-                                  'focus:ring-emerald-400/20',
-                                ].join(' '),
-                          ].join(' ')}
-                          aria-current={active ? 'date' : undefined}
-                          title={label}
-                        >
-                          {short}
-                        </button>
-                      );
-                    })}
+                {/* Mobile/Tablet: scrollable month tabs */}
+                <div className="lg:hidden">
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">เดือน</div>
+                    <div className="text-xs font-extrabold text-[color:var(--app-text)]">พ.ศ. {selectedYear || '—'}</div>
                   </div>
 
-                  {/* Edge fades */}
-                  <div
-                    className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl"
-                    style={{ background: 'linear-gradient(to right, var(--app-surface-2), rgba(0,0,0,0))' }}
-                  />
-                  <div
-                    className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl"
-                    style={{ background: 'linear-gradient(to left, var(--app-surface-2), rgba(0,0,0,0))' }}
-                  />
+                  <div className="relative rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-2 shadow-sm shadow-black/5">
+                    <div
+                      ref={monthTabsRef}
+                      className="flex gap-2 overflow-x-auto scroll-smooth snap-x snap-proximity pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none cursor-grab active:cursor-grabbing"
+                      onPointerDown={onMonthPointerDown}
+                      onPointerMove={onMonthPointerMove}
+                      onPointerUp={onMonthPointerUp}
+                      onPointerCancel={onMonthPointerUp}
+                      onPointerLeave={onMonthPointerUp}
+                      onClickCapture={onMonthClickCapture}
+                      onWheel={onMonthWheel}
+                      onScroll={scheduleUpdateMonthScroll}
+                    >
+                      {tabs.map(({ label, idx }) => {
+                        const monthName = String(label.split(' ')[0] || '');
+                        const mIdx = monthIndexFromThaiName(monthName);
+                        const short = mIdx >= 0 ? monthShortTH[mIdx] : monthName;
+                        const active = idx === currentMonthIndex;
+                        return (
+                          <button
+                            key={label}
+                            ref={active ? activeMonthRef : null}
+                            type="button"
+                            onClick={() => setCurrentMonthIndex(idx)}
+                            className={[
+                              'shrink-0 snap-center px-4 py-2 rounded-2xl text-sm font-extrabold transition',
+                              'border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                              active
+                                ? [
+                                    'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25',
+                                    'shadow-[0_10px_25px_-18px_rgba(16,185,129,0.9)]',
+                                    'focus:ring-emerald-300/40',
+                                  ].join(' ')
+                                : [
+                                    'border-white/10 bg-white/5 text-slate-300 ring-white/10 hover:bg-white/10',
+                                    'focus:ring-emerald-400/20',
+                                  ].join(' '),
+                            ].join(' ')}
+                            aria-current={active ? 'date' : undefined}
+                            title={label}
+                          >
+                            {short}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Edge fades */}
+                    <div
+                      className="pointer-events-none absolute inset-y-0 left-0 w-8 rounded-l-3xl"
+                      style={{ background: 'linear-gradient(to right, var(--app-surface-2), rgba(0,0,0,0))' }}
+                    />
+                    <div
+                      className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-3xl"
+                      style={{ background: 'linear-gradient(to left, var(--app-surface-2), rgba(0,0,0,0))' }}
+                    />
+                  </div>
                 </div>
               </div>
             );
           })()}
 
-	          {/* Summary card */}
-		          <div className="mt-4 relative overflow-hidden rounded-[28px] border border-emerald-400/20 bg-gradient-to-br from-emerald-400 via-emerald-400 to-green-500 text-slate-950 shadow-[0_20px_60px_-40px_rgba(16,185,129,0.85)]">
-		            <div className="absolute inset-0 opacity-25 [background:radial-gradient(800px_circle_at_10%_20%,rgba(255,255,255,0.6),transparent_45%),radial-gradient(700px_circle_at_70%_80%,rgba(0,0,0,0.2),transparent_55%)]" />
-		            <div className="relative p-5">
+          {/* Month Picker Modal (desktop calendar) */}
+          {showMonthPicker && (
+            <div
+              className="fixed inset-0 z-[75] bg-slate-950/45 backdrop-blur-sm flex items-start justify-center p-4 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+88px)]"
+              onClick={(e) => e.target === e.currentTarget && setShowMonthPicker(false)}
+            >
+              <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
+                <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
+                  <div>
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกเดือน</div>
+                    <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อดูรายการของเดือนนั้น</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowMonthPicker(false)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
+                    aria-label="ปิด"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = availableYears.indexOf(monthPickerYear);
+                        const next = idx >= 0 ? availableYears[idx + 1] : null;
+                        if (typeof next === 'number') setMonthPickerYear(next);
+                      }}
+                      disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
+                      aria-label="ปีก่อนหน้า"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+
+                    <div className="min-w-0 flex-1 text-center">
+                      <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+                        {Number(monthPickerYear) + 543}
+                      </div>
+                      <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">พ.ศ.</div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idx = availableYears.indexOf(monthPickerYear);
+                        const prev = idx > 0 ? availableYears[idx - 1] : null;
+                        if (typeof prev === 'number') setMonthPickerYear(prev);
+                      }}
+                      disabled={availableYears.indexOf(monthPickerYear) <= 0}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
+                      aria-label="ปีถัดไป"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {monthPickerMonthsForYear.map((m) => {
+                      const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
+                      const disabled = m.idx == null;
+                      return (
+                        <button
+                          key={`${monthPickerYear}-${m.monthIndex}`}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
+                            setShowMonthPicker(false);
+                          }}
+                          className={[
+                            'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
+                            'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                            disabled
+                              ? 'border-white/10 bg-white/5 text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
+                              : isActive
+                                ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                                : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+                          ].join(' ')}
+                        >
+                          {m.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+	                  <button
+	                    type="button"
+	                    onClick={() => {
+	                      setCurrentMonthIndex(getCurrentCycleMonthIndex());
+	                      setShowMonthPicker(false);
+	                    }}
+	                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+	                  >
+                    เดือนนี้
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowMonthPicker(false)}
+                    className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                  >
+                    เสร็จสิ้น
+                  </button>
+                </div>
+              </div>
+            </div>
+	          )}
+
+	          <div className="mt-3 rounded-3xl border border-white/10 bg-white/5 px-4 py-3 shadow-sm shadow-black/10">
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="min-w-0">
+	                <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">ตัดรอบ</div>
+	                <div className="mt-0.5 text-xs font-extrabold text-[color:var(--app-text)]">
+	                  {cutoffDay > 0 ? `ทุกวันที่ ${cutoffDay}` : 'ตามเดือนปฏิทิน'}
+	                </div>
+	                {(() => {
+	                  const range = cycleRangeForMonthLabel(selectedMonth, cutoffDay);
+	                  if (!range?.start || !range?.end) return null;
+	                  return (
+	                    <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted)] truncate">
+	                      รอบนี้: {formatThaiDateShort(range.start)} – {formatThaiDateShort(range.end)}
+	                    </div>
+	                  );
+	                })()}
+	              </div>
+	              <button
+	                type="button"
+	                onClick={openSettings}
+	                className="shrink-0 inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	              >
+	                ตั้งค่า
+	              </button>
+	            </div>
+	          </div>
+
+			          {/* Summary card */}
+			          <div className="mt-4 relative overflow-hidden rounded-[28px] border border-emerald-400/20 bg-gradient-to-br from-emerald-400 via-emerald-400 to-green-500 text-slate-950 shadow-[0_20px_60px_-40px_rgba(16,185,129,0.85)]">
+				            <div className="absolute inset-0 opacity-25 [background:radial-gradient(800px_circle_at_10%_20%,rgba(255,255,255,0.6),transparent_45%),radial-gradient(700px_circle_at_70%_80%,rgba(0,0,0,0.2),transparent_55%)]" />
+				            <div className="relative p-5">
                 {isIncomeMode ? (() => {
                   const actual = Number(headlineSummary.incomeActualTotal) || 0;
                   const target = Number(headlineSummary.incomeBudgetTotal) || 0;
@@ -1241,82 +1937,102 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
               </button>
             </div>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsSortOpen(v => !v)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-extrabold text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                aria-haspopup="menu"
-                aria-expanded={isSortOpen}
-              >
-                <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h10M4 18h16"/>
-                </svg>
-	                {!isIncomeMode ? (
-                    sortBy === 'name_asc'
-                      ? 'ชื่อ A - Z'
-                      : sortBy === 'name_desc'
-                        ? 'ชื่อ Z - A'
-                        : sortBy === 'budget_asc'
-                          ? 'งบน้อย → มาก'
-                          : sortBy === 'spent_desc'
-                            ? 'ใช้มาก → น้อย'
-                            : sortBy === 'remaining_desc'
-                              ? 'คงเหลือมาก → น้อย'
-                              : 'งบมาก → น้อย'
-                  ) : (
-                    sortKeyForUI === 'name_asc'
-                      ? 'ชื่อ A - Z'
-                      : sortKeyForUI === 'name_desc'
-                        ? 'ชื่อ Z - A'
-                        : sortKeyForUI === 'budget_asc'
-                          ? 'รับน้อย → มาก'
-                          : 'รับมาก → น้อย'
-                  )}
-	              </button>
+	            <div className="flex items-center gap-2">
+	              <div className="relative">
+	                <button
+	                  type="button"
+	                  onClick={() => setIsSortOpen(v => !v)}
+	                  className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-extrabold text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                  aria-haspopup="menu"
+	                  aria-expanded={isSortOpen}
+	                >
+	                  <svg className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+	                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h10M4 18h16"/>
+	                  </svg>
+				                {!isIncomeMode ? (
+                      sortBy === 'custom'
+                        ? 'เรียงเอง'
+                        : sortBy === 'name_asc'
+                          ? 'ชื่อ A - Z'
+                          : sortBy === 'name_desc'
+                            ? 'ชื่อ Z - A'
+                            : sortBy === 'budget_asc'
+                              ? 'งบน้อย → มาก'
+                              : sortBy === 'spent_desc'
+                                ? 'ใช้มาก → น้อย'
+                                : sortBy === 'remaining_desc'
+                                  ? 'คงเหลือมาก → น้อย'
+                                  : 'งบมาก → น้อย'
+                    ) : (
+                      sortKeyForUI === 'custom'
+                        ? 'เรียงเอง'
+                        : sortKeyForUI === 'name_asc'
+                          ? 'ชื่อ A - Z'
+                          : sortKeyForUI === 'name_desc'
+                            ? 'ชื่อ Z - A'
+                            : sortKeyForUI === 'budget_asc'
+                              ? 'รับน้อย → มาก'
+                              : 'รับมาก → น้อย'
+                    )}
+				              </button>
 
-                {isSortOpen && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setIsSortOpen(false)} />
-                    <div className="absolute right-0 mt-2 z-40 w-56 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-1 shadow-xl shadow-black/20">
-	                      {(!isIncomeMode
-                        ? [
-                            { key: 'budget_desc', label: 'งบมาก → น้อย' },
-                            { key: 'budget_asc', label: 'งบน้อย → มาก' },
-                            { key: 'spent_desc', label: 'ใช้มาก → น้อย' },
-                            { key: 'remaining_desc', label: 'คงเหลือมาก → น้อย' },
-                            { key: 'name_asc', label: 'ชื่อ A → Z' },
-                            { key: 'name_desc', label: 'ชื่อ Z → A' },
-                          ]
-                        : [
-                            { key: 'budget_desc', label: 'รับมาก → น้อย' },
-                            { key: 'budget_asc', label: 'รับน้อย → มาก' },
-                            { key: 'name_asc', label: 'ชื่อ A → Z' },
-                            { key: 'name_desc', label: 'ชื่อ Z → A' },
-                          ]
-                      ).map(opt => (
-	                        <button
-	                          key={opt.key}
-	                          type="button"
+                  {isSortOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setIsSortOpen(false)} />
+		                      <div className="absolute right-0 mt-2 z-40 w-56 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-1 shadow-xl shadow-black/20">
+			                      {(!isIncomeMode
+		                        ? [
+		                            { key: 'budget_desc', label: 'งบมาก → น้อย' },
+		                            { key: 'budget_asc', label: 'งบน้อย → มาก' },
+		                            { key: 'spent_desc', label: 'ใช้มาก → น้อย' },
+		                            { key: 'remaining_desc', label: 'คงเหลือมาก → น้อย' },
+	                            { key: 'name_asc', label: 'ชื่อ A → Z' },
+	                            { key: 'name_desc', label: 'ชื่อ Z → A' },
+	                          ]
+	                        : [
+	                            { key: 'budget_desc', label: 'รับมาก → น้อย' },
+	                            { key: 'budget_asc', label: 'รับน้อย → มาก' },
+	                            { key: 'name_asc', label: 'ชื่อ A → Z' },
+	                            { key: 'name_desc', label: 'ชื่อ Z → A' },
+	                          ]
+		                      ).map(opt => (
+			                        <button
+			                          key={opt.key}
+			                          type="button"
                           onClick={() => {
                             setSortBy(opt.key);
                             setIsSortOpen(false);
                           }}
-	                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-white/5 ${(!isIncomeMode ? sortBy : sortKeyForUI) === opt.key ? 'bg-white/5' : ''}`}
-	                          role="menuitem"
-	                        >
-	                          <span className="text-slate-100">{opt.label}</span>
-	                          {((!isIncomeMode ? sortBy : sortKeyForUI) === opt.key) && (
-	                            <svg className="h-4 w-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-	                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-	                            </svg>
-	                          )}
-	                        </button>
-	                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+		                          className={`w-full rounded-xl px-3 py-2 text-left text-sm font-semibold flex items-center justify-between hover:bg-white/5 ${(!isIncomeMode ? sortBy : sortKeyForUI) === opt.key ? 'bg-white/5' : ''}`}
+		                          role="menuitem"
+		                        >
+		                          <span className="text-slate-100">{opt.label}</span>
+		                          {((!isIncomeMode ? sortBy : sortKeyForUI) === opt.key) && (
+		                            <svg className="h-4 w-4 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+		                            </svg>
+			                          )}
+			                        </button>
+			                      ))}
+		                    </div>
+                    </>
+                  )}
+	              </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSortOpen(false);
+                    setSortBy('custom');
+                    openReorderCategoriesModal();
+                  }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                  aria-label="เรียงเอง (จัดลำดับหมวดหมู่)"
+                  title="เรียงเอง (จัดลำดับ)"
+                >
+                  <GripVertical className="h-5 w-5" aria-hidden="true" />
+                </button>
+	            </div>
             </div>
 
               {!isIncomeMode && (headlineSummary.incomeActualTotal > 0 || headlineSummary.incomeBudgetTotal > 0 || headlineSummary.expenseBudgetTotal > 0) && (
@@ -1443,11 +2159,11 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                 );
               })()}
 
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  disabled={tempMonthIndex <= 0}
-                  onClick={() => setTempMonthIndex(v => Math.max(0, v - 1))}
+	              <div className="mt-3 flex gap-2">
+	                <button
+	                  type="button"
+	                  disabled={tempMonthIndex <= 0}
+	                  onClick={() => setTempMonthIndex(v => Math.max(0, v - 1))}
                   className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                 >
                   เดือนก่อนหน้า
@@ -1458,15 +2174,111 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   onClick={() => setTempMonthIndex(v => Math.min(months.length - 1, v + 1))}
                   className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-sm font-extrabold text-slate-100 disabled:opacity-40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                 >
-                  เดือนถัดไป
-                </button>
-              </div>
+	                  เดือนถัดไป
+	                </button>
+	              </div>
 
-              <div className="mt-5 flex gap-3">
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(false)}
-                className="flex-1 py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
+	              <div className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 shadow-sm shadow-black/5">
+	                <div className="flex items-start justify-between gap-3">
+	                  <div className="min-w-0">
+	                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">ตัดรอบ</div>
+	                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+	                      รายการหลังวันตัดรอบจะถูกนับเป็นเดือนถัดไป
+	                    </div>
+	                  </div>
+	                  <div className="shrink-0 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-right">
+	                    <div className="text-[10px] font-extrabold text-[color:var(--app-muted-2)]">โหมด</div>
+	                    <div className="text-[11px] font-extrabold text-slate-100">
+	                      {cutoffDay > 0 ? `ทุกวันที่ ${cutoffDay}` : 'ตามปฏิทิน'}
+	                    </div>
+	                  </div>
+	                </div>
+
+	                <div className="mt-3 grid grid-cols-2 gap-2">
+	                  <button
+	                    type="button"
+	                    onClick={() => setCutoffDay(0)}
+	                    className={[
+	                      'h-11 rounded-2xl border px-3 text-xs font-extrabold transition',
+	                      'focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+	                      cutoffDay <= 0
+	                        ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'
+	                        : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+	                    ].join(' ')}
+	                  >
+	                    ตามเดือนปฏิทิน
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={() => setCutoffDay((prev) => (Number(prev) > 0 ? prev : 25))}
+	                    className={[
+	                      'h-11 rounded-2xl border px-3 text-xs font-extrabold transition',
+	                      'focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+	                      cutoffDay > 0
+	                        ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'
+	                        : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+	                    ].join(' ')}
+	                  >
+	                    กำหนดวันตัดรอบ
+	                  </button>
+	                </div>
+
+	                {cutoffDay > 0 ? (
+	                  <div className="mt-3">
+	                    <div className="flex items-center justify-between gap-3">
+	                      <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">วันตัดรอบ</div>
+	                      <div className="text-xs font-extrabold text-slate-100">วันที่ {cutoffDay}</div>
+	                    </div>
+	                    <input
+	                      type="range"
+	                      min={1}
+	                      max={31}
+	                      value={cutoffDay}
+	                      onChange={(e) => setCutoffDay(Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+	                      className="mt-2 w-full accent-emerald-400"
+	                      aria-label="เลือกวันตัดรอบ"
+	                    />
+	                    <div className="mt-2 flex flex-wrap gap-2">
+	                      {[20, 25, 28, 30, 31].map((d) => (
+	                        <button
+	                          key={`cutoff-${d}`}
+	                          type="button"
+	                          onClick={() => setCutoffDay(d)}
+	                          className={[
+	                            'rounded-2xl border px-3 py-2 text-[11px] font-extrabold transition',
+	                            'focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
+	                            cutoffDay === d
+	                              ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'
+	                              : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
+	                          ].join(' ')}
+	                        >
+	                          {d}
+	                        </button>
+	                      ))}
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {(() => {
+	                  const label = months[tempMonthIndex] || selectedMonth;
+	                  const range = cycleRangeForMonthLabel(label, cutoffDay);
+	                  if (!range?.start || !range?.end) return null;
+	                  return (
+	                    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold text-[color:var(--app-muted)]">
+	                      รอบของ <span className="font-extrabold text-slate-100">{label}</span>:{' '}
+	                      <span className="font-extrabold text-slate-100">{formatThaiDateShort(range.start)}</span>
+	                      {' '}–{' '}
+	                      <span className="font-extrabold text-slate-100">{formatThaiDateShort(range.end)}</span>
+	                    </div>
+	                  );
+	                })()}
+	              </div>
+
+	              <div className="mt-5 flex gap-3">
+	              <button
+	                type="button"
+	                onClick={() => setIsSettingsOpen(false)}
+	                className="flex-1 py-3 rounded-2xl border border-white/10 font-extrabold text-slate-100 bg-white/5 hover:bg-white/10"
               >
                 ยกเลิก
               </button>
@@ -1486,9 +2298,171 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
         </div>
       ), document.body)}
 
+      {/* Reorder Categories Modal */}
+      {mounted && showReorderModal && createPortal((
+        <div
+          className="fixed inset-0 z-[92] flex items-end sm:items-center justify-center bg-slate-950/45 backdrop-blur-sm p-0 sm:p-4"
+          onClick={(e) => e.target === e.currentTarget && setShowReorderModal(false)}
+        >
+          <div
+            className="bg-[var(--app-surface)] w-full max-w-none sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl shadow-black/40 animate-slideUp overflow-hidden border border-[color:var(--app-border)] flex flex-col max-h-[92dvh]"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="จัดเรียงหมวดหมู่"
+          >
+            <div className="relative border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 pb-4 pt-[calc(env(safe-area-inset-top)+14px)] sm:pt-4">
+              <button
+                type="button"
+                onClick={() => setShowReorderModal(false)}
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                aria-label="ปิด"
+                title="ปิด"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+
+              <div className="pr-12">
+                <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">เรียงเอง</div>
+                <div className="mt-0.5 text-lg font-extrabold text-[color:var(--app-text)]">จัดเรียงหมวด{typeLabel}</div>
+                <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                  ลากเพื่อเรียงลำดับ หรือกดขึ้น/ลง
+                </div>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-4 space-y-2">
+              {reorderDraftIds
+                .map((id) => ({ id, cat: categoryById.get(String(id)) }))
+                .filter((x) => x.cat)
+                .map(({ id, cat }, idx) => {
+                  const name = String(cat?.name || '');
+                  const icon = String(cat?.icon || 'other');
+                  const disabledUp = idx <= 0;
+                  const disabledDown = idx >= reorderDraftIds.length - 1;
+                  return (
+                    <div
+                      key={`reorder-${id}`}
+                      draggable
+                      onDragStart={(e) => {
+                        reorderDragIdRef.current = String(id);
+                        try {
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', String(id));
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        try { e.dataTransfer.dropEffect = 'move'; } catch {}
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromId = reorderDragIdRef.current || '';
+                        const fromIdx = fromId ? reorderDraftIds.findIndex((x) => String(x) === String(fromId)) : -1;
+                        if (fromIdx < 0) return;
+                        moveReorderDraft(fromIdx, idx);
+                      }}
+                      className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm shadow-black/10"
+                      aria-label={`หมวด ${name}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 text-slate-200 shrink-0">
+                            <CategoryIcon iconKey={icon} className="h-5 w-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{name}</div>
+                            <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">ลำดับที่ {idx + 1}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="hidden sm:inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200">
+                            <GripVertical className="h-5 w-5" aria-hidden="true" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => moveReorderDraft(idx, idx - 1)}
+                            disabled={disabledUp}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                            aria-label="เลื่อนขึ้น"
+                            title="ขึ้น"
+                          >
+                            <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveReorderDraft(idx, idx + 1)}
+                            disabled={disabledDown}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                            aria-label="เลื่อนลง"
+                            title="ลง"
+                          >
+                            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {reorderDraftIds.length === 0 ? (
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-sm font-semibold text-slate-400">
+                  ยังไม่มีหมวดให้จัดเรียง
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = (categories || [])
+                      .filter((c) => (c?.type === 'income' ? 'income' : 'expense') === selectedTypeKey)
+                      .slice()
+                      .sort((a, b) => collatorTH.compare(String(a?.name || ''), String(b?.name || '')))
+                      .map((c) => String(c?._id || ''))
+                      .filter(Boolean);
+                    setReorderDraftIds(list);
+                  }}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+                >
+                  รีเซ็ตตามชื่อ
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowReorderModal(false)}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCategoryOrder((prev) => ({ ...(prev || {}), [selectedTypeKey]: reorderDraftIds }));
+                      setSortBy('custom');
+                      setShowReorderModal(false);
+                      showToast('success', 'บันทึกลำดับหมวดหมู่แล้ว');
+                    }}
+                    className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:brightness-95"
+                  >
+                    บันทึก
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
       {/* Category list */}
       <div>
-        <div className="mx-auto w-full max-w-lg p-4">
+        <div className="mx-auto w-full max-w-lg p-4 lg:max-w-6xl lg:px-6">
         
 
         {isLoading ? (
@@ -1521,254 +2495,143 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                   className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                 >
                   <Plus className="h-5 w-5" aria-hidden="true" />
-                  เพิ่มหมวด{typeLabel}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Filter */}
-              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm shadow-black/10">
-                <div className="relative">
-                  <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)]">
-                    <Search className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <input
-                    value={categoryQuery}
-                    onChange={(e) => setCategoryQuery(e.target.value)}
-                    placeholder="ค้นหาหมวดหมู่…"
-                    className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-10 pr-10 text-sm font-extrabold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                  />
-                  {String(categoryQuery || '').trim() ? (
-                    <button
-                      type="button"
-                      onClick={() => setCategoryQuery('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                      aria-label="ล้างคำค้นหา"
-                      title="ล้าง"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </div>
-
-                {!isIncomeMode ? (
-                  <>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {[
-                        { key: 'all', label: 'ทั้งหมด' },
-                        { key: 'budgeted', label: 'ตั้งงบแล้ว' },
-                        { key: 'unbudgeted', label: 'ยังไม่ตั้งงบ' },
-                        { key: 'over', label: 'เกินงบ' },
-                      ].map((opt) => {
-                        const active = categoryFilter === opt.key;
-                        return (
-                          <button
-                            key={opt.key}
-                            type="button"
-                            onClick={() => setCategoryFilter(opt.key)}
-                            className={[
-                              'rounded-2xl px-3 py-2 text-xs font-extrabold transition border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
-                              active
-                                ? 'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25 focus:ring-emerald-300/30'
-                                : 'border-white/10 bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 focus:ring-emerald-400/20',
-                            ].join(' ')}
-                          >
-                            {opt.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                      {budgetedItemCount > 0 ? `ตั้งงบแล้ว ${budgetedItemCount} หมวด` : 'ยังไม่มีหมวดที่ตั้งงบ'}
-                    </div>
-                  </>
-                ) : (
-                  <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                    แตะที่การ์ดหมวดรายรับเพื่อ “ตั้งเป้ารายรับ” และดูความคืบหน้าแบบเดียวกับรายจ่าย
-                  </div>
-                )}
+	                  เพิ่มหมวด{typeLabel}
+	                </button>
 	              </div>
+	            </div>
+	          ) : (
+	            <div className="space-y-3 lg:grid lg:grid-cols-12 lg:gap-6 lg:space-y-0">
+                <div className="space-y-3 lg:col-span-4 lg:sticky lg:top-4 lg:self-start">
+                  {/* Filter */}
+                  <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-3 shadow-sm shadow-black/10">
+                    <div className="relative">
+                      <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--app-muted-2)]">
+                        <Search className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <input
+                        value={categoryQuery}
+                        onChange={(e) => setCategoryQuery(e.target.value)}
+                        placeholder="ค้นหาหมวดหมู่…"
+                        className="h-11 w-full rounded-2xl border border-white/10 bg-white/5 pl-10 pr-10 text-sm font-extrabold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                      />
+                      {String(categoryQuery || '').trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => setCategoryQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                          aria-label="ล้างคำค้นหา"
+                          title="ล้าง"
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      ) : null}
+                    </div>
 
-              {filteredCategories.length === 0 ? (
-                <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 text-center shadow-sm shadow-black/10">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-xl">
-                    🔎
-                  </div>
-                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">ไม่พบหมวดที่ตรงกับตัวกรอง</div>
-                  <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">ลองค้นหาใหม่ หรือกดล้างตัวกรอง</div>
-                  <div className="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCategoryQuery('');
-                        setCategoryFilter('all');
-                      }}
-                      className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-xs font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                    >
-                      ล้างตัวกรอง
-                    </button>
-                    <button
-                      type="button"
-                      onClick={openAddCategoryModal}
-                      className="flex-1 py-2.5 rounded-2xl bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                    >
-                      เพิ่มหมวด
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-		              {filteredCategories.map((cat) => {
-		                const actual = isIncomeMode ? (Number(cat.received) || 0) : (Number(cat.spent) || 0);
-		                const budget = Number(cat.budget) || 0;
-		                const remaining = budget - actual;
-		                const pct = isIncomeMode ? 100 : (budget > 0 ? Math.round((actual / budget) * 100) : 0);
-		                const progress = isIncomeMode ? 1 : (budget > 0 ? clamp01(actual / budget) : 0);
-		                const over = !isIncomeMode && budget > 0 && actual > budget;
-		                const pctText = isIncomeMode ? '100%' : (budget > 0 ? `${Math.max(0, pct)}%` : '—');
-		                const pctColor = isIncomeMode ? 'text-emerald-200' : over ? 'text-rose-300' : progress >= 0.85 ? 'text-amber-200' : 'text-emerald-200';
-		                const barColor = isIncomeMode ? '#34D399' : over ? '#FB7185' : progress >= 0.85 ? '#FACC15' : '#22C55E';
-		                return (
-	                  <div
-	                    key={cat._id}
-                      onClick={() => openEditModal(cat)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          openEditModal(cat);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-	                    className={[
-	                      'w-full rounded-3xl border p-4 text-left shadow-sm shadow-black/10 transition',
-	                      'cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-	                      over ? 'border-rose-500/25 bg-[var(--app-surface)]' : 'border-[color:var(--app-border)] bg-[var(--app-surface)] hover:bg-[var(--app-surface-3)]',
-	                    ].join(' ')}
-	                  >
-	                    <div className="flex items-start justify-between gap-3">
-	                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-xl bg-white/5 ring-1 ring-white/10">
-                          <CategoryIcon iconKey={cat.icon} className="w-6 h-6 text-slate-200" />
+                    {!isIncomeMode ? (
+                      <>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {[
+                            { key: 'all', label: 'ทั้งหมด' },
+                            { key: 'budgeted', label: 'ตั้งงบแล้ว' },
+                            { key: 'unbudgeted', label: 'ยังไม่ตั้งงบ' },
+                            { key: 'over', label: 'เกินงบ' },
+                          ].map((opt) => {
+                            const active = categoryFilter === opt.key;
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => setCategoryFilter(opt.key)}
+                                className={[
+                                  'rounded-2xl px-3 py-2 text-xs font-extrabold transition border ring-1 shadow-sm shadow-black/10 focus:outline-none focus:ring-2',
+                                  active
+                                    ? 'border-emerald-300/60 bg-emerald-500/15 text-emerald-200 ring-emerald-400/25 focus:ring-emerald-300/30'
+                                    : 'border-white/10 bg-white/5 text-slate-200 ring-white/10 hover:bg-white/10 focus:ring-emerald-400/20',
+                                ].join(' ')}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
                         </div>
-	                        <div className="min-w-0">
-	                          <div className="truncate text-base font-extrabold text-[color:var(--app-text)]">{cat.name}</div>
-	                          <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">
-                              {isIncomeMode ? (
-                                <>
-                                  {budget > 0 ? (
-                                    <>
-                                      เป้า{' '}
-                                      <span className="text-slate-200">{formatCurrency(budget)}</span>
-                                      {' • '}รับแล้ว{' '}
-                                      <span className="text-emerald-200">{formatCurrency(actual)}</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      รับแล้ว{' '}
-                                      <span className="text-emerald-200">{formatCurrency(actual)}</span>
-                                    </>
-                                  )}
-                                </>
-                              ) : (
-                                <>
-                                  เหลือ{' '}
-                                  <span className={remaining < 0 ? 'text-rose-300' : 'text-emerald-200'}>
-                                    {formatCurrency(remaining)}
-                                  </span>
-                                </>
-                              )}
-	                          </div>
-	                        </div>
-	                      </div>
-	
-	                      <div className="shrink-0 flex flex-col items-end gap-2">
-	                          <div className="flex items-center gap-2">
-                              {!isIncomeMode ? (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEditModal(cat);
-                                  }}
-                                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                                >
-                                  แก้ไข
-                                </button>
-	                              ) : (
-	                                <button
-	                                  type="button"
-	                                  onClick={(e) => {
-	                                    e.stopPropagation();
-	                                    openEditCategoryMetaModal(cat);
-	                                  }}
-	                                  className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-extrabold text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-	                                >
-	                                  แก้ไข
-	                                </button>
-	                              )}
-		                          </div>
-	                          <div className={`text-sm font-extrabold ${pctColor}`}>{pctText}</div>
-		                      </div>
-		                    </div>
-	
-                    {(!isIncomeMode && budget > 0) || isIncomeMode ? (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-sm font-extrabold text-slate-200">
-                          <div className="truncate">
-                            {isIncomeMode ? (
-                              <>
-                                {formatCurrency(actual)} <span className="text-[color:var(--app-muted-2)]">/ {formatCurrency(budget)}</span>
-                              </>
-                            ) : (
-                              <>
-                                {formatCurrency(actual)} <span className="text-[color:var(--app-muted-2)]">/ {formatCurrency(budget)}</span>
-                              </>
-                            )}
+
+                        <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                          {budgetedItemCount > 0 ? `ตั้งงบแล้ว ${budgetedItemCount} หมวด` : 'ยังไม่มีหมวดที่ตั้งงบ'}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
+                        แตะที่การ์ดหมวดรายรับเพื่อ “ตั้งเป้ารายรับ” และดูความคืบหน้าแบบเดียวกับรายจ่าย
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={openAddCategoryModal}
+                    className="hidden lg:inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                  >
+                    <Plus className="h-5 w-5" aria-hidden="true" />
+                    เพิ่มหมวด{typeLabel}
+                  </button>
+                </div>
+
+                <div className="space-y-3 lg:col-span-8">
+                  {filteredCategories.length === 0 ? (
+                    <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-6 text-center shadow-sm shadow-black/10">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-xl">
+                        🔎
+                      </div>
+                      <div className="text-sm font-extrabold text-[color:var(--app-text)]">ไม่พบหมวดที่ตรงกับตัวกรอง</div>
+                      <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">ลองค้นหาใหม่ หรือกดล้างตัวกรอง</div>
+                      <div className="mt-4 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCategoryQuery('');
+                            setCategoryFilter('all');
+                          }}
+                          className="flex-1 py-2.5 rounded-2xl border border-white/10 bg-white/5 text-xs font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                        >
+                          ล้างตัวกรอง
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openAddCategoryModal}
+                          className="flex-1 py-2.5 rounded-2xl bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-lg shadow-emerald-500/20 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+                        >
+                          เพิ่มหมวด
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-5">
+                      {categorySections.map((section) => (
+                        <div key={section.id} className="space-y-3">
+                          {section.title ? (
+                            <div className="flex items-end justify-between gap-3">
+                              <div className="text-sm font-extrabold text-[color:var(--app-text)]">{section.title}</div>
+                              <div className="text-[11px] font-extrabold text-[color:var(--app-muted-2)]">
+                                {section.items.length} หมวด
+                              </div>
+                            </div>
+                          ) : null}
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3">
+                            {section.items.map(renderCategoryCard)}
                           </div>
                         </div>
-                        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-black/25 ring-1 ring-white/10">
-		                          <div
-		                            className="h-full rounded-full shadow-[0_10px_22px_-14px_rgba(34,197,94,0.8)]"
-		                            style={{
-		                              width: isIncomeMode ? '100%' : `${Math.min(100, Math.max(0, pct))}%`,
-		                              backgroundColor: barColor,
-		                              opacity: 1,
-		                            }}
-		                          />
-		                        </div>
-		                      </div>
-                    ) : null}
-	                  </div>
-	                );
-	              })}
+                      ))}
 
-	              <button
-	                type="button"
-	                onClick={openAddCategoryModal}
-	                className={[
-	                  'w-full cursor-pointer rounded-3xl border border-dashed border-white/20 bg-white/0 p-5 text-left',
-	                  'transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-emerald-400/25',
-	                ].join(' ')}
-	                aria-label={`เพิ่มหมวด${typeLabel}`}
-	              >
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl border border-dashed border-white/20 bg-white/5 ring-1 ring-white/10 flex items-center justify-center text-slate-200">
-                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v14m7-7H5" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-base font-extrabold text-[color:var(--app-text)]">เพิ่มหมวด{typeLabel}</div>
-                    <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">แตะเพื่อเพิ่มหมวดใหม่</div>
-                  </div>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3">
+                        {renderAddCategoryCard({ spanAll: true })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </button>
-            </div>
-          )
-        )}
+              </div>
+	          )
+	        )}
 
         <div className="h-24" />
         </div>
@@ -1851,7 +2714,7 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
                           amount: amountNum,
                           type: 'income',
                           category: created._id,
-                          date: dateStringForSelectedMonth(selectedMonth),
+                          date: dateStringForSelectedMonthWithCutoff(selectedMonth, cutoffDay),
                           notes: String(newIncomeNote || '').trim() || String(created?.name || ''),
                         }),
                       });
