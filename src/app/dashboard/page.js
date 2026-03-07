@@ -1,8 +1,8 @@
 "use client";
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon, Calendar, StickyNote, Mic, ScanLine } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon, Calendar, StickyNote, Mic, ScanLine } from 'lucide-react';
 
 import Currency from '../currency/page';
 import LoadingMascot from '@/components/LoadingMascot';
@@ -133,6 +133,12 @@ function renderIcon(iconKey) {
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
+  const [editCategoryOpen, setEditCategoryOpen] = useState(false);
+  const [editCategoryMaxH, setEditCategoryMaxH] = useState(288);
+  const [editCategoryPanelStyle, setEditCategoryPanelStyle] = useState(() => ({ left: 12, top: 12, width: 280, transform: 'translateY(0)' }));
+  const editCategoryRef = useRef(null);
+  const editCategoryButtonRef = useRef(null);
+  const editCategoryPanelRef = useRef(null);
 
   useEffect(() => {
     setMounted(true);
@@ -239,6 +245,15 @@ export default function Dashboard() {
     date: '',
     notes: '',
   });
+  const editCategoryOptions = useMemo(() => {
+    const type = String(editFormData?.type || '');
+    return (categories || []).filter((c) => c?._id && c?.type === type);
+  }, [categories, editFormData?.type]);
+  const editCategorySelected = useMemo(() => {
+    const id = String(editFormData?.category || '');
+    if (!id) return null;
+    return (categories || []).find((c) => String(c?._id || '') === id) || null;
+  }, [categories, editFormData?.category]);
   const [autoCategorize, setAutoCategorize] = useState(false);
   const [addFormData, setAddFormData] = useState({
     amount: '',
@@ -868,6 +883,76 @@ export default function Dashboard() {
     return () => document.removeEventListener('keydown', onKey, true);
   }, [showMonthPicker]);
 
+  const recomputeEditCategoryPanel = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const btn = editCategoryButtonRef.current;
+    if (!btn || !btn.getBoundingClientRect) return;
+    const rect = btn.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
+    const vw = window.innerWidth || document.documentElement?.clientWidth || 0;
+    if (!vh) return;
+
+    const margin = 12;
+    const below = Math.max(0, vh - rect.bottom - margin);
+    const above = Math.max(0, rect.top - margin);
+
+    const minNeeded = 220; // enough to show a few options
+    const preferUp = below < minNeeded && above > below;
+    const available = preferUp ? above : below;
+
+    setEditCategoryMaxH(Math.max(160, Math.min(360, Math.floor(available - 8))));
+
+    const maxWidth = Math.max(0, vw - margin * 2);
+    const width = Math.max(180, Math.min(rect.width || 280, maxWidth || rect.width || 280));
+    const left = Math.min(Math.max(rect.left || margin, margin), Math.max(margin, vw - margin - width));
+    const top = preferUp ? (rect.top - 8) : (rect.bottom + 8);
+    const transform = preferUp ? 'translateY(-100%)' : 'translateY(0)';
+    setEditCategoryPanelStyle({ left, top, width, transform });
+  }, []);
+
+  useEffect(() => {
+    if (!editCategoryOpen) return;
+    recomputeEditCategoryPanel();
+    const onDown = (e) => {
+      const root = editCategoryRef.current;
+      const panel = editCategoryPanelRef.current;
+      if (!root) return;
+      if (root.contains(e.target)) return;
+      if (panel && panel.contains && panel.contains(e.target)) return;
+      setEditCategoryOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setEditCategoryOpen(false);
+    };
+    const onResize = () => recomputeEditCategoryPanel();
+    const onScroll = () => recomputeEditCategoryPanel();
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('scroll', onScroll, true);
+    };
+  }, [editCategoryOpen, recomputeEditCategoryPanel]);
+
+  useEffect(() => {
+    if (!showEditModal) setEditCategoryOpen(false);
+  }, [showEditModal]);
+
+  useEffect(() => {
+    setEditCategoryOpen(false);
+  }, [editFormData?.type]);
+
+  useEffect(() => {
+    if (!editCategoryOpen) return;
+    recomputeEditCategoryPanel();
+  }, [editCategoryOpen, recomputeEditCategoryPanel, editFormData?.category, editCategoryOptions?.length]);
+
   /* --- Data & Logic Setup --- */
   const getMonths = () => {
     const currentDate = new Date();
@@ -1228,6 +1313,10 @@ export default function Dashboard() {
 
     if (!editFormData.amount || parseFloat(editFormData.amount) <= 0) {
       setError('กรุณากรอกจำนวนเงินที่มากกว่า 0');
+      return;
+    }
+    if (!editFormData.category) {
+      setError('กรุณาเลือกหมวดหมู่');
       return;
     }
 
@@ -3345,21 +3434,88 @@ export default function Dashboard() {
               {/* Category Selection */}
               <div>
                 <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">หมวดหมู่</label>
-                <select
-                  value={editFormData.category}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                >
-                  <option value="">กรุณาเลือกหมวดหมู่</option>
-                  {categories
-                    .filter(cat => cat.type === editFormData.type)
-                    .map(cat => (
-                      <option key={cat._id} value={cat._id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                </select>
+                <div ref={editCategoryRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditCategoryOpen((v) => !v);
+                      try { recomputeEditCategoryPanel(); } catch {}
+                    }}
+                    ref={editCategoryButtonRef}
+                    className={[
+                      'w-full rounded-xl border px-4 py-3 text-left transition-all outline-none',
+                      'border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)]',
+                      'hover:bg-[var(--app-surface-3)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20',
+                    ].join(' ')}
+                    aria-haspopup="listbox"
+                    aria-expanded={editCategoryOpen}
+                    aria-label="เลือกหมวดหมู่"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] shrink-0">
+                          <div className="scale-[0.85]">{renderIcon(editCategorySelected?.icon || 'other')}</div>
+                        </div>
+                        <div className={editFormData.category ? 'min-w-0 text-sm font-extrabold truncate' : 'min-w-0 text-sm font-extrabold text-[color:var(--app-muted)] truncate'}>
+                          {editFormData.category ? (editCategorySelected?.name || 'ไม่ระบุ') : 'กรุณาเลือกหมวดหมู่'}
+                        </div>
+                      </div>
+                      <ChevronDown className={['h-4 w-4 shrink-0 transition', editCategoryOpen ? 'rotate-180' : '', 'text-[color:var(--app-muted)]'].join(' ')} aria-hidden="true" />
+                    </div>
+                  </button>
+                </div>
+
+                {mounted && editCategoryOpen && createPortal((
+                  <div
+                    ref={editCategoryPanelRef}
+                    role="listbox"
+                    aria-label="ตัวเลือกหมวดหมู่"
+                    className="fixed z-[10050] overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20"
+                    style={{
+                      left: `${Number(editCategoryPanelStyle?.left ?? 12)}px`,
+                      top: `${Number(editCategoryPanelStyle?.top ?? 12)}px`,
+                      width: `${Number(editCategoryPanelStyle?.width ?? 280)}px`,
+                      transform: String(editCategoryPanelStyle?.transform || 'translateY(0)'),
+                    }}
+                  >
+                    <div className="overflow-auto p-1 overscroll-contain" style={{ maxHeight: `${editCategoryMaxH}px` }}>
+                      {(editCategoryOptions || []).length === 0 ? (
+                        <div className="px-4 py-3 text-sm font-semibold text-[color:var(--app-muted)]">
+                          ยังไม่มีหมวดหมู่
+                        </div>
+                      ) : (
+                        editCategoryOptions.map((cat) => {
+                          const selected = String(editFormData.category || '') === String(cat?._id || '');
+                          return (
+                            <button
+                              key={cat._id}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => {
+                                setEditFormData((prev) => ({ ...prev, category: cat._id }));
+                                setEditCategoryOpen(false);
+                              }}
+                              className={[
+                                'w-full rounded-2xl px-3 py-2.5 text-left transition flex items-center justify-between gap-3',
+                                selected ? 'bg-emerald-500/12 ring-1 ring-emerald-400/20' : 'hover:bg-[var(--app-surface-2)]',
+                                'text-[color:var(--app-text)]',
+                              ].join(' ')}
+                            >
+                              <span className="min-w-0 inline-flex items-center gap-3">
+                                <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] shrink-0">
+                                  <span className="scale-[0.78]">{renderIcon(cat.icon || 'other')}</span>
+                                </span>
+                                <span className="min-w-0 truncate text-sm font-extrabold">{cat.name}</span>
+                              </span>
+                              {selected ? <span className="text-emerald-500 font-extrabold">✓</span> : <span className="text-[color:var(--app-muted)] text-xs font-semibold">เลือก</span>}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ), document.body)}
               </div>
 
               {/* Date Input */}

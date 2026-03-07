@@ -153,6 +153,8 @@ const I18N = {
     amount: 'จำนวนเงิน',
     notes: 'หมายเหตุ',
     notes_placeholder: 'เพิ่มรายละเอียด...',
+    select_category_placeholder: 'กรุณาเลือกหมวดหมู่',
+    no_categories_yet: 'ยังไม่มีหมวดหมู่',
   },
   en: {
     app_title: 'Transactions',
@@ -258,6 +260,8 @@ const I18N = {
     amount: 'Amount',
     notes: 'Notes',
     notes_placeholder: 'Add details...',
+    select_category_placeholder: 'Please select a category',
+    no_categories_yet: 'No categories yet',
   },
 };
 
@@ -382,6 +386,12 @@ export default function TransactionsPage() {
   const filtersRef = useRef(null);
   const touchRef = useRef({ x: 0, y: 0, id: null, moved: false });
   const touchClearRef = useRef(null);
+  const [editCategoryOpen, setEditCategoryOpen] = useState(false);
+  const [editCategoryMaxH, setEditCategoryMaxH] = useState(288);
+  const [editCategoryPanelStyle, setEditCategoryPanelStyle] = useState(() => ({ left: 12, top: 12, width: 280, transform: 'translateY(0)' }));
+  const editCategoryRootRef = useRef(null);
+  const editCategoryButtonRef = useRef(null);
+  const editCategoryPanelRef = useRef(null);
   const [editFormData, setEditFormData] = useState({
     amount: '',
     type: 'expense',
@@ -389,6 +399,15 @@ export default function TransactionsPage() {
     date: '',
     notes: '',
   });
+  const editCategoryOptions = useMemo(() => {
+    const type = String(editFormData?.type || '');
+    return (categories || []).filter((c) => c?._id && c?.type === type);
+  }, [categories, editFormData?.type]);
+  const editCategorySelected = useMemo(() => {
+    const id = String(editFormData?.category || '');
+    if (!id) return null;
+    return (categories || []).find((c) => String(c?._id || '') === id) || null;
+  }, [categories, editFormData?.category]);
 
   const parseISODateKey = (iso) => {
     const parts = String(iso || '').split('-');
@@ -431,6 +450,74 @@ export default function TransactionsPage() {
   useEffect(() => {
     if (!showEditModal) setShowEditDatePicker(false);
   }, [showEditModal]);
+
+  const recomputeEditCategoryPanel = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const btn = editCategoryButtonRef.current;
+    if (!btn || !btn.getBoundingClientRect) return;
+    const rect = btn.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
+    const vw = window.innerWidth || document.documentElement?.clientWidth || 0;
+    if (!vh || !vw) return;
+
+    const margin = 12;
+    const below = Math.max(0, vh - rect.bottom - margin);
+    const above = Math.max(0, rect.top - margin);
+
+    const minNeeded = 220;
+    const preferUp = below < minNeeded && above > below;
+    const available = preferUp ? above : below;
+    setEditCategoryMaxH(Math.max(160, Math.min(360, Math.floor(available - 8))));
+
+    const maxWidth = Math.max(0, vw - margin * 2);
+    const width = Math.max(180, Math.min(rect.width || 280, maxWidth || rect.width || 280));
+    const left = Math.min(Math.max(rect.left || margin, margin), Math.max(margin, vw - margin - width));
+    const top = preferUp ? (rect.top - 8) : (rect.bottom + 8);
+    const transform = preferUp ? 'translateY(-100%)' : 'translateY(0)';
+    setEditCategoryPanelStyle({ left, top, width, transform });
+  }, []);
+
+  useEffect(() => {
+    if (!editCategoryOpen) return;
+    recomputeEditCategoryPanel();
+    const onDown = (e) => {
+      const root = editCategoryRootRef.current;
+      const panel = editCategoryPanelRef.current;
+      if (root && root.contains && root.contains(e.target)) return;
+      if (panel && panel.contains && panel.contains(e.target)) return;
+      setEditCategoryOpen(false);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setEditCategoryOpen(false);
+    };
+    const onResize = () => recomputeEditCategoryPanel();
+    const onScroll = () => recomputeEditCategoryPanel();
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', onResize);
+    document.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('scroll', onScroll, true);
+    };
+  }, [editCategoryOpen, recomputeEditCategoryPanel]);
+
+  useEffect(() => {
+    if (!showEditModal) setEditCategoryOpen(false);
+  }, [showEditModal]);
+
+  useEffect(() => {
+    setEditCategoryOpen(false);
+  }, [editFormData?.type]);
+
+  useEffect(() => {
+    if (!editCategoryOpen) return;
+    recomputeEditCategoryPanel();
+  }, [editCategoryOpen, recomputeEditCategoryPanel, editFormData?.category, editCategoryOptions?.length]);
 
   useEffect(() => {
     if (!showBulkDateModal) setShowBulkDatePicker(false);
@@ -890,6 +977,10 @@ export default function TransactionsPage() {
 
     if (!editFormData.amount || parseFloat(editFormData.amount) <= 0) {
       setError(t('error_amount_gt0'));
+      return;
+    }
+    if (!editFormData.category) {
+      setError(t('select_category_placeholder'));
       return;
     }
 
@@ -2621,18 +2712,92 @@ export default function TransactionsPage() {
 
               <div>
                 <label className="block text-sm font-semibold text-slate-200 mb-2">{t('category')}</label>
-                <select
-                  value={editFormData.category}
-                  onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all"
-                  required
-                >
-                  {categories
-                    .filter(cat => cat.type === editFormData.type)
-                    .map(cat => (
-                      <option key={cat._id} value={cat._id}>{cat.name}</option>
-                    ))}
-                </select>
+                <div ref={editCategoryRootRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditCategoryOpen((v) => !v);
+                      try { recomputeEditCategoryPanel(); } catch {}
+                    }}
+                    ref={editCategoryButtonRef}
+                    className={[
+                      'w-full rounded-xl border px-4 py-3 text-left transition-all outline-none',
+                      'border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)]',
+                      'hover:bg-[var(--app-surface-3)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20',
+                    ].join(' ')}
+                    aria-haspopup="listbox"
+                    aria-expanded={editCategoryOpen}
+                    aria-label={t('select_category_placeholder')}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] shrink-0">
+                          <div className="scale-[0.9]">
+                            <CategoryIcon iconName={editCategorySelected?.icon || 'other'} className="w-5 h-5 text-[color:var(--app-muted)]" />
+                          </div>
+                        </div>
+                        <div className={editFormData.category ? 'min-w-0 text-sm font-extrabold truncate' : 'min-w-0 text-sm font-extrabold text-[color:var(--app-muted)] truncate'}>
+                          {editFormData.category ? (editCategorySelected?.name || t('unspecified')) : t('select_category_placeholder')}
+                        </div>
+                      </div>
+                      <ChevronDown className={['h-4 w-4 shrink-0 transition', editCategoryOpen ? 'rotate-180' : '', 'text-[color:var(--app-muted)]'].join(' ')} aria-hidden="true" />
+                    </div>
+                  </button>
+                </div>
+
+                {mounted && editCategoryOpen && createPortal((
+                  <div
+                    ref={editCategoryPanelRef}
+                    role="listbox"
+                    aria-label={t('category')}
+                    className="fixed z-[10050] overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20"
+                    style={{
+                      left: `${Number(editCategoryPanelStyle?.left ?? 12)}px`,
+                      top: `${Number(editCategoryPanelStyle?.top ?? 12)}px`,
+                      width: `${Number(editCategoryPanelStyle?.width ?? 280)}px`,
+                      transform: String(editCategoryPanelStyle?.transform || 'translateY(0)'),
+                    }}
+                  >
+                    <div className="overflow-auto p-1 overscroll-contain" style={{ maxHeight: `${editCategoryMaxH}px` }}>
+                      {(editCategoryOptions || []).length === 0 ? (
+                        <div className="px-4 py-3 text-sm font-semibold text-[color:var(--app-muted)]">
+                          {t('no_categories_yet')}
+                        </div>
+                      ) : (
+                        editCategoryOptions.map((cat) => {
+                          const selected = String(editFormData.category || '') === String(cat?._id || '');
+                          return (
+                            <button
+                              key={cat._id}
+                              type="button"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => {
+                                setEditFormData((prev) => ({ ...prev, category: cat._id }));
+                                setEditCategoryOpen(false);
+                              }}
+                              className={[
+                                'w-full rounded-2xl px-3 py-2.5 text-left transition flex items-center justify-between gap-3',
+                                selected ? 'bg-emerald-500/12 ring-1 ring-emerald-400/20' : 'hover:bg-[var(--app-surface-2)]',
+                                'text-[color:var(--app-text)]',
+                              ].join(' ')}
+                            >
+                              <span className="min-w-0 inline-flex items-center gap-3">
+                                <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--app-surface-2)] ring-1 ring-[color:var(--app-border)] shrink-0">
+                                  <span className="scale-[0.9]">
+                                    <CategoryIcon iconName={cat.icon || 'other'} className="w-5 h-5 text-[color:var(--app-muted)]" />
+                                  </span>
+                                </span>
+                                <span className="min-w-0 truncate text-sm font-extrabold">{cat.name}</span>
+                              </span>
+                              {selected ? <span className="text-emerald-500 font-extrabold">✓</span> : null}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ), document.body)}
               </div>
 
               <div>
