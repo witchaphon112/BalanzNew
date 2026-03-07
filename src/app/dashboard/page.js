@@ -224,12 +224,13 @@ export default function Dashboard() {
   const voiceChunksRef = useRef([]);
   const voiceStartMsRef = useRef(0);
   const voiceAutoTranscribeRef = useRef(false);
-  const slipAutoReadKeyRef = useRef('');
-  const readSlipRef = useRef(null);
-  const [categories, setCategories] = useState([]);
-  const [budgetsByMonth, setBudgetsByMonth] = useState({}); // { [monthLabel]: { [categoryId]: number } }
-  const [monthlyBudgetTotals, setMonthlyBudgetTotals] = useState({}); // { [monthLabel]: number }
-  const [budgetCategoryTypeById, setBudgetCategoryTypeById] = useState({}); // { [categoryId]: 'expense'|'income'|... }
+	  const slipAutoReadKeyRef = useRef('');
+	  const readSlipRef = useRef(null);
+	  const [categories, setCategories] = useState([]);
+	  const [categoryOrder, setCategoryOrder] = useState({ expense: [], income: [] }); // string[] by type (from Budget page reorder)
+	  const [budgetsByMonth, setBudgetsByMonth] = useState({}); // { [monthLabel]: { [categoryId]: number } }
+	  const [monthlyBudgetTotals, setMonthlyBudgetTotals] = useState({}); // { [monthLabel]: number }
+	  const [budgetCategoryTypeById, setBudgetCategoryTypeById] = useState({}); // { [categoryId]: 'expense'|'income'|... }
   const [editFormData, setEditFormData] = useState({
     amount: '',
     type: 'expense',
@@ -249,10 +250,34 @@ export default function Dashboard() {
   const autoCatTimerRef = useRef(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerTarget, setDatePickerTarget] = useState('add'); // 'add' | 'edit'
-  const [datePickerMonth, setDatePickerMonth] = useState(() => {
-    const p = getBangkokDateParts(Date.now());
-    return { year: p?.year || new Date().getFullYear(), monthIndex: p?.monthIndex ?? new Date().getMonth() };
-  });
+	  const [datePickerMonth, setDatePickerMonth] = useState(() => {
+	    const p = getBangkokDateParts(Date.now());
+	    return { year: p?.year || new Date().getFullYear(), monthIndex: p?.monthIndex ?? new Date().getMonth() };
+	  });
+
+	  useEffect(() => {
+	    if (typeof window === 'undefined') return;
+	    try {
+	      const expRaw = localStorage.getItem('budget_category_order_v1_expense');
+	      const incRaw = localStorage.getItem('budget_category_order_v1_income');
+	      const exp = expRaw ? JSON.parse(expRaw) : null;
+	      const inc = incRaw ? JSON.parse(incRaw) : null;
+	      setCategoryOrder({
+	        expense: Array.isArray(exp) ? exp.map((x) => String(x)).filter(Boolean) : [],
+	        income: Array.isArray(inc) ? inc.map((x) => String(x)).filter(Boolean) : [],
+	      });
+	    } catch {
+	      // ignore
+	    }
+	  }, []);
+
+	  const categoryOrderIndex = useMemo(() => {
+	    const exp = new Map();
+	    const inc = new Map();
+	    (categoryOrder?.expense || []).forEach((id, idx) => exp.set(String(id), idx));
+	    (categoryOrder?.income || []).forEach((id, idx) => inc.set(String(id), idx));
+	    return { expense: exp, income: inc };
+	  }, [categoryOrder]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1521,10 +1546,10 @@ export default function Dashboard() {
     return { iconBg: 'bg-emerald-500/15 text-emerald-200 ring-emerald-400/20', border: 'border-emerald-400/15' };
   };
 
-  const budgetRowsExpense = useMemo(() => {
-    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
-    const entries = Object.entries(monthBudgets || {});
-    if (!entries.length) return [];
+	  const budgetRowsExpense = useMemo(() => {
+	    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+	    const entries = Object.entries(monthBudgets || {});
+	    if (!entries.length) return [];
 
     const spentByCategory = new Map();
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
@@ -1535,35 +1560,41 @@ export default function Dashboard() {
       spentByCategory.set(id, (spentByCategory.get(id) || 0) + (Number(t.amount) || 0));
     }
 
-    const colors = ['#FB7185', '#FACC15', '#38BDF8']; // rose, amber, sky
-    const rows = entries
-      .map(([categoryId, total], idx) => {
-        const cat = (categories || []).find((c) => c?._id === categoryId);
-        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
-        if (type && type !== 'expense') return null;
-        const budget = Number(total) || 0;
-        const spent = Math.max(0, Number(spentByCategory.get(categoryId) || 0));
-        return {
-          id: categoryId,
-          name: cat?.name || 'หมวดหมู่',
-          icon: cat?.icon || 'other',
-          spent,
-          budget,
-          pct: budget > 0 ? Math.max(0, Math.min(1, spent / budget)) : 0,
-          color: colors[idx % colors.length],
-        };
-      })
-      .filter(Boolean)
-      .filter((r) => r.budget > 0)
-      .sort((a, b) => b.pct - a.pct);
+	    const colors = ['#FB7185', '#FACC15', '#38BDF8']; // rose, amber, sky
+	    const rows = entries
+	      .map(([categoryId, total]) => {
+	        const cat = (categories || []).find((c) => c?._id === categoryId);
+	        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+	        if (type && type !== 'expense') return null;
+	        const budget = Number(total) || 0;
+	        const spent = Math.max(0, Number(spentByCategory.get(categoryId) || 0));
+	        return {
+	          id: categoryId,
+	          name: cat?.name || 'หมวดหมู่',
+	          icon: cat?.icon || 'other',
+	          spent,
+	          budget,
+	          pct: budget > 0 ? Math.max(0, Math.min(1, spent / budget)) : 0,
+	        };
+	      })
+	      .filter(Boolean)
+	      .filter((r) => r.budget > 0);
 
-    return rows;
-  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById]);
+	    const idxMap = categoryOrderIndex.expense;
+	    const sorted = [...rows].sort((a, b) => {
+	      const ia = idxMap.has(String(a.id)) ? idxMap.get(String(a.id)) : Number.POSITIVE_INFINITY;
+	      const ib = idxMap.has(String(b.id)) ? idxMap.get(String(b.id)) : Number.POSITIVE_INFINITY;
+	      if (ia !== ib) return ia - ib;
+	      return (Number(b.pct) || 0) - (Number(a.pct) || 0);
+	    });
 
-  const budgetRowsIncome = useMemo(() => {
-    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
-    const entries = Object.entries(monthBudgets || {});
-    if (!entries.length) return [];
+	    return sorted.map((r, idx) => ({ ...r, color: colors[idx % colors.length] }));
+	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex]);
+
+	  const budgetRowsIncome = useMemo(() => {
+	    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
+	    const entries = Object.entries(monthBudgets || {});
+	    if (!entries.length) return [];
 
     const receivedByCategory = new Map();
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
@@ -1574,41 +1605,47 @@ export default function Dashboard() {
       receivedByCategory.set(id, (receivedByCategory.get(id) || 0) + (Number(t.amount) || 0));
     }
 
-    const colors = ['#34D399', '#38BDF8', '#A78BFA']; // emerald, sky, violet
-    const rows = entries
-      .map(([categoryId, total], idx) => {
-        const cat = (categories || []).find((c) => c?._id === categoryId);
-        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
-        if (type && type !== 'income') return null;
-        const budget = Number(total) || 0;
-        const received = Math.max(0, Number(receivedByCategory.get(categoryId) || 0));
-        const pctRaw = budget > 0 ? received / budget : 0;
-        const pctClamped = Math.max(0, Math.min(1, pctRaw));
-        const alpha = 0.25 + 0.75 * pctClamped; // keep visible even when pct is low
-        return {
-          id: categoryId,
-          name: cat?.name || 'หมวดหมู่',
-          icon: cat?.icon || 'other',
-          received,
-          budget,
-          pct: pctClamped,
-          color: colors[idx % colors.length],
-          alpha,
-        };
-      })
-      .filter(Boolean)
-      .filter((r) => r.budget > 0)
-      .sort((a, b) => b.pct - a.pct);
+	    const colors = ['#34D399', '#38BDF8', '#A78BFA']; // emerald, sky, violet
+	    const rows = entries
+	      .map(([categoryId, total]) => {
+	        const cat = (categories || []).find((c) => c?._id === categoryId);
+	        const type = (cat?.type || budgetCategoryTypeById?.[categoryId] || '').toString();
+	        if (type && type !== 'income') return null;
+	        const budget = Number(total) || 0;
+	        const received = Math.max(0, Number(receivedByCategory.get(categoryId) || 0));
+	        const pctRaw = budget > 0 ? received / budget : 0;
+	        const pctClamped = Math.max(0, Math.min(1, pctRaw));
+	        const alpha = 0.25 + 0.75 * pctClamped; // keep visible even when pct is low
+	        return {
+	          id: categoryId,
+	          name: cat?.name || 'หมวดหมู่',
+	          icon: cat?.icon || 'other',
+	          received,
+	          budget,
+	          pct: pctClamped,
+	          alpha,
+	        };
+	      })
+	      .filter(Boolean)
+	      .filter((r) => r.budget > 0);
 
-    return rows;
-  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById]);
+	    const idxMap = categoryOrderIndex.income;
+	    const sorted = [...rows].sort((a, b) => {
+	      const ia = idxMap.has(String(a.id)) ? idxMap.get(String(a.id)) : Number.POSITIVE_INFINITY;
+	      const ib = idxMap.has(String(b.id)) ? idxMap.get(String(b.id)) : Number.POSITIVE_INFINITY;
+	      if (ia !== ib) return ia - ib;
+	      return (Number(b.pct) || 0) - (Number(a.pct) || 0);
+	    });
+
+	    return sorted.map((r, idx) => ({ ...r, color: colors[idx % colors.length] }));
+	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex]);
 
   const budgetCardType = recentTxnType === 'income' ? 'income' : 'expense';
   const budgetRows = budgetCardType === 'income' ? budgetRowsIncome : budgetRowsExpense;
 
-  const incomeMonthCategoryRows = useMemo(() => {
-    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
-    const map = new Map();
+	  const incomeMonthCategoryRows = useMemo(() => {
+	    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+	    const map = new Map();
     for (const t of src) {
       if (!t || t.type !== 'income') continue;
       const id = t.category?._id || t.category || '_none';
@@ -1626,15 +1663,21 @@ export default function Dashboard() {
       map.set(id, prev);
     }
 
-    const colors = ['#34D399', '#38BDF8', '#A78BFA', '#FACC15', '#FB7185', '#60A5FA'];
-    const list = Array.from(map.values()).sort((a, b) => (Number(b.received) || 0) - (Number(a.received) || 0));
-    const maxReceived = Math.max(1, ...list.map((r) => Number(r?.received) || 0));
-    return list.map((r, idx) => {
-      const pct01 = Math.max(0, Math.min(1, (Number(r?.received) || 0) / maxReceived));
-      const alpha = 0.25 + 0.75 * pct01;
-      return { ...r, color: colors[idx % colors.length], alpha };
-    });
-  }, [stats.transactionsAll]);
+	    const colors = ['#34D399', '#38BDF8', '#A78BFA', '#FACC15', '#FB7185', '#60A5FA'];
+	    const idxMap = categoryOrderIndex.income;
+	    const list = Array.from(map.values()).sort((a, b) => {
+	      const ia = idxMap.has(String(a.id)) ? idxMap.get(String(a.id)) : Number.POSITIVE_INFINITY;
+	      const ib = idxMap.has(String(b.id)) ? idxMap.get(String(b.id)) : Number.POSITIVE_INFINITY;
+	      if (ia !== ib) return ia - ib;
+	      return (Number(b.received) || 0) - (Number(a.received) || 0);
+	    });
+	    const maxReceived = Math.max(1, ...list.map((r) => Number(r?.received) || 0));
+	    return list.map((r, idx) => {
+	      const pct01 = Math.max(0, Math.min(1, (Number(r?.received) || 0) / maxReceived));
+	      const alpha = 0.25 + 0.75 * pct01;
+	      return { ...r, color: colors[idx % colors.length], alpha };
+	    });
+	  }, [stats.transactionsAll, categoryOrderIndex]);
 
   const showIncomeRowsWithoutTarget =
     budgetCardType === 'income' &&
@@ -2329,7 +2372,14 @@ export default function Dashboard() {
           setShowAddModal(true);
           setShowDatePicker(false);
         }}
-        className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-[60] inline-flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-500 text-slate-950 shadow-2xl shadow-black/40 ring-1 ring-emerald-300/30 hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 lg:right-8"
+	        className={[
+            'fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+92px)] z-[60] inline-flex h-14 w-14 items-center justify-center rounded-3xl',
+            'bg-emerald-500 text-slate-950',
+            'border border-[color:var(--app-border)] ring-1 ring-emerald-400/25',
+            'shadow-2xl shadow-black/20 hover:brightness-95',
+            'focus:outline-none focus:ring-2 focus:ring-emerald-400/40',
+            'lg:right-8',
+          ].join(' ')}
         aria-label="เพิ่มรายการ"
         title="เพิ่มรายการ"
       >
@@ -2574,27 +2624,27 @@ export default function Dashboard() {
           className="fixed inset-0 z-[10005] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
           onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}
         >
-          <form
-            onSubmit={handleAddSubmit}
-            className="w-full sm:max-w-md max-h-[92dvh] flex flex-col bg-gradient-to-b from-[#06211C] via-[#041614] to-[#041614] text-slate-100 rounded-t-[32px] sm:rounded-[32px] border border-emerald-400/10 shadow-2xl shadow-black/50 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="relative px-5 pt-5 pb-4 sm:pt-6 sm:pb-5">
-              <button
-                type="button"
-                onClick={() => setShowAddModal(false)}
-                className="absolute left-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10"
-                aria-label="ปิด"
-              >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
-              <div className="text-center text-base font-extrabold tracking-wide">เพิ่มรายการ</div>
-            </div>
+	          <form
+	            onSubmit={handleAddSubmit}
+	            className="w-full sm:max-w-md max-h-[92dvh] flex flex-col bg-[var(--app-surface)] text-[color:var(--app-text)] rounded-t-[32px] sm:rounded-[32px] border border-[color:var(--app-border)] shadow-2xl shadow-black/20 overflow-hidden"
+	            onClick={(e) => e.stopPropagation()}
+	          >
+	            <div className="relative px-5 pt-5 pb-4 sm:pt-6 sm:pb-5">
+	              <button
+	                type="button"
+	                onClick={() => setShowAddModal(false)}
+	                className="absolute left-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+	                aria-label="ปิด"
+	              >
+	                <X className="h-5 w-5" aria-hidden="true" />
+	              </button>
+	              <div className="text-center text-base font-extrabold tracking-wide">เพิ่มรายการ</div>
+	            </div>
 
-            <div className="px-5">
-              <div className="grid grid-cols-2 rounded-full border border-emerald-400/10 bg-emerald-500/5 p-1">
-                <button
-                  type="button"
+	            <div className="px-5">
+	              <div className="grid grid-cols-2 rounded-full border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-1">
+	                <button
+	                  type="button"
                   onClick={() => {
                     setAutoCategoryApplied('');
                     setAddFormData((prev) => ({
@@ -2605,15 +2655,15 @@ export default function Dashboard() {
                         : '',
                     }));
                   }}
-                  className={[
-                    'h-11 rounded-full text-sm font-extrabold transition',
-                    addFormData.type === 'expense'
-                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
-                      : 'text-white/60 hover:bg-white/5',
-                  ].join(' ')}
-                >
-                  รายจ่าย
-                </button>
+	                  className={[
+	                    'h-11 rounded-full text-sm font-extrabold transition',
+	                    addFormData.type === 'expense'
+	                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+	                      : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
+	                  ].join(' ')}
+	                >
+	                  รายจ่าย
+	                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -2626,66 +2676,66 @@ export default function Dashboard() {
                         : '',
                     }));
                   }}
-                  className={[
-                    'h-11 rounded-full text-sm font-extrabold transition',
-                    addFormData.type === 'income'
-                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
-                      : 'text-white/60 hover:bg-white/5',
-                  ].join(' ')}
-                >
-                  รายรับ
-                </button>
-              </div>
-            </div>
+	                  className={[
+	                    'h-11 rounded-full text-sm font-extrabold transition',
+	                    addFormData.type === 'income'
+	                      ? 'bg-emerald-500/20 text-emerald-200 ring-1 ring-emerald-400/20'
+	                      : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
+	                  ].join(' ')}
+	                >
+	                  รายรับ
+	                </button>
+	              </div>
+	            </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
-              <div className="text-center">
-                <div className="text-xs font-semibold text-white/70">จำนวนเงิน</div>
-                <div className="mt-3 flex items-center justify-center gap-2">
-                  <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
-                  <input
+	            <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
+	              <div className="text-center">
+	                <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
+	                <div className="mt-3 flex items-center justify-center gap-2">
+	                  <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
+	                  <input
                     type="number"
                     inputMode="decimal"
                     step="0.01"
-                    value={addFormData.amount}
-                    onChange={(e) => setAddFormData((prev) => ({ ...prev, amount: e.target.value }))}
-                    placeholder="0.00"
-                    className="w-[240px] bg-transparent text-center text-6xl font-extrabold tracking-tight text-white outline-none placeholder:text-white/30"
-                    required
-                  />
-                </div>
-              </div>
+	                    value={addFormData.amount}
+	                    onChange={(e) => setAddFormData((prev) => ({ ...prev, amount: e.target.value }))}
+	                    placeholder="0.00"
+	                    className="w-[240px] bg-transparent text-center text-6xl font-extrabold tracking-tight text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)]"
+	                    required
+	                  />
+	                </div>
+	              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  type="button"
+	              <div className="grid grid-cols-2 gap-4">
+	                <button
+	                  type="button"
                   onClick={() => {
                     setShowAddModal(false);
-                    setShowVoiceModal(true);
-                    resetVoiceState();
-                  }}
-                  className="h-14 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 hover:bg-emerald-500/15 font-extrabold flex items-center justify-center gap-2"
-                >
-                  <Mic className="h-5 w-5" aria-hidden="true" />
-                  อัดเสียง
-                </button>
-                <button
-                  type="button"
+	                    setShowVoiceModal(true);
+	                    resetVoiceState();
+	                  }}
+	                  className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                >
+	                  <Mic className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+	                  อัดเสียง
+	                </button>
+	                <button
+	                  type="button"
                   onClick={() => {
                     setShowAddModal(false);
-                    setShowSlipModal(true);
-                    resetSlipState();
-                  }}
-                  className="h-14 rounded-full bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 hover:bg-emerald-500/15 font-extrabold flex items-center justify-center gap-2"
-                >
-                  <ScanLine className="h-5 w-5" aria-hidden="true" />
-                  สแกนใบเสร็จ
-                </button>
-              </div>
+	                    setShowSlipModal(true);
+	                    resetSlipState();
+	                  }}
+	                  className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
+	                >
+	                  <ScanLine className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+	                  สแกนใบเสร็จ
+	                </button>
+	              </div>
 
-              <div>
-                <div className="text-sm font-extrabold text-white">หมวดหมู่</div>
-                <div className="mt-4 grid grid-cols-4 gap-4">
+	              <div>
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
+	                <div className="mt-4 grid grid-cols-4 gap-4">
                   {(categories || [])
                     .filter((c) => c?.type === addFormData.type)
                     .slice(0, 8)
@@ -2702,30 +2752,32 @@ export default function Dashboard() {
                           className="flex flex-col items-center gap-2"
                           aria-pressed={selected}
                         >
-                          <div
-                            className={[
-                              'h-14 w-14 rounded-full flex items-center justify-center ring-1 transition',
-                              selected ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/30 shadow-sm shadow-emerald-500/10' : 'bg-white/5 text-slate-100 ring-white/10 hover:bg-white/10',
-                            ].join(' ')}
-                            aria-hidden="true"
-                          >
-                            <div className="scale-90">{renderIcon(c.icon || 'other')}</div>
-                          </div>
-                          <div className="text-[11px] font-semibold text-white/80 truncate max-w-[76px]">{c.name}</div>
-                        </button>
-                      );
-                    })}
-                </div>
-                {!addFormData.category ? (
-                  <div className="mt-3 text-[11px] font-semibold text-white/45">* เลือกหมวดหมู่ก่อนบันทึก</div>
-                ) : null}
-              </div>
-
-              <div className="relative rounded-2xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-4">
-                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/50" aria-hidden="true" />
-                <div className="pl-8">
-                  <div className="text-sm font-extrabold text-white">
-                    {(() => {
+	                          <div
+	                            className={[
+	                              'h-14 w-14 rounded-full flex items-center justify-center ring-1 transition',
+	                              selected
+                                  ? 'bg-emerald-500/20 text-emerald-200 ring-emerald-400/30 shadow-sm shadow-emerald-500/10'
+                                  : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
+	                            ].join(' ')}
+	                            aria-hidden="true"
+	                          >
+	                            <div className="scale-90">{renderIcon(c.icon || 'other')}</div>
+	                          </div>
+	                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)] truncate max-w-[76px]">{c.name}</div>
+	                        </button>
+	                      );
+	                    })}
+	                </div>
+	                {!addFormData.category ? (
+	                  <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted-2)]">* เลือกหมวดหมู่ก่อนบันทึก</div>
+	                ) : null}
+	              </div>
+	
+	              <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
+	                <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+	                <div className="pl-8">
+	                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">
+	                    {(() => {
                       const iso = String(addFormData.date || '');
                       const today = toBangkokISODateKey(Date.now());
                       const label = (() => {
@@ -2738,28 +2790,28 @@ export default function Dashboard() {
                       })();
                       return iso === today ? `วันนี้, ${label}` : label;
                     })()}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openDatePicker('add')}
-                  className="absolute inset-0"
-                  aria-label="เปิดตัวเลือกวันที่"
-                />
-              </div>
-
-              <div className="relative rounded-2xl border border-emerald-400/10 bg-emerald-500/5 px-4 py-4">
-                <StickyNote className="absolute left-4 top-4 h-5 w-5 text-white/50" aria-hidden="true" />
-                <div className="pl-8">
-                  <textarea
-                    value={addFormData.notes}
-                    onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                    rows={2}
-                    placeholder="ระบุรายละเอียด..."
-                    className="w-full bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/30 resize-none"
-                  />
-                </div>
-              </div>
+	                  </div>
+	                </div>
+	                <button
+	                  type="button"
+	                  onClick={() => openDatePicker('add')}
+	                  className="absolute inset-0"
+	                  aria-label="เปิดตัวเลือกวันที่"
+	                />
+	              </div>
+	
+	              <div className="relative rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-4 hover:bg-[var(--app-surface-3)] transition">
+	                <StickyNote className="absolute left-4 top-4 h-5 w-5 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+	                <div className="pl-8">
+	                  <textarea
+	                    value={addFormData.notes}
+	                    onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
+	                    rows={2}
+	                    placeholder="ระบุรายละเอียด..."
+	                    className="w-full bg-transparent text-sm font-semibold text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)] resize-none"
+	                  />
+	                </div>
+	              </div>
 
               {error ? (
                 <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
@@ -2768,15 +2820,15 @@ export default function Dashboard() {
               ) : null}
             </div>
 
-            <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-2 border-t border-white/10 bg-black/10">
-              <button
-                type="submit"
-                className="h-14 w-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500 text-slate-950 font-extrabold text-base hover:brightness-95 disabled:opacity-60"
-                disabled={!addFormData.category}
-              >
-                บันทึกรายการ
-              </button>
-            </div>
+	            <div className="px-5 pb-[calc(env(safe-area-inset-bottom)+18px)] pt-2 border-t border-[color:var(--app-border)] bg-[var(--app-surface)]">
+	              <button
+	                type="submit"
+	                className="h-14 w-full rounded-full bg-emerald-500 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/15 hover:brightness-95 disabled:opacity-60"
+	                disabled={!addFormData.category}
+	              >
+	                บันทึกรายการ
+	              </button>
+	            </div>
           </form>
         </div>
       ), document.body)}
@@ -2787,18 +2839,18 @@ export default function Dashboard() {
           className="fixed inset-0 z-[10006] bg-slate-950/45 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[calc(env(safe-area-inset-bottom)+8px)] sm:pb-0"
           onClick={(e) => e.target === e.currentTarget && setShowDatePicker(false)}
         >
-          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-emerald-400/10 bg-gradient-to-b from-[#06211C] via-[#041614] to-[#041614] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
+          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20 overflow-hidden text-[color:var(--app-text)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
               <div>
                 <div className="text-sm font-extrabold">
                   เลือกวันที่{datePickerTarget === 'edit' ? ' (แก้ไขรายการ)' : ''}
                 </div>
-                <div className="text-[11px] font-semibold text-white/60">บันทึกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">บันทึกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowDatePicker(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                 aria-label="ปิด"
               >
                 <X className="h-5 w-5" aria-hidden="true" />
@@ -2860,7 +2912,7 @@ export default function Dashboard() {
                       <button
                         type="button"
                         onClick={goPrev}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                         aria-label="เดือนก่อนหน้า"
                       >
                         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
@@ -2868,14 +2920,14 @@ export default function Dashboard() {
 
                       <div className="min-w-0 flex-1 text-center">
                         <div className="text-sm font-extrabold">{monthLabel}</div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-white/60">แตะวันที่เพื่อเลือก</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
                       </div>
 
                       <button
                         type="button"
                         onClick={goNext}
                         disabled={!canGoNext}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
                         aria-label="เดือนถัดไป"
                       >
                         <ChevronRight className="h-5 w-5" aria-hidden="true" />
@@ -2884,7 +2936,7 @@ export default function Dashboard() {
 
                     <div className="mt-4 grid grid-cols-7 gap-1.5">
                       {weekdayTH.map((w) => (
-                        <div key={w} className="text-center text-[11px] font-extrabold text-white/55">
+                        <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted-2)]">
                           {w}
                         </div>
                       ))}
@@ -2905,12 +2957,12 @@ export default function Dashboard() {
                               'h-10 rounded-2xl text-sm font-extrabold transition',
                               'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
                               disabled
-                                ? 'bg-white/0 text-white/25 cursor-not-allowed'
+                                ? 'bg-transparent text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
                                 : selected
                                   ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
                                   : today
                                     ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
-                                    : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
+                                    : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-1 ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
                             ].join(' ')}
                             aria-pressed={selected}
                             aria-label={`เลือกวันที่ ${d}`}
@@ -2922,7 +2974,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="mt-5 border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
+                  <div className="mt-5 border-t border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 flex items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -2930,14 +2982,14 @@ export default function Dashboard() {
                         else setAddFormData((prev) => ({ ...prev, date: todayKey }));
                         setShowDatePicker(false);
                       }}
-                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                      className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                     >
                       วันนี้
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowDatePicker(false)}
-                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
+                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95 shadow-sm shadow-emerald-500/15"
                     >
                       เสร็จสิ้น
                     </button>
