@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import LoadingMascot from '@/components/LoadingMascot';
 import ExportButton from '../../components/ExportButton';
@@ -47,6 +47,228 @@ const MONTH_NAMES_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
 ];
+
+const I18N = {
+  th: {
+    app_title: 'รายการ',
+    app_subtitle: 'ธุรกรรม',
+    loading: 'กำลังโหลด...',
+    search_placeholder: 'ค้นหารายการ...',
+    show_filters: 'แสดงตัวกรอง',
+    hide_filters: 'ซ่อนตัวกรอง',
+    filters: 'ตัวกรอง',
+    category: 'หมวดหมู่',
+    type: 'ประเภท',
+    date_range: 'ช่วงเวลา',
+    all: 'ทั้งหมด',
+    expense: 'รายจ่าย',
+    income: 'รายรับ',
+    other_unassigned: 'อื่นๆ / ไม่ระบุ',
+    clear: 'ล้าง',
+    done: 'เสร็จสิ้น',
+    select_multiple: 'เลือกหลายรายการ',
+    no_transactions: 'ไม่พบธุรกรรม',
+    try_adjust_filters: 'ลองเปลี่ยนตัวกรอง หรือเพิ่มรายการใหม่',
+    reset_filters: 'ล้างตัวกรอง',
+    unspecified: 'ไม่ระบุ',
+    edit: 'แก้ไข',
+    delete: 'ลบ',
+    cancel: 'ยกเลิก',
+    save: 'บันทึก',
+    delete_this: 'ลบรายการนี้',
+    n_items: ({ n }) => `${Number(n) || 0} รายการ`,
+    selected_count: ({ n }) => `เลือกแล้ว ${Number(n) || 0} รายการ`,
+    picked_count: ({ n }) => `เลือกแล้ว ${Number(n) || 0}`,
+    at_least_one: 'เลือกอย่างน้อย 1 รายการ',
+    edit_category: 'แก้หมวด',
+    edit_date: 'แก้วันที่',
+    delete_selected: ({ n }) => `ลบ (${Number(n) || 0})`,
+    delete_selected_title: 'ลบรายการที่เลือก',
+    confirm_bulk_category: ({ targetLabel, n }) => `แก้ประเภทเป็น "${targetLabel}" และแก้หมวดหมู่ของ ${Number(n) || 0} รายการที่เลือกใช่ไหม?`,
+    confirm_bulk_date: ({ n, date }) => `แก้วันที่ของ ${Number(n) || 0} รายการที่เลือกเป็น ${String(date || '')} ใช่ไหม?`,
+    error_generic: 'เกิดข้อผิดพลาด',
+    error_delete_failed: 'ลบรายการไม่สำเร็จ',
+    error_delete_partial: ({ n }) => `ลบไม่สำเร็จ ${Number(n) || 0} รายการ ลองใหม่อีกครั้ง`,
+    error_amount_gt0: 'กรุณากรอกจำนวนเงินที่มากกว่า 0',
+    export_none: 'ไม่มีรายการให้ส่งออก',
+    export_failed: 'เกิดข้อผิดพลาดในการส่งออก',
+    today: 'วันนี้',
+    yesterday: 'เมื่อวาน',
+    this_month: 'เดือนนี้',
+    pick_month: 'เลือกเดือน',
+    time_picker_title: 'เลือกช่วงเวลา',
+    presets_today: 'วันนี้',
+    presets_yesterday: 'เมื่อวาน',
+    presets_this_week: 'สัปดาห์นี้',
+    presets_last_week: 'สัปดาห์ที่แล้ว',
+    presets_last7: '7 วันล่าสุด',
+    presets_current_month: 'เดือนนี้',
+    presets_last_month: 'เดือนที่แล้ว',
+    presets_reset: 'รีเซ็ต',
+    selected_range: 'ช่วงที่เลือก',
+    clear_range: 'ล้างช่วง',
+    start_placeholder: 'วันเริ่มต้น',
+    end_placeholder: 'วันสิ้นสุด',
+    start: 'เริ่ม',
+    end: 'สิ้นสุด',
+    use_single_day: 'ใช้วันเดียว (เริ่ม = สิ้นสุด)',
+    prev_month: 'เดือนก่อนหน้า',
+    next_month: 'เดือนถัดไป',
+    tap_day_to_select: 'แตะวันที่เพื่อเลือก',
+    pick_start: 'เลือกวันเริ่มต้น',
+    pick_end: 'เลือกวันสิ้นสุด',
+    day_select_aria: ({ d }) => `เลือกวันที่ ${Number(d) || d}`,
+    aria_today: ' (วันนี้)',
+    aria_future: ' (อนาคต)',
+    bulk_cat_title: ({ n }) => `แก้หมวด (${Number(n) || 0})`,
+    bulk_cat_hint: 'เลือกประเภทปลายทาง แล้วเลือกหมวดหมู่',
+    warning: 'คำเตือน',
+    mixed_types_1: 'รายการที่เลือกมีทั้งรายรับและรายจ่าย ระบบจะปรับเป็น',
+    mixed_types_2: 'ทั้งหมด',
+    target_settings: 'ตั้งค่าปลายทาง',
+    target_type_cat: 'ประเภท + หมวดหมู่',
+    applies_to: 'ใช้กับ',
+    target_type: 'ประเภทปลายทาง',
+    picked: 'เลือกแล้ว:',
+    target_category: 'หมวดหมู่ปลายทาง',
+    no_income_cats: 'ยังไม่มีหมวดรายรับ',
+    no_expense_cats: 'ยังไม่มีหมวดรายจ่าย',
+    go_add_cats: 'ไปเพิ่มหมวดในหน้า “งบประมาณ” ก่อน แล้วกลับมาเลือกใหม่',
+    go_budget: 'ไปหน้า งบประมาณ',
+    have_n_cats: ({ n, typeLabel }) => `มี ${Number(n) || 0} หมวด${typeLabel}`,
+    bulk_date_title: ({ n }) => `แก้วันที่ (${Number(n) || 0})`,
+    date: 'วันที่',
+    pick_date: 'เลือกวันที่',
+    open_calendar: 'เปิดปฏิทินเลือกวันที่',
+    tap_open_calendar: 'แตะเพื่อเปิดปฏิทิน',
+    multi_edit_date_hint: 'แก้หลายรายการพร้อมกัน (เลือกย้อนหลัง/ล่วงหน้าได้ สูงสุด 1 ปี)',
+    single_edit_date_hint: 'เลือกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)',
+    close: 'ปิด',
+    delete_confirm_aria: 'ยืนยันการลบ',
+    delete_confirm_title: ({ n }) => `ลบ ${Number(n) || 0} รายการ?`,
+    delete_irreversible: 'การลบจะไม่สามารถกู้คืนได้',
+    deleting: 'กำลังลบ...',
+    edit_txn_title: 'แก้ไขรายการ',
+    edit_txn_subtitle: 'อัปเดตข้อมูลธุรกรรม',
+    amount: 'จำนวนเงิน',
+    notes: 'หมายเหตุ',
+    notes_placeholder: 'เพิ่มรายละเอียด...',
+  },
+  en: {
+    app_title: 'Transactions',
+    app_subtitle: 'Transactions',
+    loading: 'Loading...',
+    search_placeholder: 'Search transactions...',
+    show_filters: 'Show filters',
+    hide_filters: 'Hide filters',
+    filters: 'Filters',
+    category: 'Category',
+    type: 'Type',
+    date_range: 'Date range',
+    all: 'All',
+    expense: 'Expense',
+    income: 'Income',
+    other_unassigned: 'Other / Unassigned',
+    clear: 'Clear',
+    done: 'Done',
+    select_multiple: 'Select multiple',
+    no_transactions: 'No transactions found',
+    try_adjust_filters: 'Try adjusting filters or add a new transaction.',
+    reset_filters: 'Reset filters',
+    unspecified: 'Unassigned',
+    edit: 'Edit',
+    delete: 'Delete',
+    cancel: 'Cancel',
+    save: 'Save',
+    delete_this: 'Delete this transaction',
+    n_items: ({ n }) => `${Number(n) || 0} items`,
+    selected_count: ({ n }) => `Selected ${Number(n) || 0} items`,
+    picked_count: ({ n }) => `Selected ${Number(n) || 0}`,
+    at_least_one: 'Select at least 1 item',
+    edit_category: 'Edit category',
+    edit_date: 'Edit date',
+    delete_selected: ({ n }) => `Delete (${Number(n) || 0})`,
+    delete_selected_title: 'Delete selected items',
+    confirm_bulk_category: ({ targetLabel, n }) => `Change type to "${targetLabel}" and update category for ${Number(n) || 0} selected items?`,
+    confirm_bulk_date: ({ n, date }) => `Change date for ${Number(n) || 0} selected items to ${String(date || '')}?`,
+    error_generic: 'Something went wrong',
+    error_delete_failed: 'Failed to delete',
+    error_delete_partial: ({ n }) => `Failed to delete ${Number(n) || 0} items. Please try again.`,
+    error_amount_gt0: 'Please enter an amount greater than 0',
+    export_none: 'No transactions to export',
+    export_failed: 'Export failed',
+    today: 'Today',
+    yesterday: 'Yesterday',
+    this_month: 'This month',
+    pick_month: 'Select month',
+    time_picker_title: 'Select date range',
+    presets_today: 'Today',
+    presets_yesterday: 'Yesterday',
+    presets_this_week: 'This week',
+    presets_last_week: 'Last week',
+    presets_last7: 'Last 7 days',
+    presets_current_month: 'This month',
+    presets_last_month: 'Last month',
+    presets_reset: 'Reset',
+    selected_range: 'Selected range',
+    clear_range: 'Clear range',
+    start_placeholder: 'Start date',
+    end_placeholder: 'End date',
+    start: 'Start',
+    end: 'End',
+    use_single_day: 'Use single day (start = end)',
+    prev_month: 'Previous month',
+    next_month: 'Next month',
+    tap_day_to_select: 'Tap a day to select',
+    pick_start: 'Pick start date',
+    pick_end: 'Pick end date',
+    day_select_aria: ({ d }) => `Select day ${Number(d) || d}`,
+    aria_today: ' (today)',
+    aria_future: ' (future)',
+    bulk_cat_title: ({ n }) => `Bulk edit (${Number(n) || 0})`,
+    bulk_cat_hint: 'Choose target type and category',
+    warning: 'Warning',
+    mixed_types_1: 'Your selection contains both income and expense. It will be converted to',
+    mixed_types_2: 'for all items.',
+    target_settings: 'Target',
+    target_type_cat: 'Type + Category',
+    applies_to: 'Applies to',
+    target_type: 'Target type',
+    picked: 'Selected:',
+    target_category: 'Target category',
+    no_income_cats: 'No income categories yet',
+    no_expense_cats: 'No expense categories yet',
+    go_add_cats: 'Add categories in “Budget” first, then come back.',
+    go_budget: 'Go to Budget',
+    have_n_cats: ({ n, typeLabel }) => `${Number(n) || 0} ${typeLabel} categories`,
+    bulk_date_title: ({ n }) => `Edit date (${Number(n) || 0})`,
+    date: 'Date',
+    pick_date: 'Select date',
+    open_calendar: 'Open date picker',
+    tap_open_calendar: 'Tap to open calendar',
+    multi_edit_date_hint: 'Bulk edit (past/future up to 1 year)',
+    single_edit_date_hint: 'Past/future up to 1 year',
+    close: 'Close',
+    delete_confirm_aria: 'Confirm delete',
+    delete_confirm_title: ({ n }) => `Delete ${Number(n) || 0} items?`,
+    delete_irreversible: 'This action cannot be undone.',
+    deleting: 'Deleting...',
+    edit_txn_title: 'Edit transaction',
+    edit_txn_subtitle: 'Update transaction details',
+    amount: 'Amount',
+    notes: 'Notes',
+    notes_placeholder: 'Add details...',
+  },
+};
+
+const translate = (lang, key, vars) => {
+  const table = I18N[lang] || I18N.th;
+  const base = I18N.th;
+  const entry = (table && table[key] != null) ? table[key] : base[key];
+  if (typeof entry === 'function') return entry(vars || {});
+  if (typeof entry === 'string') return entry;
+  return String(key || '');
+};
 
 const moneyFormatter = new Intl.NumberFormat('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const formatMoney = (v) => {
@@ -113,6 +335,7 @@ const CategoryIcon = ({ iconName, className = 'w-6 h-6' }) => {
 export default function TransactionsPage() {
   const [mounted, setMounted] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [lang, setLang] = useState('th'); // 'th' | 'en'
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [bootLoading, setBootLoading] = useState(true);
@@ -218,6 +441,36 @@ export default function TransactionsPage() {
   }, []);
 
   useEffect(() => {
+    const read = () => {
+      try {
+        const v = localStorage.getItem('balanz_lang');
+        setLang(v === 'en' ? 'en' : 'th');
+      } catch {
+        setLang('th');
+      }
+    };
+    read();
+
+    const onCustom = () => read();
+    const onStorage = (e) => {
+      if (e && e.key === 'balanz_lang') read();
+    };
+    window.addEventListener('balanz_lang_change', onCustom);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('balanz_lang_change', onCustom);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  const t = useCallback((key, vars) => translate(lang, key, vars), [lang]);
+  const locale = useMemo(() => (lang === 'en' ? 'en-US' : 'th-TH'), [lang]);
+  const weekdayLabels = useMemo(
+    () => (lang === 'en' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']),
+    [lang],
+  );
+
+  useEffect(() => {
     const mq = window.matchMedia?.('(min-width: 1024px)');
     if (!mq) return;
 
@@ -321,14 +574,14 @@ export default function TransactionsPage() {
             const data = await res.json();
             msg = data?.message ? String(data.message) : '';
           } catch {}
-          throw new Error(msg || 'ลบรายการไม่สำเร็จ');
+          throw new Error(msg || t('error_delete_failed'));
         }
         return true;
       }));
 
       const failed = results.filter((r) => r.status === 'rejected');
       if (failed.length > 0) {
-        setDeleteError(`ลบไม่สำเร็จ ${failed.length} รายการ ลองใหม่อีกครั้ง`);
+        setDeleteError(t('error_delete_partial', { n: failed.length }));
         return;
       }
 
@@ -342,7 +595,7 @@ export default function TransactionsPage() {
 
       if (selectMode) exitSelectMode();
     } catch (err) {
-      setDeleteError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+      setDeleteError(err?.message ? String(err.message) : t('error_delete_failed'));
     } finally {
       setDeleteLoading(false);
     }
@@ -352,8 +605,8 @@ export default function TransactionsPage() {
     if (selectedCount === 0) return;
     if (!bulkTargetType) return;
     if (!bulkCategoryId) return;
-    const targetLabel = bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย';
-    if (!confirm(`แก้ประเภทเป็น "${targetLabel}" และแก้หมวดหมู่ของ ${selectedCount} รายการที่เลือกใช่ไหม?`)) return;
+    const targetLabel = bulkTargetType === 'income' ? t('income') : t('expense');
+    if (!confirm(t('confirm_bulk_category', { targetLabel, n: selectedCount }))) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -367,14 +620,14 @@ export default function TransactionsPage() {
       setShowBulkCategoryModal(false);
       exitSelectMode();
     } catch (err) {
-      setError('เกิดข้อผิดพลาด: ' + (err?.message || 'Error'));
+      setError(`${t('error_generic')}: ${String(err?.message || 'Error')}`);
     }
   };
 
   const handleBulkUpdateDate = async () => {
     if (selectedCount === 0) return;
     if (!bulkDate) return;
-    if (!confirm(`แก้วันที่ของ ${selectedCount} รายการที่เลือกเป็น ${bulkDate} ใช่ไหม?`)) return;
+    if (!confirm(t('confirm_bulk_date', { n: selectedCount, date: bulkDate }))) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -388,7 +641,7 @@ export default function TransactionsPage() {
       setShowBulkDateModal(false);
       exitSelectMode();
     } catch (err) {
-      setError('เกิดข้อผิดพลาด: ' + (err?.message || 'Error'));
+      setError(`${t('error_generic')}: ${String(err?.message || 'Error')}`);
     }
   };
 
@@ -418,7 +671,7 @@ export default function TransactionsPage() {
         exitSelectMode();
       } catch (e) {
         if (cancelled) return;
-        setError('เกิดข้อผิดพลาด: ' + (e?.message || 'Error'));
+        setError(`${t('error_generic')}: ${String(e?.message || 'Error')}`);
       } finally {
         if (!cancelled) setBootLoading(false);
       }
@@ -426,7 +679,7 @@ export default function TransactionsPage() {
 
     loadInitial();
     return () => { cancelled = true; };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!openDropdown) return;
@@ -553,12 +806,12 @@ export default function TransactionsPage() {
   const exportToCSV = () => {
     try {
       if (!filteredTransactions || filteredTransactions.length === 0) {
-        alert('ไม่มีรายการให้ส่งออก');
+        alert(t('export_none'));
         return;
       }
-      const headers = ['วันที่', 'ประเภท', 'หมวดหมู่', 'จำนวนเงิน', 'หมายเหตุ'];
+      const headers = [t('date'), t('type'), t('category'), t('amount'), t('notes')];
       const rows = filteredTransactions.map(t => [
-        new Date(t.date).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }),
+        new Date(t.date).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' }),
         t.type,
         t.category?.name || '',
         t.amount,
@@ -577,7 +830,7 @@ export default function TransactionsPage() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Export CSV error', err);
-      alert('เกิดข้อผิดพลาดในการส่งออก');
+      alert(t('export_failed'));
     }
   };
 
@@ -594,7 +847,7 @@ export default function TransactionsPage() {
       setTransactions(sorted);
       setFilteredTransactions(sorted);
     } catch (error) {
-      setError('เกิดข้อผิดพลาด: ' + error.message);
+      setError(`${t('error_generic')}: ${String(error?.message || '')}`);
     } finally {
       setLoading(false);
     }
@@ -636,7 +889,7 @@ export default function TransactionsPage() {
     setError('');
 
     if (!editFormData.amount || parseFloat(editFormData.amount) <= 0) {
-      setError('กรุณากรอกจำนวนเงินที่มากกว่า 0');
+      setError(t('error_amount_gt0'));
       return;
     }
 
@@ -655,13 +908,13 @@ export default function TransactionsPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'เกิดข้อผิดพลาด');
+      if (!res.ok) throw new Error(data.message || t('error_generic'));
 
       setShowEditModal(false);
       setEditingTransaction(null);
       fetchTransactions(token);
     } catch (error) {
-      setError('เกิดข้อผิดพลาด: ' + error.message);
+      setError(`${t('error_generic')}: ${String(error?.message || '')}`);
     }
   };
 
@@ -705,7 +958,7 @@ export default function TransactionsPage() {
     return palette[hashString(id) % palette.length];
   };
 
-  const getGroupDateLabel = (isoKey) => {
+  const getGroupDateLabel = useCallback((isoKey) => {
     try {
       const d = new Date(isoKey);
       if (Number.isNaN(d.getTime())) return isoKey;
@@ -718,14 +971,14 @@ export default function TransactionsPage() {
       const todayKey = toLocalISODateKey(today);
       const yesterdayKey = toLocalISODateKey(yesterday);
 
-      if (isoKey === todayKey) return 'วันนี้';
-      if (isoKey === yesterdayKey) return 'เมื่อวาน';
+      if (isoKey === todayKey) return t('today');
+      if (isoKey === yesterdayKey) return t('yesterday');
 
-      return d.toLocaleDateString('th-TH-u-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
+      return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
     } catch {
       return isoKey;
     }
-  };
+  }, [t, locale]);
 
   // Build month options as ranges (e.g. "1 ก.พ. - 28 ก.พ. 2569")
   const monthOptions = (() => {
@@ -740,10 +993,10 @@ export default function TransactionsPage() {
       .map(key => {
         const [y, m] = key.split('-').map(Number);
         const d = new Date(y, m, 1);
-        const monthShort = d.toLocaleDateString('th-TH', { month: 'short' });
-        const yearThai = d.toLocaleDateString('th-TH', { year: 'numeric' });
+        const monthShort = d.toLocaleDateString(locale, { month: 'short' });
+        const yearText = d.toLocaleDateString(locale, { year: 'numeric' });
         const endDay = new Date(y, m + 1, 0).getDate();
-        const label = `1 ${monthShort} - ${endDay} ${monthShort} ${yearThai}`;
+        const label = `1 ${monthShort} - ${endDay} ${monthShort} ${yearText}`;
         return { key, label, y, m };
       })
       .sort((a, b) => (b.y * 12 + b.m) - (a.y * 12 + a.m));
@@ -767,7 +1020,7 @@ export default function TransactionsPage() {
         const net = items.reduce((s, t) => t.type === 'income' ? s + t.amount : s - t.amount, 0);
         return { key, dateLabel, items, net };
       });
-  }, [filteredTransactions]);
+  }, [filteredTransactions, getGroupDateLabel]);
 
   const displayedCategories = useMemo(() => {
     if (!Array.isArray(categories)) return [];
@@ -821,15 +1074,15 @@ export default function TransactionsPage() {
   const dateApplied = dayFilter !== 'all' || !!selectedMonth || !!dateRange?.start;
   const currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
 
-  const formatShortDateLabel = (isoKey) => {
+  const formatShortDateLabel = useCallback((isoKey) => {
     try {
       const d = new Date(`${isoKey}T00:00:00`);
       if (Number.isNaN(d.getTime())) return isoKey;
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return d.toLocaleDateString(locale, { month: 'short', day: 'numeric' });
     } catch {
       return isoKey;
     }
-  };
+  }, [locale]);
 
   const selectedRangeLabel = useMemo(() => {
     if (!dateRange?.start) return '';
@@ -837,18 +1090,18 @@ export default function TransactionsPage() {
     const e = dateRange.end || dateRange.start;
     if (s === e) return formatShortDateLabel(s);
     return `${formatShortDateLabel(s)} - ${formatShortDateLabel(e)}`;
-  }, [dateRange]);
+  }, [dateRange, formatShortDateLabel]);
 
   const selectedCategoryLabel = useMemo(() => {
     const picked = Array.isArray(filterCategory) ? filterCategory : [];
-    if (picked.length === 0) return 'ทั้งหมด';
-    if (picked.length === 1 && picked[0] === 'other') return 'อื่นๆ / ไม่ระบุ';
+    if (picked.length === 0) return t('all');
+    if (picked.length === 1 && picked[0] === 'other') return t('other_unassigned');
     if (picked.length === 1) {
       const cat = (Array.isArray(categories) ? categories : []).find(c => c?._id === picked[0]);
-      return cat?.name || 'หมวดหมู่';
+      return cat?.name || t('category');
     }
-    return `เลือกแล้ว ${picked.length}`;
-  }, [categories, filterCategory]);
+    return t('picked_count', { n: picked.length });
+  }, [categories, filterCategory, t]);
 
   const toggleFilterCategory = (id) => {
     setFilterCategory((prev) => {
@@ -861,38 +1114,37 @@ export default function TransactionsPage() {
 
   const selectedDateLabel = useMemo(() => {
     if (selectedRangeLabel) return selectedRangeLabel;
-    if (dayFilter === 'today') return 'วันนี้';
-    if (dayFilter === 'yesterday') return 'เมื่อวาน';
+    if (dayFilter === 'today') return t('today');
+    if (dayFilter === 'yesterday') return t('yesterday');
     if (selectedMonth) {
-      if (selectedMonth === currentMonthKey) return 'เดือนนี้';
+      if (selectedMonth === currentMonthKey) return t('this_month');
       const opt = monthOptions.find(o => o.key === selectedMonth);
-      return opt?.label || 'เลือกเดือน';
+      return opt?.label || t('pick_month');
     }
-    return 'ทั้งหมด';
-  }, [selectedRangeLabel, dayFilter, selectedMonth, currentMonthKey, monthOptions]);
+    return t('all');
+  }, [selectedRangeLabel, dayFilter, selectedMonth, currentMonthKey, monthOptions, t]);
 
   const selectedTypeLabel = useMemo(() => {
-    if (filterType === 'income') return 'รายรับ';
-    if (filterType === 'expense') return 'รายจ่าย';
-    return 'ทั้งหมด';
-  }, [filterType]);
+    if (filterType === 'income') return t('income');
+    if (filterType === 'expense') return t('expense');
+    return t('all');
+  }, [filterType, t]);
 
   const filterButtonBase = 'relative flex items-center gap-2 h-11 w-full rounded-2xl border px-4 pr-10 text-sm font-extrabold text-left border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition motion-reduce:transition-none';
   const dropdownPanelBase = 'absolute left-0 right-0 top-[calc(100%+8px)] z-[20] max-h-72 overflow-auto rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20';
   const dropdownItemBase = 'w-full px-4 py-3 text-left text-sm font-semibold flex items-center justify-between gap-3 text-[color:var(--app-text)] hover:bg-[var(--app-surface-2)]';
   const dropdownActive = 'bg-emerald-500/15 text-emerald-200';
 
-  const weekdayLabels = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-  const formatThaiShortDate = (isoKey) => {
+  const formatThaiShortDate = useCallback((isoKey) => {
     if (!isoKey) return '';
     try {
       const d = new Date(`${isoKey}T00:00:00`);
       if (Number.isNaN(d.getTime())) return isoKey;
-      return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+      return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
     } catch {
       return isoKey;
     }
-  };
+  }, [locale]);
   const toISOKeyLocal = (d) => {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1055,7 +1307,7 @@ export default function TransactionsPage() {
                   selected ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20 hover:bg-emerald-300' : '',
                   isToday && !selected ? 'ring-1 ring-sky-400/35' : '',
                 ].join(' ')}
-                aria-label={`${formatThaiShortDate(key) || key}${isToday ? ' (วันนี้)' : ''}${isFuture ? ' (อนาคต)' : ''}`}
+                aria-label={`${formatThaiShortDate(key) || key}${isToday ? t('aria_today') : ''}${isFuture ? t('aria_future') : ''}`}
               >
                 {d.getDate()}
                 {isToday && !selected && (
@@ -1079,7 +1331,7 @@ export default function TransactionsPage() {
           </svg>
           <input
             type="text"
-            placeholder="ค้นหารายการ..."
+            placeholder={t('search_placeholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-12 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] py-3 pl-12 pr-4 text-sm font-semibold text-[color:var(--app-text)] placeholder-[color:var(--app-muted-2)] shadow-sm hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
@@ -1095,8 +1347,8 @@ export default function TransactionsPage() {
               ? 'border-emerald-400/20 bg-emerald-500/15 text-emerald-100 shadow-black/10 hover:bg-emerald-500/20 focus:ring-emerald-400/35'
               : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
           ].join(' ')}
-          aria-label={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
-          title={showFilters ? 'ซ่อนตัวกรอง' : 'แสดงตัวกรอง'}
+          aria-label={showFilters ? t('hide_filters') : t('show_filters')}
+          title={showFilters ? t('hide_filters') : t('show_filters')}
         >
           <SlidersHorizontal className="h-5 w-5" />
         </button>
@@ -1108,7 +1360,7 @@ export default function TransactionsPage() {
           <div className="relative">
             <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
               <Tag className="h-3.5 w-3.5" aria-hidden="true" />
-              หมวดหมู่
+              {t('category')}
             </div>
             <button
               type="button"
@@ -1126,20 +1378,20 @@ export default function TransactionsPage() {
               </span>
             </button>
             {openDropdown === 'category' && (
-              <div className={dropdownPanelBase} role="listbox" aria-label="หมวดหมู่">
+              <div className={dropdownPanelBase} role="listbox" aria-label={t('category')}>
                 <button
                   type="button"
                   className={[dropdownItemBase, filterCategory.length === 0 ? dropdownActive : ''].join(' ')}
                   onClick={() => setFilterCategory([])}
                 >
-                  <span>ทั้งหมด</span>
+                  <span>{t('all')}</span>
                   {filterCategory.length === 0 && <span className="text-emerald-300">✓</span>}
                 </button>
 
                 {filterType === 'all' ? (
                   <>
                     {sortedCategories.expense.length > 0 && (
-                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายจ่าย</div>
+                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">{t('expense')}</div>
                     )}
                     {sortedCategories.expense.map((cat) => (
                       <button
@@ -1157,7 +1409,7 @@ export default function TransactionsPage() {
                     ))}
 
                     {sortedCategories.income.length > 0 && (
-                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">รายรับ</div>
+                      <div className="px-4 py-2 text-[11px] font-semibold tracking-wide text-[color:var(--app-muted-2)]">{t('income')}</div>
                     )}
                     {sortedCategories.income.map((cat) => (
                       <button
@@ -1197,7 +1449,7 @@ export default function TransactionsPage() {
                   className={[dropdownItemBase, filterCategory.includes('other') ? dropdownActive : ''].join(' ')}
                   onClick={() => toggleFilterCategory('other')}
                 >
-                  <span>อื่นๆ / ไม่ระบุ</span>
+                  <span>{t('other_unassigned')}</span>
                   {filterCategory.includes('other') && <span className="text-emerald-300">✓</span>}
                 </button>
 
@@ -1206,16 +1458,16 @@ export default function TransactionsPage() {
                     <button
                       type="button"
                       onClick={() => setFilterCategory([])}
-                      className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+                      className="flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                     >
-                      ล้าง
+                      {t('clear')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(null)}
                       className="flex-1 rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:brightness-95"
                     >
-                      เสร็จสิ้น
+                      {t('done')}
                     </button>
                   </div>
                 </div>
@@ -1227,7 +1479,7 @@ export default function TransactionsPage() {
           <div className="relative">
             <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
               <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
-              ประเภท
+              {t('type')}
             </div>
             <button
               type="button"
@@ -1245,13 +1497,13 @@ export default function TransactionsPage() {
               </span>
             </button>
             {openDropdown === 'type' && (
-              <div className={dropdownPanelBase} role="listbox" aria-label="ประเภท">
+              <div className={dropdownPanelBase} role="listbox" aria-label={t('type')}>
                 <button
                   type="button"
                   className={[dropdownItemBase, filterType === 'all' ? dropdownActive : ''].join(' ')}
                   onClick={() => { setFilterType('all'); setOpenDropdown(null); }}
                 >
-                  <span>ทั้งหมด</span>
+                  <span>{t('all')}</span>
                   {filterType === 'all' && <span className="text-emerald-300">✓</span>}
                 </button>
                 <button
@@ -1259,7 +1511,7 @@ export default function TransactionsPage() {
                   className={[dropdownItemBase, filterType === 'expense' ? dropdownActive : ''].join(' ')}
                   onClick={() => { setFilterType('expense'); setOpenDropdown(null); }}
                 >
-                  <span>รายจ่าย</span>
+                  <span>{t('expense')}</span>
                   {filterType === 'expense' && <span className="text-emerald-300">✓</span>}
                 </button>
                 <button
@@ -1267,7 +1519,7 @@ export default function TransactionsPage() {
                   className={[dropdownItemBase, filterType === 'income' ? dropdownActive : ''].join(' ')}
                   onClick={() => { setFilterType('income'); setOpenDropdown(null); }}
                 >
-                  <span>รายรับ</span>
+                  <span>{t('income')}</span>
                   {filterType === 'income' && <span className="text-emerald-300">✓</span>}
                 </button>
               </div>
@@ -1278,7 +1530,7 @@ export default function TransactionsPage() {
           <div className="relative sm:col-span-2">
             <div className="mb-1 flex items-center gap-2 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">
               <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-              ช่วงเวลา
+              {t('date_range')}
             </div>
             <button
               type="button"
@@ -1303,7 +1555,7 @@ export default function TransactionsPage() {
                     isDesktop ? 'items-center p-4' : 'items-end sm:items-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0',
                   ].join(' ')}
 	                role="dialog"
-	                aria-label="เลือกช่วงเวลา"
+	                aria-label={t('time_picker_title')}
 	                onClick={(e) => e.target === e.currentTarget && setOpenDropdown(null)}
 	              >
 	                <div
@@ -1314,14 +1566,14 @@ export default function TransactionsPage() {
                   >
                   <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[color:var(--app-border)]">
                     <div className="min-w-0">
-                      <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ตัวกรอง</div>
-                      <div className="truncate text-base font-extrabold">ช่วงเวลา</div>
+                      <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">{t('filters')}</div>
+                      <div className="truncate text-base font-extrabold">{t('date_range')}</div>
                     </div>
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(null)}
                       className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                      aria-label="ปิด"
+                      aria-label={t('close')}
                     >
                       <X className="h-5 w-5" aria-hidden="true" />
                     </button>
@@ -1332,14 +1584,14 @@ export default function TransactionsPage() {
                     <div className="sticky top-0 z-[1] bg-[var(--app-surface)] border-b border-[color:var(--app-border)]">
                       <div className="flex gap-2 overflow-x-auto px-4 py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                         {[
-                          { key: 'today', label: 'วันนี้' },
-                          { key: 'yesterday', label: 'เมื่อวาน' },
-                          { key: 'thisWeek', label: 'สัปดาห์นี้' },
-                          { key: 'lastWeek', label: 'สัปดาห์ที่แล้ว' },
-                          { key: 'last7', label: '7 วันล่าสุด' },
-                          { key: 'currentMonth', label: 'เดือนนี้' },
-                          { key: 'lastMonth', label: 'เดือนที่แล้ว' },
-                          { key: 'reset', label: 'รีเซ็ต' },
+                          { key: 'today', label: t('presets_today') },
+                          { key: 'yesterday', label: t('presets_yesterday') },
+                          { key: 'thisWeek', label: t('presets_this_week') },
+                          { key: 'lastWeek', label: t('presets_last_week') },
+                          { key: 'last7', label: t('presets_last7') },
+                          { key: 'currentMonth', label: t('presets_current_month') },
+                          { key: 'lastMonth', label: t('presets_last_month') },
+                          { key: 'reset', label: t('presets_reset') },
                         ].map((p) => (
                           <button
                             key={p.key}
@@ -1362,30 +1614,30 @@ export default function TransactionsPage() {
                     <div className="p-4">
                       <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">ช่วงที่เลือก</div>
+                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('selected_range')}</div>
                           {(dateRange?.start || dateRange?.end) && (
                             <button
                               type="button"
                               onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
                               className="text-[11px] font-extrabold text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
                             >
-                              ล้างช่วง
+                              {t('clear_range')}
                             </button>
                           )}
                         </div>
                         <div className="mt-2 flex items-center gap-2">
                           <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                            {dateRange?.start ? formatThaiShortDate(dateRange.start) : 'วันเริ่มต้น'}
+                            {dateRange?.start ? formatThaiShortDate(dateRange.start) : t('start_placeholder')}
                           </div>
                           <ChevronRight className="h-4 w-4 shrink-0 text-[color:var(--app-muted-2)]" aria-hidden="true" />
                           <div className="flex-1 truncate rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-xs font-extrabold text-[color:var(--app-text)]">
-                            {dateRange?.end ? formatThaiShortDate(dateRange.end) : 'วันสิ้นสุด'}
+                            {dateRange?.end ? formatThaiShortDate(dateRange.end) : t('end_placeholder')}
                           </div>
                         </div>
 
                         <div className="mt-3 hidden grid-cols-2 gap-2 sm:grid">
                           <label className="block">
-                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">เริ่ม</div>
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('start')}</div>
                             <input
                               type="date"
                               value={dateRange?.start || ''}
@@ -1394,7 +1646,7 @@ export default function TransactionsPage() {
                             />
                           </label>
                           <label className="block">
-                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">สิ้นสุด</div>
+                            <div className="mb-1 px-1 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('end')}</div>
                             <input
                               type="date"
                               value={dateRange?.end || ''}
@@ -1411,7 +1663,7 @@ export default function TransactionsPage() {
                             onClick={() => { setExplicitRange(dateRange.start, dateRange.start); setOpenDropdown(null); }}
                             className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                           >
-                            ใช้วันเดียว (เริ่ม = สิ้นสุด)
+                            {t('use_single_day')}
                           </button>
                         )}
                       </div>
@@ -1425,23 +1677,23 @@ export default function TransactionsPage() {
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                            aria-label="เดือนก่อนหน้า"
+                            aria-label={t('prev_month')}
                           >
                             <ChevronLeft className="h-4 w-4" />
                           </button>
                           <div className="min-w-0 flex-1 text-center">
                             <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
-                              {calendarMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' })}
+                              {calendarMonth.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}
                             </div>
                             <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                              {dateRange?.start && !dateRange?.end ? 'เลือกวันสิ้นสุด' : 'เลือกวันเริ่มต้น'}
+                              {dateRange?.start && !dateRange?.end ? t('pick_end') : t('pick_start')}
                             </div>
                           </div>
                           <button
                             type="button"
                             onClick={() => setCalendarMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                            aria-label="เดือนถัดไป"
+                            aria-label={t('next_month')}
                           >
                             <ChevronRight className="h-4 w-4" />
                           </button>
@@ -1460,14 +1712,14 @@ export default function TransactionsPage() {
                       onClick={() => { setDateRange({ start: '', end: '' }); setDayFilter('all'); setSelectedMonth(''); }}
                       className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                     >
-                      ล้าง
+                      {t('clear')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(null)}
                       className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                     >
-                      เสร็จสิ้น
+                      {t('done')}
                     </button>
 	                  </div>
 	                </div>
@@ -1482,7 +1734,7 @@ export default function TransactionsPage() {
   if (bootLoading) {
     return (
       <main className="min-h-[100dvh] bg-transparent text-[color:var(--app-text)] flex items-center justify-center p-6">
-        <LoadingMascot label="กำลังโหลด..." size={88} />
+        <LoadingMascot label={t('loading')} size={88} />
       </main>
     );
   }
@@ -1497,8 +1749,8 @@ export default function TransactionsPage() {
                 <div className="w-11 shrink-0" aria-hidden="true" />
 
               <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-center max-w-[70%]">
-                <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">ธุรกรรม</div>
-                <h1 className="truncate text-lg font-extrabold text-[color:var(--app-text)]">รายการ</h1>
+                <div className="text-[11px] font-semibold tracking-wide text-[color:var(--app-muted)]">{t('app_subtitle')}</div>
+                <h1 className="truncate text-lg font-extrabold text-[color:var(--app-text)]">{t('app_title')}</h1>
               </div>
 
 	              <div className="ml-auto shrink-0 flex items-center gap-2">
@@ -1531,10 +1783,10 @@ export default function TransactionsPage() {
                   type="button"
                   onClick={() => { setSelectMode(true); setOpenSwipeId(null); setSelectedTxnIds(new Set()); }}
                   className="inline-flex h-12 w-full items-center justify-between gap-4 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-[color:var(--app-text)] shadow-sm shadow-black/10 transition hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 motion-reduce:transition-none"
-                  aria-label="เลือกหลายรายการ"
-                  title="เลือกหลายรายการ"
+                  aria-label={t('select_multiple')}
+                  title={t('select_multiple')}
                 >
-                  <span className="text-sm font-extrabold">เลือกหลายรายการ</span>
+                  <span className="text-sm font-extrabold">{t('select_multiple')}</span>
                   <ListChecks className="h-5 w-5 opacity-80" aria-hidden="true" />
                 </button>
               )}
@@ -1576,8 +1828,8 @@ export default function TransactionsPage() {
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white/5 ring-1 ring-white/10 text-2xl">
                 🧾
               </div>
-              <p className="text-[color:var(--app-text)] text-lg font-extrabold">ไม่พบธุรกรรม</p>
-              <p className="text-slate-400 text-sm font-semibold mt-1">ลองเปลี่ยนตัวกรอง หรือเพิ่มรายการใหม่</p>
+              <p className="text-[color:var(--app-text)] text-lg font-extrabold">{t('no_transactions')}</p>
+              <p className="text-slate-400 text-sm font-semibold mt-1">{t('try_adjust_filters')}</p>
               <div className="mt-4 flex items-center justify-center gap-2">
                 <button
                   type="button"
@@ -1593,7 +1845,7 @@ export default function TransactionsPage() {
                   }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-extrabold text-slate-100 shadow-sm hover:bg-white/10"
                 >
-                  ล้างตัวกรอง
+                  {t('reset_filters')}
                 </button>
               </div>
             </div>
@@ -1612,7 +1864,7 @@ export default function TransactionsPage() {
                     {group.items.map(txn => {
                       const isSelected = selectedTxnIds.has(txn._id);
                       const isOpen = !selectMode && openSwipeId === txn._id;
-                      const categoryName = txn.category?.name || 'ไม่ระบุ';
+                      const categoryName = txn.category?.name || t('unspecified');
                       const title = (txn.notes && txn.notes.trim()) ? txn.notes : categoryName;
                       const subtitle = `${formatTimeHHmm(txn.date) || '—'} • ${categoryName}`;
                       const amountSign = txn.type === 'expense' ? '-' : '+';
@@ -1650,7 +1902,7 @@ export default function TransactionsPage() {
                               ].join(' ')}
                             >
                               <Pencil className="h-4 w-4" aria-hidden="true" />
-                              แก้ไข
+                              {t('edit')}
                             </button>
                             <button
                               type="button"
@@ -1667,7 +1919,7 @@ export default function TransactionsPage() {
                               ].join(' ')}
                             >
                               <Trash2 className="h-4 w-4" aria-hidden="true" />
-                              ลบ
+                              {t('delete')}
                             </button>
                           </div>
 
@@ -1749,14 +2001,14 @@ export default function TransactionsPage() {
 		              <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/30 backdrop-blur">
 	                <div className="flex items-center justify-between gap-3 px-4 pt-4">
 	                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">
-	                    เลือกแล้ว <span className="text-[color:var(--app-text)] font-extrabold">{selectedCount}</span> รายการ
+	                    {t('selected_count', { n: selectedCount })}
 	                  </div>
 	                  <button
 	                    type="button"
 	                    onClick={exitSelectMode}
 	                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-	                    aria-label="ยกเลิกการเลือก"
-	                    title="ยกเลิก"
+	                    aria-label={t('cancel')}
+	                    title={t('cancel')}
 	                  >
 	                    <X className="h-5 w-5" aria-hidden="true" />
 	                  </button>
@@ -1773,11 +2025,11 @@ export default function TransactionsPage() {
 		                        ? 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-muted-2)] opacity-60 cursor-not-allowed'
 		                        : 'border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:ring-emerald-400/30',
 		                    ].join(' ')}
-		                    title={selectedCount === 0 ? 'เลือกอย่างน้อย 1 รายการ' : 'แก้ประเภท/หมวดหมู่ของรายการที่เลือก'}
+		                    title={selectedCount === 0 ? t('at_least_one') : t('edit_category')}
 		                  >
 		                    <span className="inline-flex items-center justify-center gap-2">
 		                      <Tag className="h-5 w-5" aria-hidden="true" />
-		                      แก้หมวด
+		                      {t('edit_category')}
 		                    </span>
 	                  </button>
 
@@ -1794,7 +2046,7 @@ export default function TransactionsPage() {
 	                  >
 	                    <span className="inline-flex items-center justify-center gap-2">
 	                      <CalendarDays className="h-5 w-5" aria-hidden="true" />
-	                      แก้วันที่
+	                      {t('edit_date')}
 	                    </span>
 	                  </button>
 
@@ -1808,11 +2060,11 @@ export default function TransactionsPage() {
 	                        ? 'bg-rose-500/30 text-white/60 cursor-not-allowed'
 	                        : 'bg-rose-500 text-white hover:brightness-95 focus:ring-rose-300/30',
 	                    ].join(' ')}
-	                    title="ลบรายการที่เลือก"
+	                    title={t('delete_selected_title')}
 	                  >
 	                    <span className="inline-flex items-center justify-center gap-2">
 	                      <Trash2 className="h-5 w-5" aria-hidden="true" />
-	                      ลบ ({selectedCount})
+	                      {t('delete_selected', { n: selectedCount })}
 	                    </span>
 	                  </button>
 	                </div>
@@ -1829,40 +2081,40 @@ export default function TransactionsPage() {
         >
 	          <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
 	            <div className="px-5 pt-5 pb-4">
-	              <div className="text-sm font-extrabold">แก้หมวด ({selectedCount})</div>
+	              <div className="text-sm font-extrabold">{t('bulk_cat_title', { n: selectedCount })}</div>
 	              <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
-	                เลือกประเภทปลายทาง แล้วเลือกหมวดหมู่
+	                {t('bulk_cat_hint')}
 	              </div>
 
                 {selectionHasMixedTypes ? (
                   <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
-                    <div className="text-[11px] font-extrabold text-amber-300">คำเตือน</div>
+                    <div className="text-[11px] font-extrabold text-amber-300">{t('warning')}</div>
                     <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-text)]">
-                      รายการที่เลือกมีทั้งรายรับและรายจ่าย ระบบจะปรับเป็น
+                      {t('mixed_types_1')}
                       {' '}
-                      <span className="font-extrabold text-slate-200">
-                        {bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                      <span className="font-extrabold text-[color:var(--app-text)]">
+                        {bulkTargetType === 'income' ? t('income') : t('expense')}
                       </span>
                       {' '}
-                      ทั้งหมด
+                      {t('mixed_types_2')}
                     </div>
                   </div>
                 ) : null}
 
                   <div className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 shadow-sm shadow-black/10">
-                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">ตั้งค่าปลายทาง</div>
-                        <div className="mt-0.5 truncate text-sm font-extrabold text-[color:var(--app-text)]">ประเภท + หมวดหมู่</div>
+                        <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">{t('target_settings')}</div>
+                        <div className="mt-0.5 truncate text-sm font-extrabold text-[color:var(--app-text)]">{t('target_type_cat')}</div>
                       </div>
                       <div className="shrink-0 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-right">
-                        <div className="text-[10px] font-extrabold text-[color:var(--app-muted-2)]">ใช้กับ</div>
-                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{selectedCount} รายการ</div>
+                        <div className="text-[10px] font-extrabold text-[color:var(--app-muted-2)]">{t('applies_to')}</div>
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('n_items', { n: selectedCount })}</div>
                       </div>
                     </div>
 
                     <div className="mt-4">
-                      <label className="text-xs font-bold text-[color:var(--app-muted)]">ประเภทปลายทาง</label>
+                      <label className="text-xs font-bold text-[color:var(--app-muted)]">{t('target_type')}</label>
                       <div className="mt-2 flex rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-1">
                         <button
                           type="button"
@@ -1874,7 +2126,7 @@ export default function TransactionsPage() {
                               : 'text-slate-300 hover:text-slate-100',
                           ].join(' ')}
                         >
-                          รายจ่าย
+                          {t('expense')}
                         </button>
                         <button
                           type="button"
@@ -1886,16 +2138,16 @@ export default function TransactionsPage() {
                               : 'text-slate-300 hover:text-slate-100',
                           ].join(' ')}
                         >
-                          รายรับ
+                          {t('income')}
                         </button>
                       </div>
                       <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                        เลือกแล้ว: <span className="font-extrabold text-slate-200">{bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}</span>
+                        {t('picked')} <span className="font-extrabold text-[color:var(--app-text)]">{bulkTargetType === 'income' ? t('income') : t('expense')}</span>
                       </div>
                     </div>
 
                     <div className="mt-4">
-                      <label className="text-xs font-bold text-[color:var(--app-muted)]">หมวดหมู่ปลายทาง</label>
+                      <label className="text-xs font-bold text-[color:var(--app-muted)]">{t('target_category')}</label>
 
                       {(bulkCategories || []).length === 0 ? (
                         <div className="mt-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3">
@@ -1903,10 +2155,10 @@ export default function TransactionsPage() {
                             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" aria-hidden="true" />
                             <div className="min-w-0">
                               <div className="text-xs font-extrabold text-amber-300">
-                                {bulkTargetType === 'income' ? 'ยังไม่มีหมวดรายรับ' : 'ยังไม่มีหมวดรายจ่าย'}
+                                {bulkTargetType === 'income' ? t('no_income_cats') : t('no_expense_cats')}
                               </div>
                               <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-text)]">
-                                ไปเพิ่มหมวดในหน้า “งบประมาณ” ก่อน แล้วกลับมาเลือกใหม่
+                                {t('go_add_cats')}
                               </div>
                               <button
                                 type="button"
@@ -1916,7 +2168,7 @@ export default function TransactionsPage() {
                                 }}
                                 className="mt-3 inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-extrabold text-slate-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                               >
-                                ไปหน้า งบประมาณ
+                                {t('go_budget')}
                               </button>
                             </div>
                           </div>
@@ -1936,7 +2188,7 @@ export default function TransactionsPage() {
                             <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--app-muted)]" aria-hidden="true" />
                           </div>
                           <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                            มี {bulkCategories.length} หมวด{bulkTargetType === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                            {t('have_n_cats', { n: bulkCategories.length, typeLabel: bulkTargetType === 'income' ? t('income') : t('expense') })}
                           </div>
                         </>
                       )}
@@ -1950,7 +2202,7 @@ export default function TransactionsPage() {
                 onClick={() => setShowBulkCategoryModal(false)}
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
               >
-                ยกเลิก
+                {t('cancel')}
               </button>
 	              <button
 	                type="button"
@@ -1963,7 +2215,7 @@ export default function TransactionsPage() {
 	                    : 'bg-emerald-500 text-slate-950 hover:brightness-95',
 	                ].join(' ')}
 	              >
-	                บันทึก
+	                {t('save')}
 	              </button>
             </div>
           </div>
@@ -1978,31 +2230,31 @@ export default function TransactionsPage() {
 	        >
           <div className="bg-[var(--app-surface)] w-full sm:max-w-sm sm:rounded-3xl rounded-t-3xl overflow-hidden animate-slideUp border border-[color:var(--app-border)] text-[color:var(--app-text)]">
 	            <div className="px-5 pt-5 pb-4">
-	              <div className="text-sm font-extrabold">แก้วันที่ ({selectedCount})</div>
+	              <div className="text-sm font-extrabold">{t('bulk_date_title', { n: selectedCount })}</div>
 	              <div className="mt-4">
-	                <label className="text-xs font-bold text-[color:var(--app-muted)]">วันที่</label>
+	                <label className="text-xs font-bold text-[color:var(--app-muted)]">{t('date')}</label>
 	                <button
 	                  type="button"
 	                  onClick={openBulkDatePicker}
 	                  className="mt-2 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-3 text-left focus:outline-none focus:ring-2 focus:ring-emerald-400/30 hover:bg-[var(--app-surface-3)] transition flex items-center justify-between gap-3"
-	                  aria-label="เปิดปฏิทินเลือกวันที่"
+	                  aria-label={t('open_calendar')}
 	                >
 	                  <div className="min-w-0">
 	                    <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">
 	                      {(() => {
 	                        const iso = String(bulkDate || '');
-	                        if (!iso) return 'เลือกวันที่';
+	                        if (!iso) return t('pick_date');
 	                        const today = toLocalISODateKey(Date.now());
 	                        try {
 	                          const d = new Date(`${iso}T00:00:00`);
-	                          const label = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
-	                          return iso === today ? `วันนี้, ${label}` : label;
+	                          const label = d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+	                          return iso === today ? `${t('today')}, ${label}` : label;
 	                        } catch {
 	                          return iso;
 	                        }
 	                      })()}
 	                    </div>
-	                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+	                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{t('tap_open_calendar')}</div>
 	                  </div>
 	                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
 	                    <CalendarDays className="h-5 w-5" aria-hidden="true" />
@@ -2017,7 +2269,7 @@ export default function TransactionsPage() {
                 onClick={() => setShowBulkDateModal(false)}
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
               >
-                ยกเลิก
+                {t('cancel')}
               </button>
               <button
                 type="button"
@@ -2030,7 +2282,7 @@ export default function TransactionsPage() {
                     : 'bg-emerald-500 text-slate-950 hover:brightness-95',
                 ].join(' ')}
               >
-                บันทึก
+                {t('save')}
               </button>
             </div>
 	          </div>
@@ -2046,14 +2298,14 @@ export default function TransactionsPage() {
 	          <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
 	            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
 	              <div>
-	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกวันที่</div>
-	                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แก้หลายรายการพร้อมกัน (เลือกย้อนหลัง/ล่วงหน้าได้ สูงสุด 1 ปี)</div>
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('pick_date')}</div>
+	                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('multi_edit_date_hint')}</div>
 	              </div>
 	              <button
 	                type="button"
 	                onClick={() => setShowBulkDatePicker(false)}
 	                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-	                aria-label="ปิด"
+	                aria-label={t('close')}
 	              >
 	                <X className="h-5 w-5" aria-hidden="true" />
 	              </button>
@@ -2071,8 +2323,10 @@ export default function TransactionsPage() {
 	              const firstWeekday = new Date(year, monthIndex, 1).getDay();
 	              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
 	              const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
-	              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
-	              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+	              const monthLabel = lang === 'en'
+                  ? new Date(year, monthIndex, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+                  : `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+	              const weekdayTH = lang === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
 	              const isBeyondMax = (d) => {
 	                const iso = toISOFromParts(year, monthIndex, d);
@@ -2112,14 +2366,14 @@ export default function TransactionsPage() {
 	                        type="button"
 	                        onClick={goPrev}
 	                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-	                        aria-label="เดือนก่อนหน้า"
+	                        aria-label={t('prev_month')}
 	                      >
 	                        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
 	                      </button>
 
 	                      <div className="min-w-0 flex-1 text-center">
 	                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{monthLabel}</div>
-	                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
+	                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('tap_day_to_select')}</div>
 	                      </div>
 
 	                      <button
@@ -2127,7 +2381,7 @@ export default function TransactionsPage() {
 	                        onClick={goNext}
 	                        disabled={!canGoNext}
 	                        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
-	                        aria-label="เดือนถัดไป"
+	                        aria-label={t('next_month')}
 	                      >
 	                        <ChevronRight className="h-5 w-5" aria-hidden="true" />
 	                      </button>
@@ -2164,7 +2418,7 @@ export default function TransactionsPage() {
 	                                    : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
 	                            ].join(' ')}
 	                            aria-pressed={selected}
-	                            aria-label={`เลือกวันที่ ${d}`}
+	                            aria-label={t('day_select_aria', { d })}
 	                          >
 	                            {d}
 	                          </button>
@@ -2174,22 +2428,22 @@ export default function TransactionsPage() {
 	                  </div>
 
 	                  <div className="mt-5 border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
-	                    <button
-	                      type="button"
-	                      onClick={() => {
-	                        setBulkDate(todayKey);
-	                        setShowBulkDatePicker(false);
-	                      }}
-	                      className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
-	                    >
-	                      วันนี้
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          setBulkDate(todayKey);
+	                          setShowBulkDatePicker(false);
+	                        }}
+	                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
+	                      >
+	                      {t('today')}
 	                    </button>
 	                    <button
 	                      type="button"
 	                      onClick={() => setShowBulkDatePicker(false)}
 	                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
 	                    >
-	                      เสร็จสิ้น
+	                      {t('done')}
 	                    </button>
 	                  </div>
 	                </>
@@ -2199,8 +2453,8 @@ export default function TransactionsPage() {
 	        </div>
 	      ), document.body)}
 
-	      {/* Delete Confirm Modal */}
-	      {mounted && showDeleteConfirmModal && createPortal((
+      {/* Delete Confirm Modal */}
+      {mounted && showDeleteConfirmModal && createPortal((
 	        <div
 	          className="fixed inset-0 z-[10000] bg-slate-950/45 backdrop-blur-sm animate-fadeIn flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom)] sm:pb-0 overflow-hidden overscroll-contain"
 	          onClick={(e) => e.target === e.currentTarget && !deleteLoading && setShowDeleteConfirmModal(false)}
@@ -2210,24 +2464,24 @@ export default function TransactionsPage() {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="ยืนยันการลบ"
+            aria-label={t('delete_confirm_aria')}
           >
             <div className="px-5 pt-5 pb-4 border-b border-white/10 bg-[var(--app-surface)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-base font-extrabold">
-                    ลบ {deleteIds?.length || 0} รายการ?
+                    {t('delete_confirm_title', { n: deleteIds?.length || 0 })}
                   </div>
                   <div className="mt-1 text-xs font-semibold text-[color:var(--app-muted)]">
-                    การลบจะไม่สามารถกู้คืนได้
+                    {t('delete_irreversible')}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => !deleteLoading && setShowDeleteConfirmModal(false)}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                  aria-label="ปิด"
-                  title="ปิด"
+                  aria-label={t('close')}
+                  title={t('close')}
                   disabled={deleteLoading}
                 >
                   <X className="h-5 w-5" aria-hidden="true" />
@@ -2248,7 +2502,7 @@ export default function TransactionsPage() {
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10"
                 disabled={deleteLoading}
               >
-                ยกเลิก
+                {t('cancel')}
               </button>
               <button
                 type="button"
@@ -2256,7 +2510,7 @@ export default function TransactionsPage() {
                 className="rounded-2xl bg-rose-500 px-4 py-3 text-sm font-extrabold text-white hover:brightness-95 disabled:opacity-60"
                 disabled={deleteLoading || (deleteIds?.length || 0) === 0}
               >
-                {deleteLoading ? 'กำลังลบ...' : 'ลบ'}
+                {deleteLoading ? t('deleting') : t('delete')}
               </button>
             </div>
           </div>
@@ -2286,13 +2540,16 @@ export default function TransactionsPage() {
                     </svg>
                   </div>
                   <div>
-                    <h2 className="text-xl sm:text-2xl font-bold">แก้ไขรายการ</h2>
-                    <p className="text-slate-950/70 text-xs sm:text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
+                    <h2 className="text-xl sm:text-2xl font-bold">{t('edit_txn_title')}</h2>
+                    <p className="text-slate-950/70 text-xs sm:text-sm font-semibold">{t('edit_txn_subtitle')}</p>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowEditModal(false)}
                   className="p-2 sm:p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
+                  aria-label={t('close')}
+                  title={t('close')}
                 >
                   <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -2312,7 +2569,7 @@ export default function TransactionsPage() {
               )}
 
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">ประเภท</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">{t('type')}</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -2327,7 +2584,7 @@ export default function TransactionsPage() {
                         : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
-                    รายรับ
+                    {t('income')}
                   </button>
                   <button
                     type="button"
@@ -2342,13 +2599,13 @@ export default function TransactionsPage() {
                         : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                     }`}
                   >
-                    รายจ่าย
+                    {t('expense')}
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">จำนวนเงิน</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">{t('amount')}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -2363,7 +2620,7 @@ export default function TransactionsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">หมวดหมู่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">{t('category')}</label>
                 <select
                   value={editFormData.category}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, category: e.target.value }))}
@@ -2379,27 +2636,27 @@ export default function TransactionsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-200 mb-2">วันที่</label>
+                <label className="block text-sm font-semibold text-slate-200 mb-2">{t('date')}</label>
                 <button
                   type="button"
                   onClick={openEditDatePicker}
                   className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 hover:bg-white/10 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
-                  aria-label="เปิดปฏิทินเลือกวันที่"
+                  aria-label={t('open_calendar')}
                 >
                   <div className="text-left min-w-0">
                     <div className="text-sm font-extrabold text-slate-100 truncate">
                       {(() => {
                         const iso = String(editFormData.date || '');
-                        if (!iso) return 'เลือกวันที่';
+                        if (!iso) return t('pick_date');
                         try {
                           const d = new Date(`${iso}T00:00:00`);
-                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+                          return d.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
                         } catch {
                           return iso;
                         }
                       })()}
                     </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{t('tap_open_calendar')}</div>
                   </div>
                   <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
                     <CalendarDays className="h-5 w-5" aria-hidden="true" />
@@ -2408,13 +2665,13 @@ export default function TransactionsPage() {
               </div>
 
 	              <div>
-	                <label className="block text-sm font-semibold text-slate-200 mb-2">หมายเหตุ</label>
+	                <label className="block text-sm font-semibold text-slate-200 mb-2">{t('notes')}</label>
                 <textarea
                   value={editFormData.notes}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
                   rows="3"
                   className="w-full px-4 py-3 border border-white/10 bg-white/5 rounded-xl text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
-                  placeholder="เพิ่มรายละเอียด..."
+                  placeholder={t('notes_placeholder')}
 	                />
 	              </div>
 
@@ -2423,7 +2680,7 @@ export default function TransactionsPage() {
                   onClick={() => handleDelete(editingTransaction._id)}
                   className="w-full rounded-xl border border-rose-400/20 bg-rose-500/10 px-6 py-3 text-rose-200 font-extrabold hover:bg-rose-500/15 transition-colors"
                 >
-                  ลบรายการนี้
+                  {t('delete_this')}
                 </button>
 
 	              <div className="flex gap-3 pt-2">
@@ -2432,13 +2689,13 @@ export default function TransactionsPage() {
 	                  onClick={() => setShowEditModal(false)}
                   className="flex-1 px-6 py-3 border border-white/10 bg-white/5 text-slate-100 font-semibold rounded-xl hover:bg-white/10 transition-colors"
                 >
-                  ยกเลิก
+                  {t('cancel')}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
                 >
-                  บันทึก
+                  {t('save')}
                 </button>
               </div>
             </form>
@@ -2455,14 +2712,14 @@ export default function TransactionsPage() {
           <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[var(--app-surface)] shadow-2xl shadow-black/50 overflow-hidden text-slate-100">
             <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-5 py-4">
               <div>
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกวันที่</div>
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เลือกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('pick_date')}</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('single_edit_date_hint')}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowEditDatePicker(false)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                aria-label="ปิด"
+                aria-label={t('close')}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -2480,8 +2737,10 @@ export default function TransactionsPage() {
               const firstWeekday = new Date(year, monthIndex, 1).getDay();
               const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
               const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
-              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
-              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+              const monthLabel = lang === 'en'
+                ? new Date(year, monthIndex, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+                : `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+              const weekdayTH = lang === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
               const isBeyondMax = (d) => {
                 const iso = toISOFromParts(year, monthIndex, d);
@@ -2521,14 +2780,14 @@ export default function TransactionsPage() {
                         type="button"
                         onClick={goPrev}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                        aria-label="เดือนก่อนหน้า"
+                        aria-label={t('prev_month')}
                       >
                         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                       </button>
 
                       <div className="min-w-0 flex-1 text-center">
                         <div className="text-sm font-extrabold text-[color:var(--app-text)]">{monthLabel}</div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('tap_day_to_select')}</div>
                       </div>
 
                       <button
@@ -2536,7 +2795,7 @@ export default function TransactionsPage() {
                         onClick={goNext}
                         disabled={!canGoNext}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-40"
-                        aria-label="เดือนถัดไป"
+                        aria-label={t('next_month')}
                       >
                         <ChevronRight className="h-5 w-5" aria-hidden="true" />
                       </button>
@@ -2573,7 +2832,7 @@ export default function TransactionsPage() {
                                     : 'bg-white/5 text-slate-100 ring-1 ring-white/10 hover:bg-white/10',
                             ].join(' ')}
                             aria-pressed={selected}
-                            aria-label={`เลือกวันที่ ${d}`}
+                            aria-label={t('day_select_aria', { d })}
                           >
                             {d}
                           </button>
@@ -2591,14 +2850,14 @@ export default function TransactionsPage() {
                       }}
                       className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
                     >
-                      วันนี้
+                      {t('today')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowEditDatePicker(false)}
                       className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                     >
-                      เสร็จสิ้น
+                      {t('done')}
                     </button>
                   </div>
                 </>
