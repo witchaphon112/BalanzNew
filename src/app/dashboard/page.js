@@ -6,6 +6,8 @@ import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, Gr
 
 import Currency from '../currency/page';
 import LoadingMascot from '@/components/LoadingMascot';
+import { formatI18n } from '@/lib/i18n';
+import { useBalanzLanguage } from '@/lib/useBalanzLanguage';
 const CurrencyModalContent = ({ onClose }) => (
   <Currency onClose={onClose} />
 );
@@ -17,6 +19,357 @@ const INCOME_COLOR = '#22C55E'; // emerald-500
 const EXPENSE_COLOR = '#F43F5E'; // rose-500
 const NET_SAVING_COLOR = '#0F172A'; // slate-900
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+
+const I18N = {
+  th: {
+    welcome_back: 'ยินดีต้อนรับกลับ',
+    notifications: 'การแจ้งเตือน',
+    new_notifications_aria: 'มีการแจ้งเตือนใหม่ {count} รายการ',
+
+    prev_month: 'เดือนก่อนหน้า',
+    next_month: 'เดือนถัดไป',
+    open_month_picker: 'เปิดปฏิทินเลือกเดือน',
+    selected_month: 'เดือนที่เลือก',
+    pick_month: 'เลือกเดือน',
+    pick_month_hint: 'แตะเพื่อดูสรุปของเดือนนั้น',
+    prev_year: 'ปีก่อนหน้า',
+    next_year: 'ปีถัดไป',
+    buddhist_era: 'พ.ศ.',
+    this_month: 'เดือนนี้',
+    done: 'เสร็จสิ้น',
+    close: 'ปิด',
+
+    notif_title: 'การแจ้งเตือน',
+    notif_unread: 'ยังไม่อ่าน {count} รายการ',
+    notif_unread_none: 'ไม่มีรายการที่ยังไม่อ่าน',
+    mark_all_read: 'อ่านแล้วทั้งหมด',
+    go_transactions: 'ไปหน้ารายการ',
+
+    expense: 'รายจ่าย',
+    income: 'รายรับ',
+    tap_expense_only: 'แตะเพื่อดูเฉพาะรายจ่าย',
+    tap_income_only: 'แตะเพื่อดูเฉพาะรายรับ',
+    left_from_budget: 'เหลือ {amount} จากงบ',
+    over_from_budget: 'เกิน {amount} จากงบ',
+    left_from_goal: 'เหลือ {amount} จากเป้า',
+    over_from_goal: 'เกิน {amount} จากเป้า',
+
+    income_by_category: 'รายรับตามหมวดหมู่',
+    income_target_by_category: 'เป้ารายรับตามหมวดหมู่',
+    budget: 'งบประมาณ',
+    reset_in_days: 'รีเซ็ตใน {count} วัน',
+    view_all: 'ดูทั้งหมด',
+    spent_today: 'ใช้ไปวันนี้',
+    per_day_allowance: 'ใช้ได้ต่อวัน {amount}',
+    no_income_this_month: 'ยังไม่มีรายรับเดือนนี้',
+    remaining_this_month: 'คงเหลือเดือนนี้',
+    received_already: 'รับแล้ว {amount}',
+    target_received: 'เป้า {budget} • ได้แล้ว {received}',
+    budget_spent: 'งบ {budget} • ใช้ไป {spent}',
+    remaining_from_target: 'เหลือ {amount} จากเป้า',
+    remaining_amount: 'เหลือ {amount}',
+
+    recent_transactions: 'ธุรกรรมล่าสุด',
+    loading: 'กำลังโหลด...',
+    no_transactions: 'ยังไม่มีธุรกรรม',
+    add_new_hint: 'ลองเพิ่มรายการใหม่ แล้วกลับมาดูอีกครั้ง',
+    uncategorized: 'หมวดหมู่ไม่ระบุ',
+    unspecified: 'ไม่ระบุ',
+    edit: 'แก้ไข',
+    delete: 'ลบ',
+
+    add_transaction: 'เพิ่มรายการ',
+    amount: 'จำนวนเงิน',
+    voice: 'อัดเสียง',
+    scan_receipt: 'สแกนใบเสร็จ',
+    voice_title: 'อัดเสียง',
+    voice_subtitle: 'กดเริ่มอัด → กดหยุด ระบบจะถอดให้เลย',
+    status: 'สถานะ',
+    time: 'เวลา',
+    transcribing: 'กำลังถอดข้อความ...',
+    recording: 'กำลังอัดเสียง...',
+    recorded: 'อัดเสียงแล้ว',
+    ready_to_record: 'พร้อมอัดเสียง',
+    stop_auto_transcribe: 'หยุด (ถอดให้อัตโนมัติ)',
+    start_recording: 'เริ่มอัดเสียง',
+    transcript: 'ข้อความที่ถอดได้',
+    cancel: 'ยกเลิก',
+    use_autofill: 'ใช้กรอกอัตโนมัติ',
+
+    slip_title: 'อ่านสลิป',
+    slip_subtitle: 'เลือกรูปแล้วระบบจะอ่านให้อัตโนมัติ',
+    tap_to_change_image: 'แตะเพื่อเปลี่ยนรูป',
+    make_amount_date_clear: 'ให้ยอดเงินและวันที่เห็นชัด',
+    take_or_upload_slip: 'ถ่ายรูป/อัปโหลดสลิป',
+    receipt_support_max: 'รองรับสลิป/ใบเสร็จ (≤ 10MB)',
+    slip_reading: 'กำลังอ่าน...',
+    slip_ready_auto: 'พร้อมอ่านอัตโนมัติ',
+    slip_wait_image: 'รอเลือกรูป',
+    please_wait: 'โปรดรอสักครู่',
+    try_read_again: 'ลองอ่านอีกครั้ง',
+
+    category: 'หมวดหมู่',
+    select_category_before_save: '* เลือกหมวดหมู่ก่อนบันทึก',
+    today_with_date: 'วันนี้, {label}',
+    open_date_picker: 'เปิดตัวเลือกวันที่',
+    notes_placeholder: 'ระบุรายละเอียด...',
+    save_transaction: 'บันทึกรายการ',
+
+    pick_date: 'เลือกวันที่',
+    pick_date_edit_suffix: ' (แก้ไขรายการ)',
+    date_picker_hint: 'บันทึกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)',
+    tap_day_to_select: 'แตะวันที่เพื่อเลือก',
+    today: 'วันนี้',
+    finish: 'เสร็จสิ้น',
+
+    edit_transaction: 'แก้ไขรายการ',
+    edit_desc: 'อัปเดตข้อมูลธุรกรรม',
+    type: 'ประเภท',
+    category_select: 'เลือกหมวดหมู่',
+    category_options: 'ตัวเลือกหมวดหมู่',
+    no_categories: 'ยังไม่มีหมวดหมู่',
+    choose: 'เลือก',
+    date: 'วันที่',
+    open_calendar_pick_date: 'เปิดปฏิทินเลือกวันที่',
+    pick_date_placeholder: 'เลือกวันที่',
+    tap_to_open_calendar: 'แตะเพื่อเปิดปฏิทิน',
+    notes: 'หมายเหตุ',
+    notes_edit_placeholder: 'เพิ่มรายละเอียด...',
+    save: 'บันทึก',
+
+    delete_confirm_aria: 'ยืนยันการลบ',
+    delete_title: 'ลบรายการนี้?',
+    delete_cannot_undo: 'การลบจะไม่สามารถกู้คืนได้',
+    delete_hint_prefix: 'กด',
+    delete_hint_or: 'เพื่อยืนยัน หรือกด',
+    delete_hint_suffix: 'เพื่อกลับไปก่อนหน้า',
+    deleting: 'กำลังลบ...',
+
+    view_txn_aria: 'ดูรายละเอียดธุรกรรม',
+    view_close: 'ปิด',
+
+    err_voice_not_supported: 'เบราว์เซอร์นี้ยังไม่รองรับการอัดเสียง',
+    err_voice_recording: 'เกิดข้อผิดพลาดในการอัดเสียง',
+    err_voice_open_mic: 'ไม่สามารถเปิดไมโครโฟนได้',
+    err_voice_no_audio: 'ยังไม่มีเสียงที่อัดไว้',
+    err_voice_transcribe_failed: 'ถอดเสียงไม่สำเร็จ',
+
+    err_select_slip_first: 'กรุณาเลือกรูปสลิปก่อน',
+    err_read_slip_failed: 'อ่านสลิปไม่สำเร็จ',
+
+    err_delete_failed: 'ลบรายการไม่สำเร็จ',
+    err_amount_gt_zero: 'กรุณากรอกจำนวนเงินที่มากกว่า 0',
+    err_choose_category: 'กรุณาเลือกหมวดหมู่',
+    err_generic: 'เกิดข้อผิดพลาด',
+    err_load_failed: 'เกิดข้อผิดพลาดในการโหลดข้อมูล: {message}',
+    err_fetch_txns_failed: 'โหลดธุรกรรมไม่สำเร็จ',
+
+    notif_budget_over_title: 'ใช้จ่ายเกินงบเดือนนี้แล้ว',
+    notif_budget_over_body: 'ใช้งบไป {pct}% • เกิน {over}',
+    notif_budget_cta_go_budget: 'ไปหน้างบประมาณ',
+    notif_budget_near_title: 'ใกล้ถึงงบประมาณเดือนนี้',
+    notif_budget_near_body: 'ใช้งบไป {pct}% • เหลือ {left}',
+    notif_budget_cta_view_budget: 'ดูงบประมาณ',
+    notif_cat_over_title: 'เกินงบหมวด “{name}”',
+    notif_cat_over_body: 'ใช้ไป {spent} จากงบ {budget} • เกิน {over}',
+    notif_cat_over_cta: 'ดูงบหมวดนี้',
+    notif_budget_pace_title: 'ใช้จ่ายเร็วกว่าแผน',
+    notif_budget_pace_body: 'ควรใช้ราว {expected} แต่ตอนนี้ใช้ไป {spent}',
+    notif_budget_pace_cta: 'ดูสถิติรายจ่าย',
+    notif_no_income_title: 'เดือนนี้ยังไม่มีรายรับ',
+    notif_no_income_body: 'แต่มีรายจ่าย {expense} ลองบันทึกรายรับเพื่อให้วิเคราะห์แม่นขึ้น',
+    notif_no_income_cta: 'ไปหน้ารายการ',
+    notif_daily_over_title: 'วันนี้ใช้เกินเป้าที่ตั้งไว้',
+    notif_daily_over_body: 'ใช้ไป {spent} จากเป้า {target}',
+    notif_daily_over_cta: 'ดูรายการวันนี้',
+    notif_leak_top_title: 'หมวดนี้ใช้เยอะเป็นพิเศษ',
+    notif_leak_top_body: '{name} คิดเป็น {pct}% ของรายจ่ายเดือนนี้',
+    notif_leak_top_cta: 'ดูสัดส่วนรายจ่าย',
+    notif_reset_soon_title: 'งบประมาณใกล้รีเซ็ต',
+    notif_reset_soon_body: 'เหลืออีก {days} วัน งบเดือนนี้จะรีเซ็ต',
+    notif_reset_soon_cta: 'ตรวจงบเดือนนี้',
+    notif_all_good_title: 'ทุกอย่างดูโอเค',
+    notif_all_good_body: 'ยังไม่พบสิ่งที่ควรแจ้งเตือนในตอนนี้',
+    notif_all_good_cta: 'ดูสรุปการเงิน',
+  },
+  en: {
+    welcome_back: 'Welcome back',
+    notifications: 'Notifications',
+    new_notifications_aria: '{count} new notifications',
+
+    prev_month: 'Previous month',
+    next_month: 'Next month',
+    open_month_picker: 'Open month picker',
+    selected_month: 'Selected month',
+    pick_month: 'Pick a month',
+    pick_month_hint: 'Tap to view that month’s summary',
+    prev_year: 'Previous year',
+    next_year: 'Next year',
+    buddhist_era: 'B.E.',
+    this_month: 'This month',
+    done: 'Done',
+    close: 'Close',
+
+    notif_title: 'Notifications',
+    notif_unread: '{count} unread',
+    notif_unread_none: 'No unread notifications',
+    mark_all_read: 'Mark all read',
+    go_transactions: 'Go to transactions',
+
+    expense: 'Expenses',
+    income: 'Income',
+    tap_expense_only: 'Tap to show expenses only',
+    tap_income_only: 'Tap to show income only',
+    left_from_budget: '{amount} left of budget',
+    over_from_budget: '{amount} over budget',
+    left_from_goal: '{amount} to goal',
+    over_from_goal: '{amount} above goal',
+
+    income_by_category: 'Income by category',
+    income_target_by_category: 'Income targets by category',
+    budget: 'Budget',
+    reset_in_days: 'Resets in {count} days',
+    view_all: 'View all',
+    spent_today: 'Spent today',
+    per_day_allowance: 'Daily allowance {amount}',
+    no_income_this_month: 'No income yet this month',
+    remaining_this_month: 'Remaining this month',
+    received_already: 'Received {amount}',
+    target_received: 'Target {budget} • Got {received}',
+    budget_spent: 'Budget {budget} • Spent {spent}',
+    remaining_from_target: '{amount} remaining',
+    remaining_amount: '{amount} left',
+
+    recent_transactions: 'Recent transactions',
+    loading: 'Loading…',
+    no_transactions: 'No transactions yet',
+    add_new_hint: 'Add a transaction and check back.',
+    uncategorized: 'Uncategorized',
+    unspecified: 'Unspecified',
+    edit: 'Edit',
+    delete: 'Delete',
+
+    add_transaction: 'Add transaction',
+    amount: 'Amount',
+    voice: 'Voice',
+    scan_receipt: 'Scan receipt',
+    voice_title: 'Voice',
+    voice_subtitle: 'Tap start → stop. We’ll transcribe automatically.',
+    status: 'Status',
+    time: 'Time',
+    transcribing: 'Transcribing…',
+    recording: 'Recording…',
+    recorded: 'Recorded',
+    ready_to_record: 'Ready',
+    stop_auto_transcribe: 'Stop (auto-transcribe)',
+    start_recording: 'Start recording',
+    transcript: 'Transcript',
+    cancel: 'Cancel',
+    use_autofill: 'Use to auto-fill',
+
+    slip_title: 'Read receipt',
+    slip_subtitle: 'Select an image and we’ll read it automatically.',
+    tap_to_change_image: 'Tap to change',
+    make_amount_date_clear: 'Make sure amount and date are clear',
+    take_or_upload_slip: 'Take photo / upload',
+    receipt_support_max: 'Receipts supported (≤ 10MB)',
+    slip_reading: 'Reading…',
+    slip_ready_auto: 'Ready (auto)',
+    slip_wait_image: 'Waiting for image',
+    please_wait: 'Please wait',
+    try_read_again: 'Try again',
+
+    category: 'Category',
+    select_category_before_save: '* Select a category before saving',
+    today_with_date: 'Today, {label}',
+    open_date_picker: 'Open date picker',
+    notes_placeholder: 'Add details…',
+    save_transaction: 'Save',
+
+    pick_date: 'Pick a date',
+    pick_date_edit_suffix: ' (Edit)',
+    date_picker_hint: 'Backdate / future date allowed (up to 1 year)',
+    tap_day_to_select: 'Tap a day to select',
+    today: 'Today',
+    finish: 'Done',
+
+    edit_transaction: 'Edit transaction',
+    edit_desc: 'Update transaction details',
+    type: 'Type',
+    category_select: 'Select category',
+    category_options: 'Category options',
+    no_categories: 'No categories yet',
+    choose: 'Choose',
+    date: 'Date',
+    open_calendar_pick_date: 'Open calendar',
+    pick_date_placeholder: 'Pick a date',
+    tap_to_open_calendar: 'Tap to open',
+    notes: 'Notes',
+    notes_edit_placeholder: 'Add details…',
+    save: 'Save',
+
+    delete_confirm_aria: 'Confirm delete',
+    delete_title: 'Delete this transaction?',
+    delete_cannot_undo: 'This cannot be undone.',
+    delete_hint_prefix: 'Press',
+    delete_hint_or: 'to confirm, or',
+    delete_hint_suffix: 'to go back.',
+    deleting: 'Deleting…',
+
+    view_txn_aria: 'Transaction details',
+    view_close: 'Close',
+
+    err_voice_not_supported: 'This browser does not support audio recording',
+    err_voice_recording: 'Recording error',
+    err_voice_open_mic: 'Unable to access microphone',
+    err_voice_no_audio: 'No recording yet',
+    err_voice_transcribe_failed: 'Transcription failed',
+
+    err_select_slip_first: 'Please select a receipt image first',
+    err_read_slip_failed: 'Failed to read receipt',
+
+    err_delete_failed: 'Delete failed',
+    err_amount_gt_zero: 'Please enter an amount greater than 0',
+    err_choose_category: 'Please choose a category',
+    err_generic: 'Something went wrong',
+    err_load_failed: 'Failed to load data: {message}',
+    err_fetch_txns_failed: 'Failed to fetch transactions',
+
+    notif_budget_over_title: 'You’re over budget this month',
+    notif_budget_over_body: '{pct}% used • Over by {over}',
+    notif_budget_cta_go_budget: 'Go to budget',
+    notif_budget_near_title: 'You’re close to your monthly budget',
+    notif_budget_near_body: '{pct}% used • {left} left',
+    notif_budget_cta_view_budget: 'View budget',
+    notif_cat_over_title: 'Over budget: “{name}”',
+    notif_cat_over_body: '{spent} spent of {budget} • Over by {over}',
+    notif_cat_over_cta: 'View this category',
+    notif_budget_pace_title: 'Spending faster than plan',
+    notif_budget_pace_body: 'Expected ~{expected}, but spent {spent}',
+    notif_budget_pace_cta: 'View expense stats',
+    notif_no_income_title: 'No income recorded this month',
+    notif_no_income_body: 'But you have expenses {expense}. Log income for better insights.',
+    notif_no_income_cta: 'Go to transactions',
+    notif_daily_over_title: 'Over today’s target',
+    notif_daily_over_body: 'Spent {spent} of {target}',
+    notif_daily_over_cta: 'View today',
+    notif_leak_top_title: 'This category is unusually high',
+    notif_leak_top_body: '{name} is {pct}% of this month’s expenses',
+    notif_leak_top_cta: 'View expense share',
+    notif_reset_soon_title: 'Budget resets soon',
+    notif_reset_soon_body: '{days} days left until reset',
+    notif_reset_soon_cta: 'Check this month',
+    notif_all_good_title: 'All good',
+    notif_all_good_body: 'No alerts right now',
+    notif_all_good_cta: 'View summary',
+  },
+};
+
+const tForLang = (language, key, vars) => {
+  const dict = I18N[language] || I18N.th;
+  const template = dict?.[key] ?? I18N.th?.[key] ?? key;
+  return formatI18n(template, vars);
+};
 
 const MONTH_NAMES_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -132,6 +485,10 @@ function renderIcon(iconKey) {
 }
 
 export default function Dashboard() {
+  const language = useBalanzLanguage('th'); // 'th' | 'en'
+  const t = useCallback((key, vars) => tForLang(language, key, vars), [language]);
+  const uiLocale = language === 'en' ? 'en-US' : 'th-TH';
+
   const [mounted, setMounted] = useState(false);
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
   const [editCategoryMaxH, setEditCategoryMaxH] = useState(288);
@@ -526,7 +883,7 @@ export default function Dashboard() {
 
     if (typeof window === 'undefined') return;
     if (!navigator?.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setVoiceError('เบราว์เซอร์นี้ยังไม่รองรับการอัดเสียง');
+      setVoiceError(t('err_voice_not_supported'));
       return;
     }
 
@@ -550,7 +907,7 @@ export default function Dashboard() {
         if (e?.data && e.data.size > 0) voiceChunksRef.current.push(e.data);
       };
       recorder.onerror = () => {
-        setVoiceError('เกิดข้อผิดพลาดในการอัดเสียง');
+        setVoiceError(t('err_voice_recording'));
       };
       recorder.onstop = () => {
         try {
@@ -574,7 +931,7 @@ export default function Dashboard() {
       recorder.start();
       setVoiceRecording(true);
     } catch (e) {
-      setVoiceError(e?.message ? String(e.message) : 'ไม่สามารถเปิดไมโครโฟนได้');
+      setVoiceError(e?.message ? String(e.message) : t('err_voice_open_mic'));
       setVoiceRecording(false);
       try {
         if (voiceStreamRef.current) voiceStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -611,7 +968,7 @@ export default function Dashboard() {
     if (voiceLoading) return;
     const blob = blobOverride || voiceBlob;
     if (!blob) {
-      setVoiceError('ยังไม่มีเสียงที่อัดไว้');
+      setVoiceError(t('err_voice_no_audio'));
       return;
     }
 
@@ -633,12 +990,12 @@ export default function Dashboard() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || data?.message || 'ถอดเสียงไม่สำเร็จ');
+        throw new Error(data?.error || data?.message || t('err_voice_transcribe_failed'));
       }
       const text = String(data?.text || '').trim();
       setVoiceTranscript(text);
     } catch (e) {
-      setVoiceError(e?.message ? String(e.message) : 'ถอดเสียงไม่สำเร็จ');
+      setVoiceError(e?.message ? String(e.message) : t('err_voice_transcribe_failed'));
     } finally {
       setVoiceLoading(false);
     }
@@ -787,7 +1144,7 @@ export default function Dashboard() {
   const readSlip = async () => {
     if (slipLoading) return;
     if (!slipFile) {
-      setSlipError('กรุณาเลือกรูปสลิปก่อน');
+      setSlipError(t('err_select_slip_first'));
       return;
     }
 
@@ -810,13 +1167,13 @@ export default function Dashboard() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || data?.message || 'อ่านสลิปไม่สำเร็จ');
+        throw new Error(data?.error || data?.message || t('err_read_slip_failed'));
       }
       applySlipParsedToAddForm(data?.parsed || {});
       setAddInlinePanel('none');
       resetSlipState();
     } catch (e) {
-      setSlipError(e?.message ? String(e.message) : 'อ่านสลิปไม่สำเร็จ');
+      setSlipError(e?.message ? String(e.message) : t('err_read_slip_failed'));
     } finally {
       setSlipLoading(false);
     }
@@ -1025,7 +1382,7 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
-        throw new Error((await res.json()).message || 'Failed to fetch transactions');
+        throw new Error((await res.json()).message || t('err_fetch_txns_failed'));
       }     
       const transactions = await res.json();
       const allTransactions = Array.isArray(transactions) ? transactions : [];
@@ -1094,7 +1451,7 @@ export default function Dashboard() {
       setError('');
       
     } catch (error) {
-      setError('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + (error.message || 'Error'));
+      setError(t('err_load_failed', { message: error?.message ? String(error.message) : t('err_generic') }));
       setStats({ totalIncome: 0, totalExpenses: 0, netSavings: 0, recentTransactions: [], recentIncome: [], recentExpense: [], todayExpenseTotal: 0, currentMonthIncomeTotal: 0, currentMonthExpenseTotal: 0 });
     } finally {
       setLoading(false);
@@ -1294,14 +1651,14 @@ export default function Dashboard() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message || 'ลบรายการไม่สำเร็จ');
+        throw new Error(data?.message || t('err_delete_failed'));
       }
 
       setShowDeleteModal(false);
       setDeletingTransactionId(null);
       fetchStats();
     } catch (err) {
-      setDeleteError(err?.message ? String(err.message) : 'ลบรายการไม่สำเร็จ');
+      setDeleteError(err?.message ? String(err.message) : t('err_delete_failed'));
     } finally {
       setDeleteLoading(false);
     }
@@ -1312,11 +1669,11 @@ export default function Dashboard() {
     setError('');
 
     if (!editFormData.amount || parseFloat(editFormData.amount) <= 0) {
-      setError('กรุณากรอกจำนวนเงินที่มากกว่า 0');
+      setError(t('err_amount_gt_zero'));
       return;
     }
     if (!editFormData.category) {
-      setError('กรุณาเลือกหมวดหมู่');
+      setError(t('err_choose_category'));
       return;
     }
 
@@ -1337,14 +1694,14 @@ export default function Dashboard() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'เกิดข้อผิดพลาด');
+        throw new Error(data.message || t('err_generic'));
       }
 
       setShowEditModal(false);
       setEditingTransaction(null);
       fetchStats();
     } catch (error) {
-      setError('เกิดข้อผิดพลาด: ' + error.message);
+      setError(t('err_load_failed', { message: error?.message ? String(error.message) : t('err_generic') }));
     }
   };
 
@@ -1353,12 +1710,12 @@ export default function Dashboard() {
     setError('');
 
     if (!addFormData.amount || parseFloat(addFormData.amount) <= 0) {
-      setError('กรุณากรอกจำนวนเงินที่มากกว่า 0');
+      setError(t('err_amount_gt_zero'));
       return;
     }
 
     if (!addFormData.category) {
-      setError('กรุณาเลือกหมวดหมู่');
+      setError(t('err_choose_category'));
       return;
     }
 
@@ -1379,7 +1736,7 @@ export default function Dashboard() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.message || 'เกิดข้อผิดพลาด');
+        throw new Error(data.message || t('err_generic'));
       }
 
       setShowAddModal(false);
@@ -1392,7 +1749,7 @@ export default function Dashboard() {
       });
       fetchStats();
     } catch (error) {
-      setError('เกิดข้อผิดพลาด: ' + error.message);
+      setError(t('err_load_failed', { message: error?.message ? String(error.message) : t('err_generic') }));
     }
   };
 
@@ -1409,12 +1766,12 @@ export default function Dashboard() {
     return `${m} ${p.day}, ${p.year + 543}`;
   };
 
-  const formatTHB = (value) => {
+  const formatTHB = useCallback((value) => {
     const n = Number(value) || 0;
     const abs = Math.abs(n);
-    const formatted = abs.toLocaleString('th-TH');
+    const formatted = abs.toLocaleString(uiLocale);
     return `${n < 0 ? '-' : ''}฿${formatted}`;
-  };
+  }, [uiLocale]);
 
   const selectedParsed = useMemo(() => parseThaiMonthLabel(selectedMonth), [selectedMonth]);
   const monthExpenseBudgetTotal = useMemo(() => {
@@ -1519,19 +1876,19 @@ export default function Dashboard() {
   const leakItems = useMemo(() => {
     const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
     const map = new Map();
-    for (const t of src) {
-      if (!t || t.type !== 'expense') continue;
-      const amt = Number(t.amount) || 0;
+    for (const txn of src) {
+      if (!txn || txn.type !== 'expense') continue;
+      const amt = Number(txn.amount) || 0;
       if (amt <= 0) continue;
-      const id = t.category?._id || t.category || '_none';
-      const name = t.category?.name || 'ไม่ระบุ';
-      const icon = t.category?.icon || 'other';
+      const id = txn.category?._id || txn.category || '_none';
+      const name = txn.category?.name || t('unspecified');
+      const icon = txn.category?.icon || 'other';
       const prev = map.get(id) || { id, name, icon, amount: 0 };
       prev.amount += amt;
       map.set(id, prev);
     }
     return Array.from(map.values()).sort((a, b) => b.amount - a.amount).slice(0, 3);
-  }, [stats.transactionsAll]);
+  }, [stats.transactionsAll, t]);
 
   const notifications = useMemo(() => {
     if (loading) return [];
@@ -1555,20 +1912,26 @@ export default function Dashboard() {
         id: `budget_over_${selectedMonth}`,
         tone: 'rose',
         icon: TrendingDownIcon,
-        title: 'ใช้จ่ายเกินงบเดือนนี้แล้ว',
-        body: `ใช้งบไป ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}% • เกิน ${formatTHB(expense - budgetTotal)}`,
+        title: t('notif_budget_over_title'),
+        body: t('notif_budget_over_body', {
+          pct: Math.round((expense / Math.max(1, budgetTotal)) * 100),
+          over: formatTHB(expense - budgetTotal),
+        }),
         href: '/budget',
-        cta: 'ไปหน้างบประมาณ',
+        cta: t('notif_budget_cta_go_budget'),
       });
     } else if (hasBudget && expense / Math.max(1, budgetTotal) >= 0.85) {
       push({
         id: `budget_near_${selectedMonth}`,
         tone: 'amber',
         icon: Target,
-        title: 'ใกล้ถึงงบประมาณเดือนนี้',
-        body: `ใช้งบไป ${Math.round((expense / Math.max(1, budgetTotal)) * 100)}% • เหลือ ${formatTHB(Math.max(0, budgetTotal - expense))}`,
+        title: t('notif_budget_near_title'),
+        body: t('notif_budget_near_body', {
+          pct: Math.round((expense / Math.max(1, budgetTotal)) * 100),
+          left: formatTHB(Math.max(0, budgetTotal - expense)),
+        }),
         href: '/budget',
-        cta: 'ดูงบประมาณ',
+        cta: t('notif_budget_cta_view_budget'),
       });
     }
 
@@ -1597,7 +1960,7 @@ export default function Dashboard() {
           if (spent <= budget) continue;
           overList.push({
             categoryId,
-            name: cat?.name || 'หมวดหมู่',
+            name: cat?.name || t('category'),
             spent,
             budget,
             over: spent - budget,
@@ -1613,10 +1976,14 @@ export default function Dashboard() {
               id: `cat_budget_over_${selectedMonth}_${r.categoryId}`,
               tone: 'rose',
               icon: Target,
-              title: `เกินงบหมวด “${r.name}”`,
-              body: `ใช้ไป ${formatTHB(r.spent)} จากงบ ${formatTHB(r.budget)} • เกิน ${formatTHB(r.over)}`,
+              title: t('notif_cat_over_title', { name: r.name }),
+              body: t('notif_cat_over_body', {
+                spent: formatTHB(r.spent),
+                budget: formatTHB(r.budget),
+                over: formatTHB(r.over),
+              }),
               href: '/budget',
-              cta: 'ดูงบหมวดนี้',
+              cta: t('notif_cat_over_cta'),
             });
           });
       }
@@ -1627,10 +1994,10 @@ export default function Dashboard() {
         id: `budget_pace_${selectedMonth}`,
         tone: 'amber',
         icon: Zap,
-        title: 'ใช้จ่ายเร็วกว่าแผน',
-        body: `ควรใช้ราว ${formatTHB(expectedSpendSoFar)} แต่ตอนนี้ใช้ไป ${formatTHB(expense)}`,
+        title: t('notif_budget_pace_title'),
+        body: t('notif_budget_pace_body', { expected: formatTHB(expectedSpendSoFar), spent: formatTHB(expense) }),
         href: '/analytics',
-        cta: 'ดูสถิติรายจ่าย',
+        cta: t('notif_budget_pace_cta'),
       });
     }
 
@@ -1639,10 +2006,10 @@ export default function Dashboard() {
         id: `no_income_${selectedMonth}`,
         tone: 'rose',
         icon: Wallet,
-        title: 'เดือนนี้ยังไม่มีรายรับ',
-        body: `แต่มีรายจ่าย ${formatTHB(expense)} ลองบันทึกรายรับเพื่อให้วิเคราะห์แม่นขึ้น`,
+        title: t('notif_no_income_title'),
+        body: t('notif_no_income_body', { expense: formatTHB(expense) }),
         href: '/transactions',
-        cta: 'ไปหน้ารายการ',
+        cta: t('notif_no_income_cta'),
       });
     }
 
@@ -1651,10 +2018,10 @@ export default function Dashboard() {
         id: `daily_over_${selectedMonth}`,
         tone: 'amber',
         icon: TrendingDownIcon,
-        title: 'วันนี้ใช้เกินเป้าที่ตั้งไว้',
-        body: `ใช้ไป ${formatTHB(todaySpend)} จากเป้า ${formatTHB(dailyTargetToday)}`,
+        title: t('notif_daily_over_title'),
+        body: t('notif_daily_over_body', { spent: formatTHB(todaySpend), target: formatTHB(dailyTargetToday) }),
         href: '/transactions',
-        cta: 'ดูรายการวันนี้',
+        cta: t('notif_daily_over_cta'),
       });
     }
 
@@ -1666,10 +2033,10 @@ export default function Dashboard() {
           id: `leak_top_${selectedMonth}`,
           tone: 'sky',
           icon: TrendingDownIcon,
-          title: 'หมวดนี้ใช้เยอะเป็นพิเศษ',
-          body: `${top.name} คิดเป็น ${Math.round(pct * 100)}% ของรายจ่ายเดือนนี้`,
+          title: t('notif_leak_top_title'),
+          body: t('notif_leak_top_body', { name: top.name, pct: Math.round(pct * 100) }),
           href: '/analytics',
-          cta: 'ดูสัดส่วนรายจ่าย',
+          cta: t('notif_leak_top_cta'),
         });
       }
     }
@@ -1679,10 +2046,10 @@ export default function Dashboard() {
         id: `reset_soon_${selectedMonth}`,
         tone: 'sky',
         icon: AlarmClock,
-        title: 'งบประมาณใกล้รีเซ็ต',
-        body: `เหลืออีก ${daysUntilReset} วัน งบเดือนนี้จะรีเซ็ต`,
+        title: t('notif_reset_soon_title'),
+        body: t('notif_reset_soon_body', { days: daysUntilReset }),
         href: '/budget',
-        cta: 'ตรวจงบเดือนนี้',
+        cta: t('notif_reset_soon_cta'),
       });
     }
 
@@ -1691,10 +2058,10 @@ export default function Dashboard() {
         id: `all_good_${selectedMonth}`,
         tone: 'emerald',
         icon: TrendingUpIcon,
-        title: 'ทุกอย่างดูโอเค',
-        body: 'ยังไม่พบสิ่งที่ควรแจ้งเตือนในตอนนี้',
+        title: t('notif_all_good_title'),
+        body: t('notif_all_good_body'),
         href: '/analytics',
-        cta: 'ดูสรุปการเงิน',
+        cta: t('notif_all_good_cta'),
       });
     }
 
@@ -1716,6 +2083,8 @@ export default function Dashboard() {
     leakItems,
     selectedMonth,
     nowBkk,
+    t,
+    formatTHB,
   ]);
 
   const unreadNotifCount = useMemo(() => {
@@ -1774,7 +2143,7 @@ export default function Dashboard() {
 	        const spent = Math.max(0, Number(spentByCategory.get(categoryId) || 0));
 	        return {
 	          id: categoryId,
-	          name: cat?.name || 'หมวดหมู่',
+	          name: cat?.name || t('category'),
 	          icon: cat?.icon || 'other',
 	          spent,
 	          budget,
@@ -1793,7 +2162,7 @@ export default function Dashboard() {
 	    });
 
 	    return sorted.map((r, idx) => ({ ...r, color: colors[idx % colors.length] }));
-	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex]);
+	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex, t]);
 
 	  const budgetRowsIncome = useMemo(() => {
 	    const monthBudgets = budgetsByMonth?.[selectedMonth] || {};
@@ -1822,7 +2191,7 @@ export default function Dashboard() {
 	        const alpha = 0.25 + 0.75 * pctClamped; // keep visible even when pct is low
 	        return {
 	          id: categoryId,
-	          name: cat?.name || 'หมวดหมู่',
+	          name: cat?.name || t('category'),
 	          icon: cat?.icon || 'other',
 	          received,
 	          budget,
@@ -1842,23 +2211,23 @@ export default function Dashboard() {
 	    });
 
 	    return sorted.map((r, idx) => ({ ...r, color: colors[idx % colors.length] }));
-	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex]);
+	  }, [budgetsByMonth, selectedMonth, stats.transactionsAll, categories, budgetCategoryTypeById, categoryOrderIndex, t]);
 
   const budgetCardType = recentTxnType === 'income' ? 'income' : 'expense';
   const budgetRows = budgetCardType === 'income' ? budgetRowsIncome : budgetRowsExpense;
 
-	  const incomeMonthCategoryRows = useMemo(() => {
-	    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
-	    const map = new Map();
-    for (const t of src) {
-      if (!t || t.type !== 'income') continue;
-      const id = t.category?._id || t.category || '_none';
-      const amt = Number(t.amount) || 0;
+		  const incomeMonthCategoryRows = useMemo(() => {
+		    const src = Array.isArray(stats.transactionsAll) ? stats.transactionsAll : [];
+		    const map = new Map();
+    for (const txn of src) {
+      if (!txn || txn.type !== 'income') continue;
+      const id = txn.category?._id || txn.category || '_none';
+      const amt = Number(txn.amount) || 0;
       if (amt <= 0) continue;
       const prev = map.get(id) || {
         id,
-        name: t.category?.name || 'ไม่ระบุ',
-        icon: t.category?.icon || 'other',
+        name: txn.category?.name || t('unspecified'),
+        icon: txn.category?.icon || 'other',
         received: 0,
         txCount: 0,
       };
@@ -1881,7 +2250,7 @@ export default function Dashboard() {
 	      const alpha = 0.25 + 0.75 * pct01;
 	      return { ...r, color: colors[idx % colors.length], alpha };
 	    });
-	  }, [stats.transactionsAll, categoryOrderIndex]);
+	  }, [stats.transactionsAll, categoryOrderIndex, t]);
 
   const showIncomeRowsWithoutTarget =
     budgetCardType === 'income' &&
@@ -1890,8 +2259,8 @@ export default function Dashboard() {
 
   const budgetCardTitle =
     budgetCardType === 'income'
-      ? (showIncomeRowsWithoutTarget ? 'รายรับตามหมวดหมู่' : 'เป้ารายรับตามหมวดหมู่')
-      : 'งบประมาณ';
+      ? (showIncomeRowsWithoutTarget ? t('income_by_category') : t('income_target_by_category'))
+      : t('budget');
 
   const recentTransactionsFiltered = useMemo(() => {
     if (recentTxnType === 'income') return Array.isArray(stats?.recentIncome) ? stats.recentIncome : [];
@@ -1922,7 +2291,7 @@ export default function Dashboard() {
               )}
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-semibold text-[color:var(--app-muted)] truncate">Welcome back</div>
+              <div className="text-[12px] font-semibold text-[color:var(--app-muted)] truncate">{t('welcome_back')}</div>
               <div className="text-lg font-extrabold text-[color:var(--app-text)] truncate">{userProfile.name || 'Balanz'}</div>
               <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">{formatCurrentDate()}</div>
             </div>
@@ -1935,13 +2304,13 @@ export default function Dashboard() {
               type="button"
               onClick={() => setShowNotifications(true)}
               className="relative inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--app-surface)] shadow-sm shadow-black/10 border border-[color:var(--app-border)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
-              aria-label="การแจ้งเตือน"
-              title="การแจ้งเตือน"
+              aria-label={t('notifications')}
+              title={t('notifications')}
             >
               {unreadNotifCount > 0 && (
                 <span
                   className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-extrabold text-white ring-2 ring-[color:var(--app-bg)]"
-                  aria-label={`มีการแจ้งเตือนใหม่ ${unreadNotifCount} รายการ`}
+                  aria-label={t('new_notifications_aria', { count: unreadNotifCount })}
                 >
                   {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
                 </span>
@@ -1960,7 +2329,7 @@ export default function Dashboard() {
                 onClick={() => setCurrentMonthIndex((p) => Math.max(0, p - 1))}
                 disabled={currentMonthIndex === 0}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
-                aria-label="เดือนก่อนหน้า"
+                aria-label={t('prev_month')}
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -1973,9 +2342,9 @@ export default function Dashboard() {
                   setShowMonthPicker(true);
                 }}
                 className="min-w-0 flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-center hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                aria-label="เปิดปฏิทินเลือกเดือน"
+                aria-label={t('open_month_picker')}
               >
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เดือนที่เลือก</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('selected_month')}</div>
                 <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{selectedMonth}</div>
               </button>
 
@@ -1984,7 +2353,7 @@ export default function Dashboard() {
                 onClick={() => setCurrentMonthIndex((p) => Math.min(months.length - 1, p + 1))}
                 disabled={currentMonthIndex === months.length - 1}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
-                aria-label="เดือนถัดไป"
+                aria-label={t('next_month')}
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
@@ -2006,14 +2375,14 @@ export default function Dashboard() {
             <div className="w-full max-w-md overflow-hidden rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40">
               <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
                 <div>
-                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">เลือกเดือน</div>
-                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">แตะเพื่อดูสรุปของเดือนนั้น</div>
+                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('pick_month')}</div>
+                  <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('pick_month_hint')}</div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  aria-label="ปิด"
+                  aria-label={t('close')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -2030,7 +2399,7 @@ export default function Dashboard() {
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
-                    aria-label="ปีก่อนหน้า"
+                    aria-label={t('prev_year')}
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
@@ -2039,7 +2408,7 @@ export default function Dashboard() {
                     <div className="text-sm font-extrabold text-[color:var(--app-text)]">
                       {Number(monthPickerYear) + 543}
                     </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">พ.ศ.</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('buddhist_era')}</div>
                   </div>
 
                   <button
@@ -2051,7 +2420,7 @@ export default function Dashboard() {
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) <= 0}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
-                    aria-label="ปีถัดไป"
+                    aria-label={t('next_year')}
                   >
                     <ChevronRight className="h-5 w-5" />
                   </button>
@@ -2097,14 +2466,14 @@ export default function Dashboard() {
                   }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
                 >
-                  เดือนนี้
+                  {t('this_month')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
                   className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                 >
-                  เสร็จสิ้น
+                  {t('done')}
                 </button>
               </div>
             </div>
@@ -2124,9 +2493,9 @@ export default function Dashboard() {
                     <Bell className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div>
-                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">การแจ้งเตือน</div>
+                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('notif_title')}</div>
                     <div className="text-[11px] font-semibold text-slate-400">
-                      {unreadNotifCount > 0 ? `ยังไม่อ่าน ${unreadNotifCount} รายการ` : 'ไม่มีรายการที่ยังไม่อ่าน'}
+                      {unreadNotifCount > 0 ? t('notif_unread', { count: unreadNotifCount }) : t('notif_unread_none')}
                     </div>
                   </div>
                 </div>
@@ -2135,7 +2504,7 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setShowNotifications(false)}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  aria-label="ปิด"
+                  aria-label={t('close')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -2221,14 +2590,14 @@ export default function Dashboard() {
                   onClick={() => { markAllNotifsRead(); }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
                 >
-                  อ่านแล้วทั้งหมด
+                  {t('mark_all_read')}
                 </button>
                 <Link
                   href="/transactions"
                   onClick={() => setShowNotifications(false)}
                   className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                 >
-                  ไปหน้ารายการ
+                  {t('go_transactions')}
                 </Link>
               </div>
             </div>
@@ -2282,19 +2651,22 @@ export default function Dashboard() {
                       ].join(' ')}
                       aria-pressed={expActive}
                     >
-                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายจ่าย</div>
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('expense')}</div>
                       <div className="mt-1 text-xl font-extrabold text-rose-300">{formatTHB(expense)}</div>
                       {expHasTarget ? (
                         <>
                           <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                            {expDiff >= 0 ? `เหลือ ${formatTHB(expDiff)} จากงบ` : `เกิน ${formatTHB(Math.abs(expDiff))} จากงบ`} • {expPct}%
+                            {expDiff >= 0
+                              ? t('left_from_budget', { amount: formatTHB(expDiff) })
+                              : t('over_from_budget', { amount: formatTHB(Math.abs(expDiff)) })}{' '}
+                            • {expPct}%
                           </div>
                           <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
                             <div className="h-full rounded-full bg-rose-400" style={{ width: `${expPctClamped}%` }} />
                           </div>
                         </>
                       ) : (
-                        <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อดูเฉพาะรายจ่าย</div>
+                        <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{t('tap_expense_only')}</div>
                       )}
                     </button>
 
@@ -2309,12 +2681,14 @@ export default function Dashboard() {
                       ].join(' ')}
                       aria-pressed={incActive}
                     >
-                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">รายรับ</div>
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('income')}</div>
                       <div className="mt-1 text-xl font-extrabold text-emerald-300">{formatTHB(income)}</div>
                       <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                         {incHasTarget
-                          ? (incDiff >= 0 ? `เหลือ ${formatTHB(incDiff)} จากเป้า` : `เกิน ${formatTHB(Math.abs(incDiff))} จากเป้า`)
-                          : 'แตะเพื่อดูเฉพาะรายรับ'}
+                          ? (incDiff >= 0
+                            ? t('left_from_goal', { amount: formatTHB(incDiff) })
+                            : t('over_from_goal', { amount: formatTHB(Math.abs(incDiff)) }))
+                          : t('tap_income_only')}
                       </div>
                       <div className="mt-2 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
                         <div className="h-full rounded-full bg-emerald-400" style={{ width: `${incVisualPctClamped}%` }} />
@@ -2330,10 +2704,10 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <div className="text-lg font-extrabold text-[color:var(--app-text)]">{budgetCardTitle}</div>
                 <div className="flex items-center gap-3">
-                  <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">รีเซ็ตใน {daysUntilReset} วัน</div>
+                  <div className="text-xs font-semibold text-[color:var(--app-muted-2)]">{t('reset_in_days', { count: daysUntilReset })}</div>
                   {budgetRows.length > 5 && (
                     <Link href="/budget" className="text-xs font-extrabold text-sky-300 hover:text-sky-200">
-                      ดูทั้งหมด
+                      {t('view_all')}
                     </Link>
                   )}
                 </div>
@@ -2342,11 +2716,11 @@ export default function Dashboard() {
               {/* Summary grid (match reference UI) */}
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-                  <div className="text-xs font-semibold text-slate-400">ใช้ไปวันนี้</div>
+                  <div className="text-xs font-semibold text-slate-400">{t('spent_today')}</div>
                   <div className="mt-1 flex items-end gap-2">
                     <div className="text-2xl font-extrabold text-[color:var(--app-text)]">{formatTHB(todaySpend)}</div>
                     <div className="pb-1 text-sm font-semibold text-[color:var(--app-muted-2)]">
-                      {dailyTargetToday > 0 ? `ใช้ได้ต่อวัน ${formatTHB(dailyTargetToday)}` : 'ยังไม่มีรายรับเดือนนี้'}
+                      {dailyTargetToday > 0 ? t('per_day_allowance', { amount: formatTHB(dailyTargetToday) }) : t('no_income_this_month')}
                     </div>
                   </div>
                   <div className="mt-3 h-2.5 w-full rounded-full bg-black/25 ring-1 ring-white/10 overflow-hidden">
@@ -2358,7 +2732,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
-                  <div className="text-xs font-semibold text-slate-400">คงเหลือเดือนนี้</div>
+                  <div className="text-xs font-semibold text-slate-400">{t('remaining_this_month')}</div>
                   <div className={`mt-1 text-3xl font-extrabold ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
                     {loading ? '—' : formatTHB(monthRemaining)}
                   </div>
@@ -2380,7 +2754,7 @@ export default function Dashboard() {
                               <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">{r.name}</div>
                             </div>
                             <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                              รับแล้ว {formatTHB(r.received)}
+                              {t('received_already', { amount: formatTHB(r.received) })}
                             </div>
                           </div>
                         </div>
@@ -2410,8 +2784,8 @@ export default function Dashboard() {
                             </div>
                             <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                               {budgetCardType === 'income'
-                                ? `เป้า ${formatTHB(r.budget)} • ได้แล้ว ${formatTHB(r.received)}`
-                                : `งบ ${formatTHB(r.budget)} • ใช้ไป ${formatTHB(r.spent)}`}
+                                ? t('target_received', { budget: formatTHB(r.budget), received: formatTHB(r.received) })
+                                : t('budget_spent', { budget: formatTHB(r.budget), spent: formatTHB(r.spent) })}
                             </div>
                           </div>
                         </div>
@@ -2421,8 +2795,8 @@ export default function Dashboard() {
                           </div>
                           <div className="text-[11px] font-semibold text-[color:var(--app-muted-2)]">
                             {budgetCardType === 'income'
-                              ? `เหลือ ${formatTHB(Math.max(0, r.budget - r.received))} จากเป้า`
-                              : `เหลือ ${formatTHB(Math.max(0, r.budget - r.spent))}`}
+                              ? t('remaining_from_target', { amount: formatTHB(Math.max(0, r.budget - r.received)) })
+                              : t('remaining_amount', { amount: formatTHB(Math.max(0, r.budget - r.spent)) })}
                           </div>
                         </div>
                       </div>
@@ -2448,25 +2822,25 @@ export default function Dashboard() {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-1 rounded-full bg-emerald-400" />
-                <h2 className="text-lg sm:text-xl font-extrabold text-[color:var(--app-text)]">ธุรกรรมล่าสุด</h2>
+                <h2 className="text-lg sm:text-xl font-extrabold text-[color:var(--app-text)]">{t('recent_transactions')}</h2>
               </div>
               <Link href="/transactions" className="text-sm font-extrabold text-emerald-300 hover:text-emerald-200">
-                ดูทั้งหมด
+                {t('view_all')}
               </Link>
             </div>
 
             <div className="mt-3 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 sm:p-5 shadow-sm shadow-black/10">
               {loading ? (
                 <div className="text-center py-10">
-                  <LoadingMascot label="กำลังโหลด..." size={72} />
+                  <LoadingMascot label={t('loading')} size={72} />
                 </div>
               ) : recentTransactionsFiltered.length === 0 ? (
                 <div className="text-center py-10">
                   <svg className="w-16 h-16 mx-auto text-slate-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                   </svg>
-                  <p className="text-slate-200 text-sm font-extrabold">ยังไม่มีธุรกรรม</p>
-                  <p className="text-slate-400 text-xs mt-1 font-semibold">ลองเพิ่มรายการใหม่ แล้วกลับมาดูอีกครั้ง</p>
+                  <p className="text-slate-200 text-sm font-extrabold">{t('no_transactions')}</p>
+                  <p className="text-slate-400 text-xs mt-1 font-semibold">{t('add_new_hint')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2502,7 +2876,7 @@ export default function Dashboard() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">
-                                  {txn.category?.name || 'หมวดหมู่ไม่ระบุ'}
+                                  {txn.category?.name || t('uncategorized')}
                                 </div>
                                 <div className="mt-1 truncate text-xs font-semibold text-slate-400">
                                   {txn.notes || '—'}
@@ -2510,22 +2884,22 @@ export default function Dashboard() {
                               </div>
                             </div>
                             <div className="mt-2 text-[11px] font-semibold text-[color:var(--app-muted-2)]">
-                              {new Date(txn.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {new Date(txn.date).toLocaleDateString(uiLocale, { day: 'numeric', month: 'short', year: 'numeric' })}
                             </div>
                           </div>
                         </div>
 
                         <div className="shrink-0 text-right">
                           <div className="text-sm font-extrabold" style={{ color: txn.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
-                            {txn.type === 'expense' ? '-' : '+'}{txn.amount.toLocaleString()} ฿
+                            {txn.type === 'expense' ? '-' : '+'}{Number(txn.amount || 0).toLocaleString(uiLocale)} ฿
                           </div>
                           <div className="mt-2 flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); handleEdit(txn); }}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
-                              title="แก้ไข"
-                              aria-label="แก้ไข"
+                              title={t('edit')}
+                              aria-label={t('edit')}
                             >
                               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -2535,8 +2909,8 @@ export default function Dashboard() {
                               type="button"
                               onClick={(e) => { e.stopPropagation(); handleDelete(txn._id); }}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-200 shadow-sm shadow-black/10 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-rose-400/25"
-                              title="ลบ"
-                              aria-label="ลบ"
+                              title={t('delete')}
+                              aria-label={t('delete')}
                             >
                               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -2585,8 +2959,8 @@ export default function Dashboard() {
             'focus:outline-none focus:ring-2 focus:ring-emerald-400/40',
             'lg:right-8',
           ].join(' ')}
-        aria-label="เพิ่มรายการ"
-        title="เพิ่มรายการ"
+        title={t('add_transaction')}
+        aria-label={t('add_transaction')}
       >
         <Plus className="h-6 w-6" aria-hidden="true" />
       </button>
@@ -2600,14 +2974,14 @@ export default function Dashboard() {
           <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/40 overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
               <div>
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">อัดเสียง</div>
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">กดเริ่มอัด → กดหยุด ระบบจะถอดให้เลย</div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('voice_title')}</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('voice_subtitle')}</div>
               </div>
               <button
                 type="button"
                 onClick={() => { if (!voiceRecording && !voiceLoading) setShowVoiceModal(false); }}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
-                aria-label="ปิด"
+                aria-label={t('close')}
                 disabled={voiceRecording || voiceLoading}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
@@ -2624,13 +2998,13 @@ export default function Dashboard() {
               <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถานะ</div>
+                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('status')}</div>
                     <div className="mt-1 text-sm font-extrabold text-[color:var(--app-text)]">
-                      {voiceRecording ? 'กำลังอัดเสียง...' : voiceBlob ? 'อัดเสียงแล้ว' : 'พร้อมอัดเสียง'}
+                      {voiceRecording ? t('recording') : voiceBlob ? t('recorded') : t('ready_to_record')}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">เวลา</div>
+                    <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('time')}</div>
                     <div className="mt-1 text-sm font-extrabold text-slate-100 tabular-nums">
                       {formatVoiceDuration(voiceSeconds)}
                     </div>
@@ -2639,7 +3013,7 @@ export default function Dashboard() {
                 {voiceLoading ? (
                   <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
                     <span className="inline-flex h-4 w-4 rounded-full border-2 border-white/20 border-t-violet-300 animate-spin" aria-hidden="true" />
-                    กำลังถอดข้อความ...
+                    {t('transcribing')}
                   </div>
                 ) : null}
               </div>
@@ -2661,11 +3035,11 @@ export default function Dashboard() {
                 ].join(' ')}
               >
                 <Mic className="h-5 w-5" aria-hidden="true" />
-                {voiceRecording ? 'หยุด (ถอดให้อัตโนมัติ)' : 'เริ่มอัดเสียง'}
+                {voiceRecording ? t('stop_auto_transcribe') : t('start_recording')}
               </button>
 
               <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                <div className="text-xs font-semibold text-[color:var(--app-muted)]">ข้อความที่ถอดได้</div>
+                <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('transcript')}</div>
                 <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
                   {voiceTranscript ? voiceTranscript : '—'}
                 </div>
@@ -2679,7 +3053,7 @@ export default function Dashboard() {
                 className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold text-slate-100 hover:bg-white/10 disabled:opacity-60"
                 disabled={voiceRecording || voiceLoading}
               >
-                ยกเลิก
+                {t('cancel')}
               </button>
               <button
                 type="button"
@@ -2687,7 +3061,7 @@ export default function Dashboard() {
                 disabled={!String(voiceTranscript || '').trim() || voiceRecording || voiceLoading}
                 className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:brightness-95 disabled:opacity-60"
               >
-                ใช้กรอกอัตโนมัติ
+                {t('use_autofill')}
               </button>
             </div>
           </div>
@@ -2710,11 +3084,11 @@ export default function Dashboard() {
 	                type="button"
 	                onClick={() => closeAddModal()}
 	                className="absolute left-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-	                aria-label="ปิด"
+	                aria-label={t('close')}
 	              >
 	                <X className="h-5 w-5" aria-hidden="true" />
 	              </button>
-	              <div className="text-center text-base font-extrabold tracking-wide">เพิ่มรายการ</div>
+	              <div className="text-center text-base font-extrabold tracking-wide">{t('add_transaction')}</div>
 	            </div>
 
               <>
@@ -2739,7 +3113,7 @@ export default function Dashboard() {
                             : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
                         ].join(' ')}
                       >
-                        รายจ่าย
+                        {t('expense')}
                       </button>
                       <button
                         type="button"
@@ -2760,14 +3134,14 @@ export default function Dashboard() {
                             : 'text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]',
                         ].join(' ')}
                       >
-                        รายรับ
+                        {t('income')}
                       </button>
                     </div>
                   </div>
 
                   <div className="flex-1 min-h-0 overflow-y-auto [-webkit-overflow-scrolling:touch] px-5 pt-6 pb-5 space-y-5">
                     <div className="text-center">
-                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
+                      <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('amount')}</div>
                       <div className="mt-3 flex items-center justify-center gap-2">
                         <div className="text-emerald-300 text-2xl font-extrabold">฿</div>
                         <input
@@ -2797,7 +3171,7 @@ export default function Dashboard() {
                         className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                       >
                         <Mic className="h-5 w-5 text-emerald-500" aria-hidden="true" />
-                        อัดเสียง
+                        {t('voice')}
                       </button>
                       <button
                         type="button"
@@ -2812,7 +3186,7 @@ export default function Dashboard() {
                         className="h-14 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] font-extrabold flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-400/25"
                       >
                         <ScanLine className="h-5 w-5 text-emerald-500" aria-hidden="true" />
-                        สแกนใบเสร็จ
+                        {t('scan_receipt')}
                       </button>
                     </div>
 
@@ -2845,9 +3219,9 @@ export default function Dashboard() {
                       <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 space-y-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">อัดเสียง</div>
+                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('voice_title')}</div>
                             <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                              กดเริ่มอัด → กดหยุด ระบบจะถอดให้เลย
+                              {t('voice_subtitle')}
                             </div>
                           </div>
                           <button
@@ -2859,8 +3233,8 @@ export default function Dashboard() {
                               setAddInlinePanel('none');
                             }}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
-                            aria-label="ปิด"
-                            title="ปิด"
+                            aria-label={t('close')}
+                            title={t('close')}
                             disabled={voiceRecording || voiceLoading}
                           >
                             <X className="h-5 w-5" aria-hidden="true" />
@@ -2876,13 +3250,13 @@ export default function Dashboard() {
                         <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">สถานะ</div>
+                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('status')}</div>
                               <div className="mt-1 text-sm font-extrabold text-[color:var(--app-text)]">
-                                {voiceRecording ? 'กำลังอัดเสียง...' : voiceBlob ? 'อัดเสียงแล้ว' : 'พร้อมอัดเสียง'}
+                                {voiceRecording ? t('recording') : voiceBlob ? t('recorded') : t('ready_to_record')}
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">เวลา</div>
+                              <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('time')}</div>
                               <div className="mt-1 text-sm font-extrabold tabular-nums text-[color:var(--app-text)]">
                                 {formatVoiceDuration(voiceSeconds)}
                               </div>
@@ -2891,7 +3265,7 @@ export default function Dashboard() {
                           {voiceLoading ? (
                             <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
                               <span className="inline-flex h-4 w-4 rounded-full border-2 border-[color:var(--app-border)] border-t-violet-400 animate-spin" aria-hidden="true" />
-                              กำลังถอดข้อความ...
+                              {t('transcribing')}
                             </div>
                           ) : null}
                         </div>
@@ -2913,11 +3287,11 @@ export default function Dashboard() {
                           ].join(' ')}
                         >
                           <Mic className="h-5 w-5" aria-hidden="true" />
-                          {voiceRecording ? 'หยุด (ถอดให้อัตโนมัติ)' : 'เริ่มอัดเสียง'}
+                          {voiceRecording ? t('stop_auto_transcribe') : t('start_recording')}
                         </button>
 
                         <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4">
-                          <div className="text-xs font-semibold text-[color:var(--app-muted)]">ข้อความที่ถอดได้</div>
+                          <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('transcript')}</div>
                           <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
                             {voiceTranscript ? voiceTranscript : '—'}
                           </div>
@@ -2935,7 +3309,7 @@ export default function Dashboard() {
                             className="h-12 flex-1 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-sm font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-60"
                             disabled={voiceRecording || voiceLoading}
                           >
-                            ยกเลิก
+                            {t('cancel')}
                           </button>
                           <button
                             type="button"
@@ -2946,7 +3320,7 @@ export default function Dashboard() {
                             disabled={!String(voiceTranscript || '').trim() || voiceRecording || voiceLoading}
                             className="h-12 flex-1 rounded-2xl bg-emerald-500 px-4 text-sm font-extrabold text-slate-950 hover:brightness-95 disabled:opacity-60"
                           >
-                            ใช้กรอกอัตโนมัติ
+                            {t('use_autofill')}
                           </button>
                         </div>
                       </div>
@@ -2956,9 +3330,9 @@ export default function Dashboard() {
                       <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 space-y-3">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">อ่านสลิป</div>
+                            <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('slip_title')}</div>
                             <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
-                              เลือกรูปแล้วระบบจะอ่านให้อัตโนมัติ
+                              {t('slip_subtitle')}
                             </div>
                           </div>
                           <button
@@ -2969,8 +3343,8 @@ export default function Dashboard() {
                               setAddInlinePanel('none');
                             }}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-50"
-                            aria-label="ปิด"
-                            title="ปิด"
+                            aria-label={t('close')}
+                            title={t('close')}
                             disabled={slipLoading}
                           >
                             <X className="h-5 w-5" aria-hidden="true" />
@@ -3001,8 +3375,8 @@ export default function Dashboard() {
                                 className="w-full max-h-[40vh] object-contain bg-black/10"
                               />
                               <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 via-black/20 to-transparent">
-                                <div className="text-xs font-extrabold text-white">แตะเพื่อเปลี่ยนรูป</div>
-                                <div className="mt-0.5 text-[11px] font-semibold text-white/70">ให้ยอดเงินและวันที่เห็นชัด</div>
+                                <div className="text-xs font-extrabold text-white">{t('tap_to_change_image')}</div>
+                                <div className="mt-0.5 text-[11px] font-semibold text-white/70">{t('make_amount_date_clear')}</div>
                               </div>
                             </div>
                           ) : (
@@ -3012,8 +3386,8 @@ export default function Dashboard() {
                                   <Camera className="h-6 w-6" aria-hidden="true" />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">ถ่ายรูป/อัปโหลดสลิป</div>
-                                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">รองรับสลิป/ใบเสร็จ (≤ 10MB)</div>
+                                  <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('take_or_upload_slip')}</div>
+                                  <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)]">{t('receipt_support_max')}</div>
                                 </div>
                                 <ChevronRight className="h-5 w-5 text-[color:var(--app-muted)]" aria-hidden="true" />
                               </div>
@@ -3024,12 +3398,12 @@ export default function Dashboard() {
                         <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="text-sm font-extrabold text-[color:var(--app-text)]">
-                              {slipLoading ? 'กำลังอ่าน...' : slipFile ? 'พร้อมอ่านอัตโนมัติ' : 'รอเลือกรูป'}
+                              {slipLoading ? t('slip_reading') : slipFile ? t('slip_ready_auto') : t('slip_wait_image')}
                             </div>
                             {slipLoading ? (
                               <div className="inline-flex items-center gap-2 text-xs font-semibold text-[color:var(--app-muted)]">
                                 <span className="inline-flex h-4 w-4 rounded-full border-2 border-[color:var(--app-border)] border-t-emerald-400 animate-spin" aria-hidden="true" />
-                                โปรดรอสักครู่
+                                {t('please_wait')}
                               </div>
                             ) : null}
                           </div>
@@ -3040,7 +3414,7 @@ export default function Dashboard() {
                                 onClick={readSlip}
                                 className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                               >
-                                ลองอ่านอีกครั้ง
+                                {t('try_read_again')}
                               </button>
                             </div>
                           ) : null}
@@ -3049,7 +3423,7 @@ export default function Dashboard() {
                     ) : null}
 
                     <div>
-                      <div className="text-sm font-extrabold text-[color:var(--app-text)]">หมวดหมู่</div>
+                      <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('category')}</div>
                       <div className="mt-4 grid grid-cols-4 gap-4">
                         {(() => {
                           const list = (categories || []).filter((c) => c?.type === addFormData.type);
@@ -3090,7 +3464,7 @@ export default function Dashboard() {
                         })}
                       </div>
                       {!addFormData.category ? (
-                        <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted-2)]">* เลือกหมวดหมู่ก่อนบันทึก</div>
+                        <div className="mt-3 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{t('select_category_before_save')}</div>
                       ) : null}
                     </div>
 
@@ -3109,7 +3483,7 @@ export default function Dashboard() {
                                 return iso || '-';
                               }
                             })();
-                            return iso === today ? `วันนี้, ${label}` : label;
+                            return iso === today ? t('today_with_date', { label }) : label;
                           })()}
                         </div>
                       </div>
@@ -3117,7 +3491,7 @@ export default function Dashboard() {
                         type="button"
                         onClick={() => openDatePicker('add')}
                         className="absolute inset-0"
-                        aria-label="เปิดตัวเลือกวันที่"
+                        aria-label={t('open_date_picker')}
                       />
                     </div>
 
@@ -3128,7 +3502,7 @@ export default function Dashboard() {
                           value={addFormData.notes}
                           onChange={(e) => setAddFormData((prev) => ({ ...prev, notes: e.target.value }))}
                           rows={2}
-                          placeholder="ระบุรายละเอียด..."
+                          placeholder={t('notes_placeholder')}
                           className="w-full bg-transparent text-sm font-semibold text-[color:var(--app-text)] outline-none placeholder:text-[color:var(--app-muted-2)] resize-none"
                         />
                       </div>
@@ -3147,7 +3521,7 @@ export default function Dashboard() {
                       className="h-14 w-full rounded-full bg-emerald-500 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/15 hover:brightness-95 disabled:opacity-60"
                       disabled={!addFormData.category}
                     >
-                      บันทึกรายการ
+                      {t('save_transaction')}
                     </button>
                   </div>
               </>
@@ -3165,15 +3539,15 @@ export default function Dashboard() {
             <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
               <div>
                 <div className="text-sm font-extrabold">
-                  เลือกวันที่{datePickerTarget === 'edit' ? ' (แก้ไขรายการ)' : ''}
+                  {t('pick_date')}{datePickerTarget === 'edit' ? t('pick_date_edit_suffix') : ''}
                 </div>
-                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">บันทึกย้อนหลัง/ล่วงหน้าได้ (สูงสุด 1 ปี)</div>
+                <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('date_picker_hint')}</div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowDatePicker(false)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                aria-label="ปิด"
+                aria-label={t('close')}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -3194,7 +3568,9 @@ export default function Dashboard() {
               const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
 
               const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
-              const weekdayTH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+              const weekdayLabels = language === 'en'
+                ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+                : ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 
               const isBeyondMax = (d) => {
                 const iso = toISOFromParts(year, monthIndex, d);
@@ -3235,14 +3611,14 @@ export default function Dashboard() {
                         type="button"
                         onClick={goPrev}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
-                        aria-label="เดือนก่อนหน้า"
+                        aria-label={t('prev_month')}
                       >
                         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
                       </button>
 
                       <div className="min-w-0 flex-1 text-center">
                         <div className="text-sm font-extrabold">{monthLabel}</div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">แตะวันที่เพื่อเลือก</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('tap_day_to_select')}</div>
                       </div>
 
                       <button
@@ -3250,14 +3626,14 @@ export default function Dashboard() {
                         onClick={goNext}
                         disabled={!canGoNext}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] disabled:opacity-40"
-                        aria-label="เดือนถัดไป"
+                        aria-label={t('next_month')}
                       >
                         <ChevronRight className="h-5 w-5" aria-hidden="true" />
                       </button>
                     </div>
 
                     <div className="mt-4 grid grid-cols-7 gap-1.5">
-                      {weekdayTH.map((w) => (
+                      {weekdayLabels.map((w) => (
                         <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted-2)]">
                           {w}
                         </div>
@@ -3287,7 +3663,7 @@ export default function Dashboard() {
                                     : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-1 ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
                             ].join(' ')}
                             aria-pressed={selected}
-                            aria-label={`เลือกวันที่ ${d}`}
+                            aria-label={`${t('pick_date')} ${d}`}
                           >
                             {d}
                           </button>
@@ -3306,14 +3682,14 @@ export default function Dashboard() {
                       }}
                       className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
                     >
-                      วันนี้
+                      {t('today')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowDatePicker(false)}
                       className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95 shadow-sm shadow-emerald-500/15"
                     >
-                      เสร็จสิ้น
+                      {t('finish')}
                     </button>
                   </div>
                 </>
@@ -3334,7 +3710,7 @@ export default function Dashboard() {
 	            onClick={(e) => e.stopPropagation()}
 	            role="dialog"
 	            aria-modal="true"
-	            aria-label="แก้ไขรายการ"
+	            aria-label={t('edit_transaction')}
 	          >
 	            <form onSubmit={handleUpdateSubmit} className="flex h-full flex-col">
 	              {/* Modal Header */}
@@ -3350,15 +3726,15 @@ export default function Dashboard() {
 	                      </svg>
 	                    </div>
 	                    <div>
-	                      <h2 className="text-xl font-bold">แก้ไขรายการ</h2>
-	                      <p className="text-slate-950/70 text-sm font-semibold">อัปเดตข้อมูลธุรกรรม</p>
+	                      <h2 className="text-xl font-bold">{t('edit_transaction')}</h2>
+	                      <p className="text-slate-950/70 text-sm font-semibold">{t('edit_desc')}</p>
 	                    </div>
 	                  </div>
 	                  <button
 	                    type="button"
 	                    onClick={() => setShowEditModal(false)}
 	                    className="p-2.5 hover:bg-white/20 rounded-xl transition-all duration-300 hover:rotate-90"
-	                    aria-label="ปิด"
+	                    aria-label={t('close')}
 	                  >
 	                    <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
 	                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
@@ -3380,7 +3756,7 @@ export default function Dashboard() {
 
               {/* Type Selection */}
               <div>
-                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">ประเภท</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">{t('type')}</label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
@@ -3395,7 +3771,7 @@ export default function Dashboard() {
                         : 'bg-[var(--app-surface-2)] border-[color:var(--app-border)] text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]'
                     }`}
                   >
-                    รายรับ
+                    {t('income')}
                   </button>
                   <button
                     type="button"
@@ -3410,14 +3786,14 @@ export default function Dashboard() {
                         : 'bg-[var(--app-surface-2)] border-[color:var(--app-border)] text-[color:var(--app-muted)] hover:bg-[var(--app-surface-3)]'
                     }`}
                   >
-                    รายจ่าย
+                    {t('expense')}
                   </button>
                 </div>
               </div>
 
               {/* Amount Input */}
               <div>
-                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">จำนวนเงิน</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">{t('amount')}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -3433,7 +3809,7 @@ export default function Dashboard() {
 
               {/* Category Selection */}
               <div>
-                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">หมวดหมู่</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">{t('category')}</label>
                 <div ref={editCategoryRef} className="relative">
                   <button
                     type="button"
@@ -3449,7 +3825,7 @@ export default function Dashboard() {
                     ].join(' ')}
                     aria-haspopup="listbox"
                     aria-expanded={editCategoryOpen}
-                    aria-label="เลือกหมวดหมู่"
+                    aria-label={t('category_select')}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex items-center gap-3">
@@ -3457,7 +3833,7 @@ export default function Dashboard() {
                           <div className="scale-[0.85]">{renderIcon(editCategorySelected?.icon || 'other')}</div>
                         </div>
                         <div className={editFormData.category ? 'min-w-0 text-sm font-extrabold truncate' : 'min-w-0 text-sm font-extrabold text-[color:var(--app-muted)] truncate'}>
-                          {editFormData.category ? (editCategorySelected?.name || 'ไม่ระบุ') : 'กรุณาเลือกหมวดหมู่'}
+                          {editFormData.category ? (editCategorySelected?.name || t('unspecified')) : t('category_select')}
                         </div>
                       </div>
                       <ChevronDown className={['h-4 w-4 shrink-0 transition', editCategoryOpen ? 'rotate-180' : '', 'text-[color:var(--app-muted)]'].join(' ')} aria-hidden="true" />
@@ -3469,7 +3845,7 @@ export default function Dashboard() {
                   <div
                     ref={editCategoryPanelRef}
                     role="listbox"
-                    aria-label="ตัวเลือกหมวดหมู่"
+                    aria-label={t('category_options')}
                     className="fixed z-[10050] overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-2xl shadow-black/20"
                     style={{
                       left: `${Number(editCategoryPanelStyle?.left ?? 12)}px`,
@@ -3481,7 +3857,7 @@ export default function Dashboard() {
                     <div className="overflow-auto p-1 overscroll-contain" style={{ maxHeight: `${editCategoryMaxH}px` }}>
                       {(editCategoryOptions || []).length === 0 ? (
                         <div className="px-4 py-3 text-sm font-semibold text-[color:var(--app-muted)]">
-                          ยังไม่มีหมวดหมู่
+                          {t('no_categories')}
                         </div>
                       ) : (
                         editCategoryOptions.map((cat) => {
@@ -3508,7 +3884,7 @@ export default function Dashboard() {
                                 </span>
                                 <span className="min-w-0 truncate text-sm font-extrabold">{cat.name}</span>
                               </span>
-                              {selected ? <span className="text-emerald-500 font-extrabold">✓</span> : <span className="text-[color:var(--app-muted)] text-xs font-semibold">เลือก</span>}
+                              {selected ? <span className="text-emerald-500 font-extrabold">✓</span> : <span className="text-[color:var(--app-muted)] text-xs font-semibold">{t('choose')}</span>}
                             </button>
                           );
                         })
@@ -3520,27 +3896,27 @@ export default function Dashboard() {
 
               {/* Date Input */}
               <div>
-                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">วันที่</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">{t('date')}</label>
                 <button
                   type="button"
                   onClick={() => openDatePicker('edit')}
                   className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all flex items-center justify-between gap-3"
-                  aria-label="เปิดปฏิทินเลือกวันที่"
+                  aria-label={t('open_calendar_pick_date')}
                 >
                   <div className="text-left min-w-0">
                     <div className="text-sm font-extrabold text-[color:var(--app-text)] truncate">
                       {(() => {
                         const iso = String(editFormData.date || '');
-                        if (!iso) return 'เลือกวันที่';
+                        if (!iso) return t('pick_date_placeholder');
                         try {
                           const d = new Date(`${iso}T00:00:00`);
-                          return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+                          return d.toLocaleDateString(uiLocale, { day: 'numeric', month: 'long', year: 'numeric' });
                         } catch {
                           return iso;
                         }
                       })()}
                     </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">แตะเพื่อเปิดปฏิทิน</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted-2)]">{t('tap_to_open_calendar')}</div>
                   </div>
                   <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-400/20 shrink-0">
                     <Calendar className="h-5 w-5" aria-hidden="true" />
@@ -3550,13 +3926,13 @@ export default function Dashboard() {
 
               {/* Notes Input */}
               <div>
-                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">หมายเหตุ</label>
+                <label className="block text-sm font-semibold text-[color:var(--app-muted)] mb-2">{t('notes')}</label>
                 <textarea
                   value={editFormData.notes}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, notes: e.target.value }))}
                   rows="3"
                   className="w-full px-4 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] rounded-xl text-[color:var(--app-text)] placeholder:text-[color:var(--app-muted-2)] focus:border-emerald-400 focus:ring-4 focus:ring-emerald-400/20 outline-none transition-all resize-none"
-                  placeholder="เพิ่มรายละเอียด..."
+                  placeholder={t('notes_edit_placeholder')}
 	                />
 	              </div>
 	
@@ -3566,17 +3942,17 @@ export default function Dashboard() {
 	              <div className="sticky bottom-0 z-10 border-t border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
 	                <div className="flex gap-3">
 		                <button
-		                  type="button"
-		                  onClick={() => setShowEditModal(false)}
+	                  type="button"
+	                  onClick={() => setShowEditModal(false)}
 	                  className="flex-1 px-6 py-3 border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] font-semibold rounded-xl hover:bg-[var(--app-surface-3)] transition-colors"
 	                >
-	                  ยกเลิก
+	                  {t('cancel')}
 	                </button>
 	                <button
 	                  type="submit"
 	                  className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 text-slate-950 font-semibold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
 	                >
-	                  บันทึก
+	                  {t('save')}
 		                </button>
 		                </div>
 		              </div>
@@ -3596,7 +3972,7 @@ export default function Dashboard() {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="ยืนยันการลบ"
+            aria-label={t('delete_confirm_aria')}
           >
             <div className="border-b border-white/10 bg-white/5 px-6 py-5 flex items-center justify-between gap-4">
               <div className="min-w-0 flex items-center gap-3">
@@ -3604,16 +3980,16 @@ export default function Dashboard() {
                   <Trash2 className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-lg font-extrabold text-[color:var(--app-text)]">ลบรายการนี้?</div>
-                  <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted-2)]">การลบจะไม่สามารถกู้คืนได้</div>
+                  <div className="text-lg font-extrabold text-[color:var(--app-text)]">{t('delete_title')}</div>
+                  <div className="mt-0.5 text-sm font-semibold text-[color:var(--app-muted-2)]">{t('delete_cannot_undo')}</div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowDeleteModal(false)}
                 className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                aria-label="ปิด"
-                title="ปิด"
+                aria-label={t('close')}
+                title={t('close')}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -3627,7 +4003,11 @@ export default function Dashboard() {
               ) : null}
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm font-semibold text-[color:var(--app-muted-2)]">
-                กด <span className="text-rose-200 font-extrabold">ลบ</span> เพื่อยืนยัน หรือกด <span className="text-slate-100 font-extrabold">ยกเลิก</span> เพื่อกลับไปก่อนหน้า
+                {t('delete_hint_prefix')}{' '}
+                <span className="text-rose-200 font-extrabold">{t('delete')}</span>{' '}
+                {t('delete_hint_or')}{' '}
+                <span className="text-slate-100 font-extrabold">{t('cancel')}</span>{' '}
+                {t('delete_hint_suffix')}
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -3637,7 +4017,7 @@ export default function Dashboard() {
                   className="flex-1 h-12 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-slate-100 hover:bg-white/10"
                   disabled={deleteLoading}
                 >
-                  ยกเลิก
+                  {t('cancel')}
                 </button>
                 <button
                   type="button"
@@ -3645,7 +4025,7 @@ export default function Dashboard() {
                   className="flex-1 h-12 rounded-2xl bg-rose-500 px-4 text-sm font-extrabold text-white hover:brightness-95 disabled:opacity-60"
                   disabled={deleteLoading}
                 >
-                  {deleteLoading ? 'กำลังลบ...' : 'ลบ'}
+                  {deleteLoading ? t('deleting') : t('delete')}
                 </button>
               </div>
             </div>
@@ -3664,7 +4044,7 @@ export default function Dashboard() {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="ดูรายละเอียดธุรกรรม"
+            aria-label={t('view_txn_aria')}
           >
             <div className="relative border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 pb-4 pt-3 sm:pt-4">
               <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-black/10 ring-1 ring-black/10 sm:hidden" aria-hidden="true" />
@@ -3673,8 +4053,8 @@ export default function Dashboard() {
                 type="button"
                 onClick={() => setShowViewModal(false)}
                 className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                aria-label="ปิด"
-                title="ปิด"
+                aria-label={t('close')}
+                title={t('close')}
               >
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
@@ -3694,13 +4074,13 @@ export default function Dashboard() {
 
                 <div className="min-w-0">
                   <div className="text-[11px] font-extrabold tracking-wide text-[color:var(--app-muted-2)]">
-                    {viewingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                    {viewingTransaction.type === 'income' ? t('income') : t('expense')}
                   </div>
                   <h3 className="mt-0.5 truncate text-lg font-extrabold text-[color:var(--app-text)]">
-                    {viewingTransaction.category?.name || 'หมวดหมู่ไม่ระบุ'}
+                    {viewingTransaction.category?.name || t('uncategorized')}
                   </h3>
                   <div className="mt-0.5 text-xs font-semibold text-[color:var(--app-muted)] truncate">
-                    {new Date(viewingTransaction.date).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {new Date(viewingTransaction.date).toLocaleDateString(uiLocale, { day: 'numeric', month: 'long', year: 'numeric' })}
                   </div>
                 </div>
               </div>
@@ -3709,7 +4089,7 @@ export default function Dashboard() {
             <div className="min-h-0 flex-1 overflow-y-auto [-webkit-overflow-scrolling:touch] p-5 pb-[calc(env(safe-area-inset-bottom)+24px)] space-y-4">
               <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/5">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">จำนวนเงิน</div>
+                  <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('amount')}</div>
                   <div className="text-2xl font-extrabold" style={{ color: viewingTransaction.type === 'income' ? INCOME_COLOR : EXPENSE_COLOR }}>
                     {viewingTransaction.type === 'expense' ? '-' : '+'}{formatTHB(viewingTransaction.amount)}
                   </div>
@@ -3717,7 +4097,7 @@ export default function Dashboard() {
               </div>
 
               <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
-                <div className="text-xs font-semibold text-[color:var(--app-muted)]">หมายเหตุ</div>
+                <div className="text-xs font-semibold text-[color:var(--app-muted)]">{t('notes')}</div>
                 <div className="mt-2 text-sm font-semibold text-[color:var(--app-text)] whitespace-pre-wrap break-words">
                   {String(viewingTransaction.notes || '').trim() ? viewingTransaction.notes : '—'}
                 </div>
@@ -3730,7 +4110,7 @@ export default function Dashboard() {
                 onClick={() => setShowViewModal(false)}
                 className="w-full rounded-2xl bg-emerald-500 py-3 text-slate-950 font-extrabold hover:brightness-95 transition"
               >
-                ปิด
+                {t('view_close')}
               </button>
             </div>
           </div>

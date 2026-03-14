@@ -1,8 +1,9 @@
 "use client";
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import LoadingMascot from '@/components/LoadingMascot';
+import { formatI18n } from '@/lib/i18n';
+import { useBalanzLanguage } from '@/lib/useBalanzLanguage';
 import { Doughnut, Bar, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -19,46 +20,184 @@ import {
 import { 
   Wallet, TrendingUp, TrendingDown,
   ChevronLeft, ChevronRight,
-  X,
-  Layers
+  X
 } from 'lucide-react';
 
 // ลงทะเบียน Chart.js
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-  // Utility: format numbers for display
-  const formatCurrency = (v) => {
-    if (typeof v !== 'number') return v;
-    try {
-      return new Intl.NumberFormat('th-TH').format(v);
-    } catch {
-      return String(v);
-    }
-  };
-
-  const formatTHB = (value, { decimals = 2 } = {}) => {
-    const n = Number(value) || 0;
-    const fixed = Number.isFinite(decimals) ? Number(decimals) : 2;
-    try {
-      return `฿${new Intl.NumberFormat('th-TH', { minimumFractionDigits: fixed, maximumFractionDigits: fixed }).format(n)}`;
-    } catch {
-      const s = fixed > 0 ? n.toFixed(fixed) : String(Math.round(n));
-      return `฿${s}`;
-    }
-  };
-
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
 
 // --- 2. CONSTANTS ---
-const MONTH_NAMES = [
+const MONTH_NAMES_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
   'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
 ];
 
+const MONTH_NAMES_EN = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const I18N = {
+  th: {
+    loading: 'กำลังโหลด...',
+    title: 'ภาพรวมการเงิน',
+    subtitle: 'ดูกราฟสรุปรายรับ-รายจ่ายแบบเข้าใจง่าย',
+
+    prev_month: 'เดือนก่อนหน้า',
+    next_month: 'เดือนถัดไป',
+    open_month_picker: 'เปิดปฏิทินเลือกเดือน',
+    selected_month: 'เดือนที่เลือก',
+    pick_month: 'เลือกเดือน',
+    pick_month_compare: 'เลือกเดือน (เทียบกับ)',
+    pick_month_hint: 'แตะเพื่อดูสรุปของเดือนนั้น',
+    pick_month_compare_hint: 'แตะเพื่อเลือกเดือนสำหรับเปรียบเทียบ',
+    close: 'ปิด',
+    prev_year: 'ปีก่อนหน้า',
+    next_year: 'ปีถัดไป',
+    buddhist_era: 'พ.ศ.',
+    this_month: 'เดือนนี้',
+    done: 'เสร็จสิ้น',
+
+    income: 'รายรับ',
+    expense: 'รายจ่าย',
+    net_balance: 'คงเหลือสุทธิ',
+
+    compare_expense: 'เทียบรายจ่าย',
+    compare_expense_hint: 'เปรียบเทียบรายจ่ายสะสมรายวันของ 2 เดือน',
+    compare_hint_diff_months: 'เลือกเดือน “เทียบกับ” ให้ต่างจากเดือนที่เลือก เพื่อดูความแตกต่าง',
+    compare_month_label: 'เทียบเดือน',
+    compare_pick_month_aria: 'เลือกเดือนสำหรับเปรียบเทียบ',
+    pick_month_fallback: 'เลือกเดือน',
+    spent: 'ใช้จ่ายไป',
+    spend_rate: 'อัตราการใช้จ่าย',
+    per_day: 'ต่อวัน',
+    selected_month_label: 'เดือนที่เลือก',
+    spent_so_far: 'ใช้จ่ายไปแล้ว',
+    no_expense_compare: 'ไม่มีรายจ่ายสำหรับการเปรียบเทียบ',
+    month_selected_fallback: 'เดือนที่เลือก',
+    month_compare_fallback: 'เดือนที่เทียบ',
+
+    income_expense_chart: 'กราฟรายรับ-รายจ่าย',
+    daily: 'รายวัน',
+    monthly: 'รวมเดือน',
+    daily_overview: 'รายวัน • {label}',
+    monthly_overview: 'รายเดือน • {label} (สิ้นสุดที่ {end})',
+    no_txn_this_month: 'ไม่มีรายการในเดือนนี้',
+    remaining: 'คงเหลือ',
+    show_last_days: 'แสดงเฉพาะ {count} วันล่าสุดเพื่อให้อ่านง่าย',
+
+    expense_share: 'สัดส่วนรายจ่าย',
+    expense_share_top: 'แยกตามหมวดหมู่ (ยอดนิยม)',
+    expense_share_all: 'แยกตามหมวดหมู่ (ทั้งหมด)',
+    no_expense_this_month: 'ไม่มีรายจ่ายในเดือนนี้',
+    total_expense: 'รายจ่ายรวม',
+
+    recent_months: '{count} เดือนล่าสุด',
+    day_prefix: 'วันที่ {day}',
+    end_of_month_fallback: 'เดือนที่เลือก',
+    data_fetch_failed: 'โหลดข้อมูลไม่สำเร็จ',
+    other_category: 'อื่นๆ',
+  },
+  en: {
+    loading: 'Loading…',
+    title: 'Financial overview',
+    subtitle: 'Simple charts for income and expenses',
+
+    prev_month: 'Previous month',
+    next_month: 'Next month',
+    open_month_picker: 'Open month picker',
+    selected_month: 'Selected month',
+    pick_month: 'Pick a month',
+    pick_month_compare: 'Pick a month (compare)',
+    pick_month_hint: 'Tap to view that month’s summary',
+    pick_month_compare_hint: 'Tap to pick a month to compare',
+    close: 'Close',
+    prev_year: 'Previous year',
+    next_year: 'Next year',
+    buddhist_era: 'B.E.',
+    this_month: 'This month',
+    done: 'Done',
+
+    income: 'Income',
+    expense: 'Expenses',
+    net_balance: 'Net balance',
+
+    compare_expense: 'Expense comparison',
+    compare_expense_hint: 'Compare cumulative daily expenses across 2 months',
+    compare_hint_diff_months: 'Pick a different “compare” month to see differences.',
+    compare_month_label: 'Compare',
+    compare_pick_month_aria: 'Pick a month to compare',
+    pick_month_fallback: 'Pick a month',
+    spent: 'Spent',
+    spend_rate: 'Spending rate',
+    per_day: 'per day',
+    selected_month_label: 'Selected month',
+    spent_so_far: 'Spent so far',
+    no_expense_compare: 'No expenses to compare',
+    month_selected_fallback: 'Selected month',
+    month_compare_fallback: 'Compared month',
+
+    income_expense_chart: 'Income vs expenses',
+    daily: 'Daily',
+    monthly: 'Monthly',
+    daily_overview: 'Daily • {label}',
+    monthly_overview: 'Monthly • {label} (ending {end})',
+    no_txn_this_month: 'No transactions this month',
+    remaining: 'Remaining',
+    show_last_days: 'Showing only the last {count} days for readability',
+
+    expense_share: 'Expense share',
+    expense_share_top: 'By category (top)',
+    expense_share_all: 'By category (all)',
+    no_expense_this_month: 'No expenses this month',
+    total_expense: 'Total expenses',
+
+    recent_months: 'Last {count} months',
+    day_prefix: 'Day {day}',
+    end_of_month_fallback: 'selected month',
+    data_fetch_failed: 'Failed to load data',
+    other_category: 'Other',
+  },
+};
+
+const tForLang = (language, key, vars) => {
+  const dict = I18N[language] || I18N.th;
+  const template = dict?.[key] ?? I18N.th?.[key] ?? key;
+  return formatI18n(template, vars);
+};
+
 export default function Analytics() {
   const router = useRouter();
+  const language = useBalanzLanguage('th'); // 'th' | 'en'
+  const t = useCallback((key, vars) => tForLang(language, key, vars), [language]);
+  const uiLocale = language === 'en' ? 'en-US' : 'th-TH';
 
-  const buildMonthList = () => {
+  const monthNames = useMemo(() => (language === 'en' ? MONTH_NAMES_EN : MONTH_NAMES_TH), [language]);
+
+  const formatCurrency = useCallback((v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return String(v ?? '');
+    try {
+      return new Intl.NumberFormat(uiLocale).format(n);
+    } catch {
+      return String(n);
+    }
+  }, [uiLocale]);
+
+  const formatTHB = useCallback((value, { decimals = 2 } = {}) => {
+    const n = Number(value) || 0;
+    const fixed = Number.isFinite(decimals) ? Number(decimals) : 2;
+    try {
+      return `฿${new Intl.NumberFormat(uiLocale, { minimumFractionDigits: fixed, maximumFractionDigits: fixed }).format(n)}`;
+    } catch {
+      const s = fixed > 0 ? n.toFixed(fixed) : String(Math.round(n));
+      return `฿${s}`;
+    }
+  }, [uiLocale]);
+
+  const buildMonthList = (names) => {
     const now = new Date();
     const startYear = now.getFullYear() - 5;
     const endYear = now.getFullYear() + 1;
@@ -68,7 +207,7 @@ export default function Analytics() {
     for (let y = startYear; y <= endYear; y++) {
       for (let m = 0; m < 12; m++) {
         const d = new Date(y, m, 1);
-        out.push({ label: `${MONTH_NAMES[m]} ${y + 543}`, value: d });
+        out.push({ label: `${names[m]} ${y + 543}`, value: d });
         if (y === now.getFullYear() && m === now.getMonth()) currentIdx = out.length - 1;
       }
     }
@@ -80,7 +219,7 @@ export default function Analytics() {
   const [isMobile, setIsMobile] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [categories, setCategories] = useState([]);
-  const { out: monthList, currentIdx: initialMonthIndex } = useMemo(() => buildMonthList(), []);
+  const { out: monthList, currentIdx: initialMonthIndex } = useMemo(() => buildMonthList(monthNames), [monthNames]);
   const [currentMonthIndex, setCurrentMonthIndex] = useState(() => initialMonthIndex); // เริ่มที่เดือนปัจจุบัน
   const [compareMonthIndex, setCompareMonthIndex] = useState(() => Math.max(0, initialMonthIndex - 1));
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -130,11 +269,11 @@ export default function Analytics() {
 
   const monthPickerMonthsForYear = useMemo(() => {
     const y = Number(monthPickerYear);
-    return MONTH_NAMES.map((name, monthIndex) => {
+    return monthNames.map((name, monthIndex) => {
       const idx = monthIndexMap.get(`${y}-${monthIndex}`);
       return { name, monthIndex, idx: typeof idx === 'number' ? idx : null };
     });
-  }, [monthIndexMap, monthPickerYear]);
+  }, [monthIndexMap, monthPickerYear, monthNames]);
 
   useEffect(() => {
     if (!showMonthPicker) return;
@@ -168,17 +307,17 @@ export default function Analytics() {
           setTransactions(dataTrans);
           setCategories(dataCats);
         } else {
-          throw new Error('Failed to fetch data');
+          throw new Error(t('data_fetch_failed'));
         }
       } catch (err) {
-        setError(err.message);
+        setError(err?.message ? String(err.message) : t('data_fetch_failed'));
       } finally {
         setLoading(false);
       }
     };
 
     loadData();
-  }, [router]);
+  }, [router, t]);
 
   // --- LOGIC: Filter & Calculations ---
   // กรอง Transaction ตามเดือนที่เลือก
@@ -211,15 +350,15 @@ export default function Analytics() {
   const expenseByCategory = useMemo(() => {
     const map = {};
     filteredTransactions
-      .filter(t => t.type === 'expense')
-      .forEach(t => {
-        const catId = t.category?._id || t.category || '';
+      .filter((txn) => txn.type === 'expense')
+      .forEach((txn) => {
+        const catId = txn.category?._id || txn.category || '';
         const fallbackName = catId ? categoryNameById.get(String(catId)) : '';
-        const catName = t.category?.name || fallbackName || 'อื่นๆ';
-        map[catName] = (map[catName] || 0) + (t.amount || 0);
+        const catName = txn.category?.name || fallbackName || t('other_category');
+        map[catName] = (map[catName] || 0) + (txn.amount || 0);
       });
     return map;
-  }, [filteredTransactions, categoryNameById]);
+  }, [filteredTransactions, categoryNameById, t]);
 
   const BANGKOK_TZ = 'Asia/Bangkok';
   const getBangkokDateParts = (dateInput) => {
@@ -346,13 +485,13 @@ export default function Analytics() {
     });
 
     const keys = Array.from(map.keys()).sort((a, b) => new Date(a) - new Date(b));
-    const labels = keys.map(k => new Date(k).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }));
+    const labels = keys.map(k => new Date(k).toLocaleDateString(uiLocale, { day: 'numeric', month: 'short' }));
     return {
       labels,
       income: keys.map(k => map.get(k).income),
       expense: keys.map(k => map.get(k).expense),
     };
-  }, [filteredTransactions]);
+  }, [filteredTransactions, uiLocale]);
 
   const dailySeriesDisplay = useMemo(() => {
     const maxPoints = isMobile ? 12 : 20;
@@ -381,7 +520,7 @@ export default function Analytics() {
     const end = selectedMonthObj?.value instanceof Date ? selectedMonthObj.value : new Date();
     const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
     const windowSize = isMobile ? 6 : 12;
-    const fmt = new Intl.DateTimeFormat('th-TH', { month: 'short', year: '2-digit' });
+    const fmt = new Intl.DateTimeFormat(uiLocale, { month: 'short', year: '2-digit' });
 
     const labels = [];
     const income = [];
@@ -401,22 +540,22 @@ export default function Analytics() {
     }
 
     return { labels, income, expense, totalIncome, totalExpense, windowSize };
-  }, [transactions, selectedMonthObj, isMobile]);
+  }, [transactions, selectedMonthObj, isMobile, uiLocale]);
 
   const overviewTotals = useMemo(() => {
     if (overviewMode === 'monthly') {
       return {
         income: monthlySeries.totalIncome,
         expense: monthlySeries.totalExpense,
-        label: `${monthlySeries.windowSize} เดือนล่าสุด`,
+        label: t('recent_months', { count: monthlySeries.windowSize }),
       };
     }
     return {
       income: summary.income,
       expense: summary.expense,
-      label: selectedMonthObj?.label || 'เดือนที่เลือก',
+      label: selectedMonthObj?.label || t('end_of_month_fallback'),
     };
-  }, [overviewMode, monthlySeries, summary.income, summary.expense, selectedMonthObj]);
+  }, [overviewMode, monthlySeries, summary.income, summary.expense, selectedMonthObj, t]);
 
   // --- CHART CONFIG ---
   const pieLabels = useMemo(() => Object.keys(expenseByCategory), [expenseByCategory]);
@@ -439,14 +578,14 @@ export default function Analytics() {
         labels: dailySeriesDisplay.labels,
         datasets: [
           {
-            label: 'รายรับ',
+            label: t('income'),
             data: dailySeriesDisplay.income,
             backgroundColor: '#22c55e',
             borderRadius: 10,
             barThickness: 18,
           },
           {
-            label: 'รายจ่าย',
+            label: t('expense'),
             data: dailySeriesDisplay.expense,
             backgroundColor: '#f43f5e',
             borderRadius: 10,
@@ -458,14 +597,14 @@ export default function Analytics() {
         labels: monthlySeries.labels,
         datasets: [
           {
-            label: 'รายรับ',
+            label: t('income'),
             data: monthlySeries.income,
             backgroundColor: '#22c55e',
             borderRadius: 10,
             barThickness: 18,
           },
           {
-            label: 'รายจ่าย',
+            label: t('expense'),
             data: monthlySeries.expense,
             backgroundColor: '#f43f5e',
             borderRadius: 10,
@@ -549,7 +688,7 @@ export default function Analytics() {
         }
       }
     }
-  }), [pieValues]);
+  }), [pieValues, formatCurrency]);
 
   const topExpenseList = useMemo(() => {
     const items = Object.entries(expenseByCategory)
@@ -567,8 +706,8 @@ export default function Analytics() {
   }, [expenseByCategory]);
 
   const compareLineData = useMemo(() => {
-    const labelA = compareMonthObj?.label || 'เดือนที่เลือก';
-    const labelB = selectedMonthObj?.label || 'เดือนนี้';
+    const labelA = compareMonthObj?.label || t('month_compare_fallback');
+    const labelB = selectedMonthObj?.label || t('month_selected_fallback');
     return {
       labels: compareExpenseDaily.labels,
       datasets: [
@@ -594,7 +733,7 @@ export default function Analytics() {
         },
       ],
     };
-  }, [compareExpenseDaily, selectedMonthObj, compareMonthObj]);
+  }, [compareExpenseDaily, selectedMonthObj, compareMonthObj, t]);
 
   const compareLineOptions = useMemo(() => ({
     responsive: true,
@@ -612,7 +751,7 @@ export default function Analytics() {
           title: (items) => {
             const first = items?.[0];
             const label = first?.label ? String(first.label) : '';
-            return label ? `วันที่ ${label}` : '';
+            return label ? t('day_prefix', { day: label }) : '';
           },
           label: (ctx) => {
             const v = Number(ctx.raw);
@@ -646,11 +785,11 @@ export default function Analytics() {
         ticks: { display: false },
       },
     },
-	  }), [compareExpenseDaily.labels]);
+	  }), [compareExpenseDaily.labels, formatTHB, t]);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--app-bg)]">
-      <LoadingMascot label="กำลังโหลด..." size={88} />
+      <LoadingMascot label={t('loading')} size={88} />
     </div>
   );
 
@@ -659,8 +798,8 @@ export default function Analytics() {
       <div className="mx-auto w-full max-w-lg px-4 py-5 pb-24 space-y-4 lg:max-w-6xl lg:px-6 lg:space-y-6">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-xl font-extrabold text-[color:var(--app-text)]">ภาพรวมการเงิน</h1>
-          <p className="mt-1 text-sm font-semibold text-[color:var(--app-muted)]">ดูกราฟสรุปรายรับ-รายจ่ายแบบเข้าใจง่าย</p>
+          <h1 className="text-xl font-extrabold text-[color:var(--app-text)]">{t('title')}</h1>
+          <p className="mt-1 text-sm font-semibold text-[color:var(--app-muted)]">{t('subtitle')}</p>
         </div>
 
         {/* Month selector */}
@@ -671,7 +810,7 @@ export default function Analytics() {
               onClick={() => setCurrentMonthIndex(prev => Math.max(0, prev - 1))}
               className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-emerald-200 hover:bg-[var(--app-surface-3)] disabled:opacity-40"
               disabled={currentMonthIndex === 0}
-              aria-label="เดือนก่อนหน้า"
+              aria-label={t('prev_month')}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -685,10 +824,10 @@ export default function Analytics() {
                 setShowMonthPicker(true);
               }}
               className="min-w-0 flex-1 cursor-pointer rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-center transition hover:bg-[var(--app-surface-3)] active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-              aria-label="เปิดปฏิทินเลือกเดือน"
+              aria-label={t('open_month_picker')}
               aria-expanded={showMonthPicker}
             >
-              <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">เดือนที่เลือก</div>
+              <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('selected_month')}</div>
               <div className="truncate text-sm font-extrabold text-[color:var(--app-text)]">{selectedMonthObj.label}</div>
             </button>
 
@@ -697,7 +836,7 @@ export default function Analytics() {
               onClick={() => setCurrentMonthIndex(prev => Math.min(monthList.length - 1, prev + 1))}
               className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-emerald-200 hover:bg-[var(--app-surface-3)] disabled:opacity-40"
               disabled={currentMonthIndex === monthList.length - 1}
-              aria-label="เดือนถัดไป"
+              aria-label={t('next_month')}
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -714,17 +853,17 @@ export default function Analytics() {
               <div className="flex items-center justify-between gap-3 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-5 py-4">
                 <div>
                   <div className="text-sm font-extrabold text-[color:var(--app-text)]">
-                    {monthPickerTarget === 'compare' ? 'เลือกเดือน (เทียบกับ)' : 'เลือกเดือน'}
+                    {monthPickerTarget === 'compare' ? t('pick_month_compare') : t('pick_month')}
                   </div>
                   <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">
-                    {monthPickerTarget === 'compare' ? 'แตะเพื่อเลือกเดือนสำหรับเปรียบเทียบ' : 'แตะเพื่อดูสรุปของเดือนนั้น'}
+                    {monthPickerTarget === 'compare' ? t('pick_month_compare_hint') : t('pick_month_hint')}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30"
-                  aria-label="ปิด"
+                  aria-label={t('close')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -741,14 +880,14 @@ export default function Analytics() {
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) >= availableYears.length - 1}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
-                    aria-label="ปีก่อนหน้า"
+                    aria-label={t('prev_year')}
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
                     <div className="text-sm font-extrabold text-[color:var(--app-text)]">{Number(monthPickerYear) + 543}</div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-slate-400">พ.ศ.</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-slate-400">{t('buddhist_era')}</div>
                   </div>
 
                   <button
@@ -760,7 +899,7 @@ export default function Analytics() {
                     }}
                     disabled={availableYears.indexOf(monthPickerYear) <= 0}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-40"
-                    aria-label="ปีถัดไป"
+                    aria-label={t('next_year')}
                   >
                     <ChevronRight className="h-5 w-5" />
                   </button>
@@ -813,14 +952,14 @@ export default function Analytics() {
                   }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-extrabold text-slate-100 hover:bg-white/10"
                 >
-                  เดือนนี้
+                  {t('this_month')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowMonthPicker(false)}
                   className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95"
                 >
-                  เสร็จสิ้น
+                  {t('done')}
                 </button>
               </div>
             </div>
@@ -838,7 +977,7 @@ export default function Analytics() {
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายรับ</div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">{t('income')}</div>
                 <div className="mt-1 text-2xl font-extrabold text-emerald-300">฿{formatCurrency(summary.income)}</div>
               </div>
               <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/20">
@@ -850,7 +989,7 @@ export default function Analytics() {
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">รายจ่าย</div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">{t('expense')}</div>
                 <div className="mt-1 text-2xl font-extrabold text-rose-300">฿{formatCurrency(summary.expense)}</div>
               </div>
               <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-200 ring-1 ring-rose-400/20">
@@ -862,7 +1001,7 @@ export default function Analytics() {
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[11px] font-semibold tracking-wide text-slate-400">คงเหลือสุทธิ</div>
+                <div className="text-[11px] font-semibold tracking-wide text-slate-400">{t('net_balance')}</div>
                 <div className={`mt-1 text-2xl font-extrabold ${balance >= 0 ? 'text-[color:var(--app-text)]' : 'text-rose-200'}`}>฿{formatCurrency(balance)}</div>
               </div>
               <div className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl ring-1 ${balance >= 0 ? 'bg-white/5 text-slate-100 ring-white/10' : 'bg-rose-500/15 text-rose-200 ring-rose-400/20'}`}>
@@ -878,14 +1017,14 @@ export default function Analytics() {
 	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-7 xl:col-span-8">
 	            <div className="flex items-start justify-between gap-3">
 	              <div className="min-w-0">
-	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">เทียบรายจ่าย</div>
-	                <div className="mt-0.5 text-xs font-semibold text-slate-400">เปรียบเทียบรายจ่ายสะสมรายวันของ 2 เดือน</div>
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('compare_expense')}</div>
+	                <div className="mt-0.5 text-xs font-semibold text-slate-400">{t('compare_expense_hint')}</div>
 	              </div>
 	            </div>
 
 	            {compareMonthIndex === currentMonthIndex && (
 	              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
-	                เลือกเดือน “เทียบกับ” ให้ต่างจากเดือนที่เลือก เพื่อดูความแตกต่าง
+	                {t('compare_hint_diff_months')}
 	              </div>
 	            )}
 
@@ -904,7 +1043,7 @@ export default function Analytics() {
 	                    <div className="min-w-0">
 	                      <div className="inline-flex items-center gap-2 text-[11px] font-extrabold text-[color:var(--app-muted)]">
 	                        <span className="h-2.5 w-2.5 rounded-full bg-sky-400" aria-hidden="true" />
-	                        เทียบเดือน
+	                        {t('compare_month_label')}
 	                      </div>
 	                    </div>
 	                    <button
@@ -916,18 +1055,18 @@ export default function Analytics() {
 	                        setShowMonthPicker(true);
 	                      }}
 	                      className="h-10 max-w-[190px] rounded-2xl border border-white/10 bg-[var(--app-surface)] px-3 text-[11px] font-extrabold text-slate-100 shadow-sm hover:bg-[var(--app-surface-2)] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 truncate"
-	                      aria-label="เลือกเดือนสำหรับเปรียบเทียบ"
+	                      aria-label={t('compare_pick_month_aria')}
 	                      aria-expanded={showMonthPicker && monthPickerTarget === 'compare'}
 	                    >
-	                      {compareMonthObj?.label || 'เลือกเดือน'}
+	                      {compareMonthObj?.label || t('pick_month_fallback')}
 	                    </button>
 	                  </div>
 
-	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">ใช้จ่ายไป</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">{t('spent')}</div>
 	                  <div className="mt-1 text-xl font-extrabold text-sky-200">{formatTHB(compareExpenseDaily.totalA || 0)}</div>
-	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">อัตราการใช้จ่าย</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">{t('spend_rate')}</div>
 	                  <div className="mt-1 text-sm font-extrabold text-slate-100">
-	                    {formatTHB(compareExpenseDaily.avgA || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">ต่อวัน</span>
+	                    {formatTHB(compareExpenseDaily.avgA || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">{t('per_day')}</span>
 	                  </div>
 	                </div>
 
@@ -936,7 +1075,7 @@ export default function Analytics() {
 	                    <div className="min-w-0">
 	                      <div className="inline-flex items-center gap-2 text-[11px] font-extrabold text-[color:var(--app-muted)]">
 	                        <span className="h-2.5 w-2.5 rounded-full bg-rose-400" aria-hidden="true" />
-	                        เดือนที่เลือก
+	                        {t('selected_month_label')}
 	                      </div>
 	                      <div className="mt-1 text-[11px] font-semibold text-[color:var(--app-muted-2)] truncate">
 	                        {selectedMonthObj?.label || '—'}
@@ -944,11 +1083,11 @@ export default function Analytics() {
 	                    </div>
 	                  </div>
 
-	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">ใช้จ่ายไปแล้ว</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">{t('spent_so_far')}</div>
 	                  <div className="mt-1 text-xl font-extrabold text-rose-200">{formatTHB(compareExpenseDaily.totalB || 0)}</div>
-	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">อัตราการใช้จ่าย</div>
+	                  <div className="mt-3 text-xs font-semibold text-[color:var(--app-muted-2)]">{t('spend_rate')}</div>
 	                  <div className="mt-1 text-sm font-extrabold text-slate-100">
-	                    {formatTHB(compareExpenseDaily.avgB || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">ต่อวัน</span>
+	                    {formatTHB(compareExpenseDaily.avgB || 0)} <span className="font-semibold text-[color:var(--app-muted-2)]">{t('per_day')}</span>
 	                  </div>
 	                </div>
 	              </div>
@@ -957,7 +1096,7 @@ export default function Analytics() {
 	            <div className="mt-4">
 	              {compareExpenseDaily.labels.length === 0 || ((compareExpenseDaily.totalA || 0) <= 0 && (compareExpenseDaily.totalB || 0) <= 0) ? (
 	                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
-	                  ไม่มีรายจ่ายสำหรับการเปรียบเทียบ
+	                  {t('no_expense_compare')}
 	                </div>
 	              ) : (
 	                <div className="h-64 rounded-3xl border border-white/10 bg-white/5 p-3">
@@ -968,11 +1107,11 @@ export default function Analytics() {
 	              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-extrabold text-slate-300">
 	                <span className="inline-flex items-center gap-2">
 	                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400" aria-hidden="true" />
-	                  {selectedMonthObj?.label || 'เดือนที่เลือก'}
+	                  {selectedMonthObj?.label || t('month_selected_fallback')}
 	                </span>
 	                <span className="inline-flex items-center gap-2">
 	                  <span className="h-2.5 w-2.5 rounded-full bg-sky-400" aria-hidden="true" />
-	                  {compareMonthObj?.label || 'เดือนที่เทียบ'}
+	                  {compareMonthObj?.label || t('month_compare_fallback')}
 	                </span>
 	              </div>
 	            </div>
@@ -981,11 +1120,11 @@ export default function Analytics() {
 	          <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-7 xl:col-span-8">
 	            <div className="flex items-center justify-between gap-3">
 	              <div className="min-w-0">
-	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">กราฟรายรับ-รายจ่าย</div>
+	                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('income_expense_chart')}</div>
 	                <div className="text-xs font-semibold text-slate-400">
 	                  {overviewMode === 'daily'
-	                    ? `รายวัน • ${overviewTotals.label}`
-	                    : `รายเดือน • ${overviewTotals.label} (สิ้นสุดที่ ${selectedMonthObj?.label || 'เดือนที่เลือก'})`}
+	                    ? t('daily_overview', { label: overviewTotals.label })
+	                    : t('monthly_overview', { label: overviewTotals.label, end: selectedMonthObj?.label || t('end_of_month_fallback') })}
 	                </div>
 	              </div>
 	              <div className="relative inline-flex items-center rounded-full bg-white/5 p-1 ring-1 ring-white/10 shrink-0">
@@ -1009,7 +1148,7 @@ export default function Analytics() {
 	                      : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]',
 	                  ].join(' ')}
 	                >
-	                  รายวัน
+	                  {t('daily')}
 	                </button>
 	                <button
 	                  type="button"
@@ -1022,7 +1161,7 @@ export default function Analytics() {
 	                      : 'text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]',
 	                  ].join(' ')}
 	                >
-	                  รวมเดือน
+	                  {t('monthly')}
 	                </button>
 	              </div>
 	            </div>
@@ -1030,7 +1169,7 @@ export default function Analytics() {
 	            <div className="mt-4">
 	              {overviewMode === 'daily' && dailySeries.labels.length === 0 ? (
 	                <div className="h-56 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
-	                  ไม่มีรายการในเดือนนี้
+	                  {t('no_txn_this_month')}
 	                </div>
 	              ) : (
 	                <div className="h-56">
@@ -1041,15 +1180,15 @@ export default function Analytics() {
 
 	            <div className="mt-4 grid grid-cols-3 gap-2">
 	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
-	                <div className="text-[11px] font-extrabold text-slate-400">รายรับ</div>
+	                <div className="text-[11px] font-extrabold text-slate-400">{t('income')}</div>
 	                <div className="mt-1 text-sm font-extrabold text-emerald-200">{formatTHB(overviewTotals.income, { decimals: 0 })}</div>
 	              </div>
 	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
-	                <div className="text-[11px] font-extrabold text-slate-400">รายจ่าย</div>
+	                <div className="text-[11px] font-extrabold text-slate-400">{t('expense')}</div>
 	                <div className="mt-1 text-sm font-extrabold text-rose-200">{formatTHB(overviewTotals.expense, { decimals: 0 })}</div>
 	              </div>
 	              <div className="rounded-3xl border border-white/10 bg-white/5 p-3">
-	                <div className="text-[11px] font-extrabold text-slate-400">คงเหลือ</div>
+	                <div className="text-[11px] font-extrabold text-slate-400">{t('remaining')}</div>
 	                <div
 	                  className={[
 	                    'mt-1 text-sm font-extrabold',
@@ -1062,13 +1201,13 @@ export default function Analytics() {
 	            </div>
 
 	            <div className="mt-3 flex flex-wrap items-center gap-4 text-sm font-semibold text-slate-300">
-	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />รายรับ</span>
-	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />รายจ่าย</span>
+	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />{t('income')}</span>
+	              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-rose-500" />{t('expense')}</span>
 	            </div>
 
 	            {overviewMode === 'daily' && dailySeries.labels.length > dailySeriesDisplay.labels.length && (
 	              <div className="mt-2 text-[11px] font-semibold text-slate-400">
-	                แสดงเฉพาะ {dailySeriesDisplay.labels.length} วันล่าสุดเพื่อให้อ่านง่าย
+	                {t('show_last_days', { count: dailySeriesDisplay.labels.length })}
 	              </div>
 	            )}
 	          </div>
@@ -1076,9 +1215,9 @@ export default function Analytics() {
           <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm lg:col-span-5 xl:col-span-4 lg:row-span-2">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-extrabold text-[color:var(--app-text)]">สัดส่วนรายจ่าย</div>
+                <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('expense_share')}</div>
                 <div className="text-xs font-semibold text-slate-400">
-                  {expenseShareMode === 'all' ? 'แยกตามหมวดหมู่ (ทั้งหมด)' : 'แยกตามหมวดหมู่ (ยอดนิยม)'}
+                  {expenseShareMode === 'all' ? t('expense_share_all') : t('expense_share_top')}
                 </div>
               </div>             
             </div>
@@ -1086,13 +1225,13 @@ export default function Analytics() {
             <div className="mt-4">
               {pieLabels.length === 0 ? (
                 <div className="h-56 lg:h-72 rounded-3xl border border-white/10 bg-white/5 flex items-center justify-center text-sm font-semibold text-slate-400">
-                  ไม่มีรายจ่ายในเดือนนี้
+                  {t('no_expense_this_month')}
                 </div>
               ) : (
                 <div className="relative h-64 lg:h-72">
                   <Doughnut data={pieData} options={pieChartOptions} />
                   <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <div className="text-[11px] font-semibold text-slate-400">รายจ่ายรวม</div>
+                    <div className="text-[11px] font-semibold text-slate-400">{t('total_expense')}</div>
                     <div className="mt-1 text-xl font-extrabold text-[color:var(--app-text)]">฿{formatCurrency(summary.expense)}</div>
                   </div>
                 </div>
