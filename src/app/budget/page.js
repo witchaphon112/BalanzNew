@@ -245,6 +245,15 @@ const CategoryIcon = ({ iconKey, className = 'w-6 h-6' }) => {
   return <MoreHorizontal className={className} aria-hidden="true" />;
 };
 
+const normalizeCategoryName = (name) => String(name || '').trim().replace(/\s+/g, '');
+const isReservedOtherCategoryName = (name) => {
+  const n = normalizeCategoryName(name);
+  if (!n) return false;
+  if (n === 'อื่นๆ') return true;
+  if (n.toLowerCase() === 'other') return true;
+  return false;
+};
+
 const POPULAR_CATEGORY_PRESETS = {
   th: {
     expense: [
@@ -1487,6 +1496,10 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 
 	  const openDeleteCategoryModal = (category) => {
 	    if (!category) return;
+      if (isReservedOtherCategoryName(category?.name)) {
+        showToast('info', 'หมวด “อื่นๆ” ลบไม่ได้');
+        return;
+      }
 	    setIsSortOpen(false);
 	    setIsSettingsOpen(false);
 	    setShowAddModal(false);
@@ -3635,18 +3648,20 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 	                </button>
 	              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const cat = editingCategoryMeta;
-                  setEditingCategoryMeta(null);
-                  openDeleteCategoryModal(cat);
-                }}
-	                disabled={editCategoryLoading}
-	                className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
-	              >
-	                {tr('delete_this_category')}
-	              </button>
+              {!isReservedOtherCategoryName(editingCategoryMeta?.name) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cat = editingCategoryMeta;
+                    setEditingCategoryMeta(null);
+                    openDeleteCategoryModal(cat);
+                  }}
+                  disabled={editCategoryLoading}
+                  className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
+                >
+                  {tr('delete_this_category')}
+                </button>
+              ) : null}
             </form>
           </div>
         </div>
@@ -3826,13 +3841,15 @@ export default function BudgetManager({ onClose, initialType = 'expense' }) {
 	                </button>
 	              </div>
 
-              <button
-	                type="button"
-	                onClick={() => openDeleteCategoryModal(editingCategory)}
-	                className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
-	              >
-	                {tr('delete_this_category')}
-	              </button>
+              {!isReservedOtherCategoryName(editingCategory?.name) ? (
+                <button
+                  type="button"
+                  onClick={() => openDeleteCategoryModal(editingCategory)}
+                  className="mt-3 w-full rounded-2xl border border-rose-500/25 bg-rose-500/10 py-3 text-rose-600 font-extrabold hover:bg-rose-500/15 disabled:opacity-40"
+                >
+                  {tr('delete_this_category')}
+                </button>
+              ) : null}
             </form>
           </div>
         </div>

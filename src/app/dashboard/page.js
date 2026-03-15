@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { createPortal } from 'react-dom';
-import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon, Calendar, StickyNote, Mic, ScanLine } from 'lucide-react';
+import { Utensils, ShoppingBag, Car, Home, Zap, Heart, Gamepad2, Stethoscope, GraduationCap, Plane, Briefcase, Gift, Smartphone, Coffee, Music, Dumbbell, PawPrint, Scissors, CreditCard, Landmark, MoreHorizontal, Plus, Settings, Trash2, X, ChevronLeft, ChevronRight, ChevronDown, Check, LayoutGrid, Book, Bus, Train, Truck, Bicycle, Apple, Banana, Beer, Cake, Camera, Film, Globe, MapPin, Sun, Moon, Star, Tree, Flower, Leaf, Cloud, Snowflake, Droplet, Flame, Key, Lock, Bell, AlarmClock, Wallet, PiggyBank, ShoppingCart, Shirt, Glasses, Watch, Tablet, Tv, Speaker, Headphones, Printer, Cpu, MousePointer, Pen, Pencil, Paintbrush, Ruler, Calculator, Clipboard, Paperclip, Archive, Box, Package, Rocket, Medal, Trophy, Award, Flag, Target, Lightbulb, Battery, Plug, Wifi, Bluetooth, Signal, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon, Calendar, StickyNote, Mic, ScanLine } from 'lucide-react';
 
 import Currency from '../currency/page';
 import LoadingMascot from '@/components/LoadingMascot';
@@ -34,6 +34,8 @@ const I18N = {
     pick_month_hint: 'แตะเพื่อดูสรุปของเดือนนั้น',
     prev_year: 'ปีก่อนหน้า',
     next_year: 'ปีถัดไป',
+    pick_year: 'เลือกปี',
+    this_year: 'ปีนี้',
     buddhist_era: 'พ.ศ.',
     this_month: 'เดือนนี้',
     done: 'เสร็จสิ้น',
@@ -109,7 +111,7 @@ const I18N = {
     try_read_again: 'ลองอ่านอีกครั้ง',
 
     category: 'หมวดหมู่',
-    select_category_before_save: '* เลือกหมวดหมู่ก่อนบันทึก',
+    select_category_before_save: '* ถ้าไม่เลือก ระบบจะบันทึกเป็น “อื่นๆ”',
     today_with_date: 'วันนี้, {label}',
     open_date_picker: 'เปิดตัวเลือกวันที่',
     notes_placeholder: 'ระบุรายละเอียด...',
@@ -205,6 +207,8 @@ const I18N = {
     pick_month_hint: 'Tap to view that month’s summary',
     prev_year: 'Previous year',
     next_year: 'Next year',
+    pick_year: 'Pick year',
+    this_year: 'This year',
     buddhist_era: 'B.E.',
     this_month: 'This month',
     done: 'Done',
@@ -280,7 +284,7 @@ const I18N = {
     try_read_again: 'Try again',
 
     category: 'Category',
-    select_category_before_save: '* Select a category before saving',
+    select_category_before_save: '* If not selected, we’ll use “Other”',
     today_with_date: 'Today, {label}',
     open_date_picker: 'Open date picker',
     notes_placeholder: 'Add details…',
@@ -465,7 +469,7 @@ const normalizeForMatch = (s) => {
 };
 
 const AUTO_CATEGORY_RULES = [
-  { key: 'food', preferIcons: ['food', 'restaurant'], patterns: ['อาหาร', 'ข้าว', 'ก๋วย', 'ร้าน', 'ชาบู', 'หมูกระทะ', 'pizza', 'kfc', 'mcd', 'burger', 'grabfood', 'foodpanda', 'lineman'] },
+  { key: 'food', preferIcons: ['food', 'restaurant'], patterns: ['อาหาร', 'กิน', 'ข้าว', 'ก๋วย', 'ร้าน', 'ผัด', 'กะเพรา', 'กระเพรา', 'ชาบู', 'หมูกระทะ', 'food', 'meal', 'eat', 'restaurant', 'pizza', 'kfc', 'mcd', 'burger', 'grabfood', 'foodpanda', 'lineman'] },
   { key: 'drink', preferIcons: ['drink', 'coffee'], patterns: ['กาแฟ', 'คาเฟ่', 'ชา', 'ชานม', 'starbucks', 'amazon', 'cafe'] },
   { key: 'shopping', preferIcons: ['shopping'], patterns: ['ช้อป', 'shopping', 'market', 'lotus', 'bigc', '7-11', 'เซเว่น', 'เซเว่นอีเลฟเว่น', 'tops', 'makro'] },
   { key: 'transport', preferIcons: ['transport', 'car'], patterns: ['รถ', 'bts', 'mrt', 'รถไฟ', 'แท็กซี่', 'taxi', 'grab', 'bolt', 'ทางด่วน', 'parking', 'จอดรถ'] },
@@ -488,6 +492,21 @@ export default function Dashboard() {
   const language = useBalanzLanguage('th'); // 'th' | 'en'
   const t = useCallback((key, vars) => tForLang(language, key, vars), [language]);
   const uiLocale = language === 'en' ? 'en-US' : 'th-TH';
+
+  const AUTO_CATEGORY_DEFAULTS_TH = useMemo(() => ({
+    food: { name: 'อาหาร', icon: 'food' },
+    drink: { name: 'เครื่องดื่ม', icon: 'drink' },
+    shopping: { name: 'ช้อปปิ้ง', icon: 'shopping' },
+    transport: { name: 'เดินทาง', icon: 'transport' },
+    fuel: { name: 'ค่าน้ำมัน', icon: 'fuel' },
+    home: { name: 'บ้าน/ที่พัก', icon: 'home' },
+    bills: { name: 'บิล/สาธารณูปโภค', icon: 'bills' },
+    health: { name: 'สุขภาพ', icon: 'health' },
+    pet: { name: 'สัตว์เลี้ยง', icon: 'pet' },
+    education: { name: 'การเรียน', icon: 'education' },
+    work: { name: 'งาน', icon: 'work' },
+    other: { name: 'อื่นๆ', icon: 'other' },
+  }), []);
 
   const [mounted, setMounted] = useState(false);
   const [editCategoryOpen, setEditCategoryOpen] = useState(false);
@@ -545,6 +564,7 @@ export default function Dashboard() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthPickerYear, setMonthPickerYear] = useState(() => getBangkokDateParts(Date.now())?.year || new Date().getFullYear());
+  const [monthPickerYearMenuOpen, setMonthPickerYearMenuOpen] = useState(false);
   const [readNotifMap, setReadNotifMap] = useState(() => ({}));
   const [stats, setStats] = useState({
     totalIncome: 0,
@@ -586,7 +606,10 @@ export default function Dashboard() {
   const voiceStreamRef = useRef(null);
   const voiceChunksRef = useRef([]);
   const voiceStartMsRef = useRef(0);
+  const voiceAutoApplyToFormRef = useRef(false);
+  const monthPickerYearMenuRef = useRef(null);
   const voiceAutoTranscribeRef = useRef(false);
+  const voicePendingAutoCategoryRef = useRef(null); // { text: string, type: 'income'|'expense' }
   const slipInputRef = useRef(null);
 	  const slipAutoReadKeyRef = useRef('');
 	  const readSlipRef = useRef(null);
@@ -781,6 +804,63 @@ export default function Dashboard() {
     });
   };
 
+  const ensureCategoryIdByName = useCallback(async ({ type, name, icon } = {}) => {
+    const safeType = type === 'income' ? 'income' : 'expense';
+    const safeName = String(name || '').trim();
+    if (!safeName) return '';
+
+    const existing = (categories || []).find((c) => c?._id && c?.type === safeType && String(c?.name || '').trim() === safeName);
+    if (existing?._id) return String(existing._id);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : '';
+    if (!token) return '';
+
+    const createRes = await fetch(`${API_BASE}/api/categories`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name: safeName, icon: String(icon || '').trim() || 'other', type: safeType }),
+    });
+
+    const created = await createRes.json().catch(() => null);
+    if (createRes.ok && created?._id) {
+      setCategories((prev) => {
+        const arr = Array.isArray(prev) ? prev : [];
+        if (arr.some((c) => String(c?._id || '') === String(created._id))) return arr;
+        return [...arr, created];
+      });
+      return String(created._id);
+    }
+
+    // Race/duplicate fallback: refetch categories and retry.
+    const res = await fetch(`${API_BASE}/api/categories`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && Array.isArray(data)) setCategories(data);
+    const retry = (res.ok && Array.isArray(data))
+      ? (data.find((c) => c?._id && c?.type === safeType && String(c?.name || '').trim() === safeName)?._id || '')
+      : '';
+    return retry ? String(retry) : '';
+  }, [categories]);
+
+  const pickAutoCategoryRuleKey = useCallback((noteNorm) => {
+    const s = String(noteNorm || '');
+    if (!s) return '';
+    let bestKey = '';
+    let bestHits = 0;
+    for (const rule of AUTO_CATEGORY_RULES) {
+      const hits = (rule?.patterns || []).reduce((acc, p) => acc + (s.includes(normalizeForMatch(p)) ? 1 : 0), 0);
+      if (hits > bestHits) {
+        bestHits = hits;
+        bestKey = String(rule?.key || '');
+      }
+    }
+    return bestHits > 0 ? bestKey : '';
+  }, []);
+
   const suggestCategoryId = useMemo(() => (args) => {
     const { type, notes } = args || {};
     if (!type) return null;
@@ -792,34 +872,36 @@ export default function Dashboard() {
     const list = (categories || []).filter((c) => c?.type === type && c?._id);
     if (!list.length) return null;
 
-    let best = null;
-    for (const c of list) {
-      const name = String(c?.name || '').trim();
-      const icon = String(c?.icon || '').trim().toLowerCase();
-      const nameNorm = normalizeForMatch(name);
-      let score = 0;
+	    let best = null;
+	    for (const c of list) {
+	      const name = String(c?.name || '').trim();
+	      const icon = String(c?.icon || '').trim().toLowerCase();
+	      const nameNorm = normalizeForMatch(name);
+	      let score = 0;
 
       if (name && noteRaw.includes(name)) score += 10;
       if (nameNorm && noteNorm.includes(nameNorm)) score += 8;
 
-      const tokens = nameNorm ? nameNorm.split(/[^a-z0-9\u0E00-\u0E7F]+/).filter(Boolean) : [];
-      tokens.forEach((t) => {
-        if (t.length >= 2 && noteNorm.includes(t)) score += 3;
-      });
+	      const tokens = nameNorm ? nameNorm.split(/[^a-z0-9\u0E00-\u0E7F]+/).filter(Boolean) : [];
+	      tokens.forEach((t) => {
+	        if (t.length >= 2 && noteNorm.includes(t)) score += 3;
+	      });
 
-      for (const rule of AUTO_CATEGORY_RULES) {
-        const matched = rule.patterns.some((p) => noteNorm.includes(normalizeForMatch(p)));
-        if (!matched) continue;
-        if (rule.preferIcons.includes(icon)) score += 4;
-        else score += 1;
-      }
+	      for (const rule of AUTO_CATEGORY_RULES) {
+	        const matched = rule.patterns.some((p) => noteNorm.includes(normalizeForMatch(p)));
+	        if (!matched) continue;
+	        const nameMatchesRule = !!nameNorm && rule.patterns.some((p) => nameNorm.includes(normalizeForMatch(p)));
+	        if (rule.preferIcons.includes(icon)) score += 5;
+	        if (nameMatchesRule) score += 4;
+	        else score += 1;
+	      }
 
       if (!best || score > best.score) best = { id: c._id, name, score };
     }
 
-    if (!best || best.score < 4) return null;
-    return best;
-  }, [categories]);
+	    if (!best || best.score < 3) return null;
+	    return best;
+	  }, [categories]);
 
   useEffect(() => {
     if (!showAddModal) {
@@ -945,6 +1027,7 @@ export default function Dashboard() {
   const stopVoiceRecording = (opts) => {
     if (!voiceRecording) return;
     voiceAutoTranscribeRef.current = Boolean(opts?.autoTranscribe);
+    voiceAutoApplyToFormRef.current = Boolean(opts?.autoTranscribe);
     setVoiceRecording(false);
     try {
       if (voiceRecorderRef.current && voiceRecorderRef.current.state !== 'inactive') {
@@ -994,10 +1077,15 @@ export default function Dashboard() {
       }
       const text = String(data?.text || '').trim();
       setVoiceTranscript(text);
+      if (voiceAutoApplyToFormRef.current && text) {
+        voiceAutoApplyToFormRef.current = false;
+        void applyVoiceTextToAddForm(text);
+      }
     } catch (e) {
       setVoiceError(e?.message ? String(e.message) : t('err_voice_transcribe_failed'));
     } finally {
       setVoiceLoading(false);
+      voiceAutoApplyToFormRef.current = false;
     }
   };
 
@@ -1102,12 +1190,26 @@ export default function Dashboard() {
     return (categories || []).some((c) => String(c?._id) === String(categoryId) && String(c?.type) === String(type));
   };
 
-  const applyVoiceTranscriptToAddForm = () => {
-    const text = String(voiceTranscript || '').trim();
+  const applyVoiceTextToAddForm = useCallback(async (rawText) => {
+    const text = String(rawText || '').trim();
     if (!text) return;
 
     const typeGuess = inferTxnTypeFromVoice(text);
     const amountGuess = extractAmountFromVoice(text);
+    const noteNorm = normalizeForMatch(text);
+
+    // If no category matches, allow creating a sensible default category (e.g. "อาหาร") for expense.
+    const ensureType = typeGuess || addFormData?.type || 'expense';
+    let ensuredCategoryId = '';
+    let ensuredCategoryName = '';
+    if (ensureType === 'expense') {
+      const ruleKey = pickAutoCategoryRuleKey(noteNorm);
+      const def = ruleKey ? AUTO_CATEGORY_DEFAULTS_TH?.[ruleKey] : null;
+      if (def?.name) {
+        ensuredCategoryName = String(def.name);
+        ensuredCategoryId = await ensureCategoryIdByName({ type: 'expense', name: def.name, icon: def.icon || ruleKey });
+      }
+    }
 
     setAddFormData((prev) => {
       const prevAmount = String(prev?.amount || '').trim();
@@ -1120,6 +1222,9 @@ export default function Dashboard() {
 
       const suggested = suggestCategoryId({ type: nextType, notes: text });
       if (!nextCategory && suggested?.id) nextCategory = suggested.id;
+      if (!nextCategory && ensuredCategoryId && categoryMatchesType(ensuredCategoryId, nextType)) nextCategory = ensuredCategoryId;
+
+      voicePendingAutoCategoryRef.current = !nextCategory ? { text, type: nextType } : null;
 
       const nextNotes = !prevNotes
         ? text
@@ -1139,7 +1244,42 @@ export default function Dashboard() {
     setShowVoiceModal(false);
     setAddInlinePanel('none');
     setShowAddModal(true);
+    if (ensuredCategoryId && ensuredCategoryName) setAutoCategoryApplied(ensuredCategoryName);
+  }, [
+    addFormData?.type,
+    AUTO_CATEGORY_DEFAULTS_TH,
+    ensureCategoryIdByName,
+    inferTxnTypeFromVoice,
+    extractAmountFromVoice,
+    pickAutoCategoryRuleKey,
+    suggestCategoryId,
+    categoryMatchesType,
+  ]);
+
+  const applyVoiceTranscriptToAddForm = () => {
+    const text = String(voiceTranscript || '').trim();
+    if (!text) return;
+    void applyVoiceTextToAddForm(text);
   };
+
+  useEffect(() => {
+    const pending = voicePendingAutoCategoryRef.current;
+    if (!pending?.text) return;
+    if (addFormData?.category) {
+      voicePendingAutoCategoryRef.current = null;
+      return;
+    }
+    if (!Array.isArray(categories) || categories.length === 0) return;
+
+    const notesNow = String(addFormData?.notes || '');
+    if (!notesNow.includes(pending.text)) return;
+
+    const suggested = suggestCategoryId({ type: pending.type || addFormData?.type || 'expense', notes: pending.text });
+    if (!suggested?.id) return;
+
+    setAddFormData((prev) => (prev?.category ? prev : { ...prev, category: suggested.id }));
+    voicePendingAutoCategoryRef.current = null;
+  }, [categories, addFormData?.category, addFormData?.notes, addFormData?.type, suggestCategoryId]);
 
   const readSlip = async () => {
     if (slipLoading) return;
@@ -1234,11 +1374,29 @@ export default function Dashboard() {
   useEffect(() => {
     if (!showMonthPicker) return;
     const onKey = (e) => {
-      if (e.key === 'Escape') setShowMonthPicker(false);
+      if (e.key !== 'Escape') return;
+      if (monthPickerYearMenuOpen) setMonthPickerYearMenuOpen(false);
+      else setShowMonthPicker(false);
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [showMonthPicker]);
+  }, [showMonthPicker, monthPickerYearMenuOpen]);
+
+  useEffect(() => {
+    if (!monthPickerYearMenuOpen) return;
+    const onDown = (e) => {
+      const el = monthPickerYearMenuRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setMonthPickerYearMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+    };
+  }, [monthPickerYearMenuOpen]);
 
   const recomputeEditCategoryPanel = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -1311,13 +1469,13 @@ export default function Dashboard() {
   }, [editCategoryOpen, recomputeEditCategoryPanel, editFormData?.category, editCategoryOptions?.length]);
 
   /* --- Data & Logic Setup --- */
-  const getMonths = () => {
-    const currentDate = new Date();
-    const nowParts = getBangkokDateParts(currentDate) || { year: currentDate.getFullYear(), monthIndex: currentDate.getMonth() };
-    const currentYear = (nowParts.year || currentDate.getFullYear()) + 543; 
-    const currentMonth = typeof nowParts.monthIndex === 'number' ? nowParts.monthIndex : currentDate.getMonth();
-    const months = [];
-    const span = 12;
+	  const getMonths = () => {
+	    const currentDate = new Date();
+	    const nowParts = getBangkokDateParts(currentDate) || { year: currentDate.getFullYear(), monthIndex: currentDate.getMonth() };
+	    const currentYear = (nowParts.year || currentDate.getFullYear()) + 543; 
+	    const currentMonth = typeof nowParts.monthIndex === 'number' ? nowParts.monthIndex : currentDate.getMonth();
+	    const months = [];
+	    const span = 120; // ±10 years
 
     for (let i = -span; i <= span; i++) { 
       const monthIndex = (currentMonth + i) % 12;
@@ -1386,12 +1544,13 @@ export default function Dashboard() {
       }     
       const transactions = await res.json();
       const allTransactions = Array.isArray(transactions) ? transactions : [];
+      const getTxnDateInput = (txn) => txn?.date || txn?.datetime || txn?.createdAt || null;
 
       // Always compute "today spend" from ALL transactions (not only the selected month),
       // so the card stays correct even when viewing past/future months.
       const todayKey = toBangkokISODateKey(Date.now());
       const todayExpenseTotal = allTransactions
-        .filter((t) => t?.type === 'expense' && toBangkokISODateKey(t?.date) === todayKey)
+        .filter((t) => t?.type === 'expense' && toBangkokISODateKey(getTxnDateInput(t)) === todayKey)
         .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
 
       // Also compute current-month totals from ALL transactions (for "ต่อวัน" targets).
@@ -1400,7 +1559,7 @@ export default function Dashboard() {
         .filter((t) => {
           if (t?.type !== 'income') return false;
           if (!nowParts) return false;
-          const p = getBangkokDateParts(t?.date);
+          const p = getBangkokDateParts(getTxnDateInput(t));
           return !!p && p.year === nowParts.year && p.monthIndex === nowParts.monthIndex;
         })
         .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
@@ -1408,7 +1567,7 @@ export default function Dashboard() {
         .filter((t) => {
           if (t?.type !== 'expense') return false;
           if (!nowParts) return false;
-          const p = getBangkokDateParts(t?.date);
+          const p = getBangkokDateParts(getTxnDateInput(t));
           return !!p && p.year === nowParts.year && p.monthIndex === nowParts.monthIndex;
         })
         .reduce((sum, t) => sum + (Number(t?.amount) || 0), 0);
@@ -1417,14 +1576,14 @@ export default function Dashboard() {
       const selectedYear = selectedMonth.split(' ')[1];
 
       const filteredTransactions = allTransactions.filter(t => {
-        const p = getBangkokDateParts(t?.date);
+        const p = getBangkokDateParts(getTxnDateInput(t));
         if (!p) return false;
         const tMonthIndex = p.monthIndex;
         const tYearBuddhist = p.year + 543;
         return MONTH_NAMES_TH[tMonthIndex] === selectedMonthName && String(tYearBuddhist) === String(selectedYear);
       });
 
-      const sortedRecentAll = [...allTransactions].sort((a, b) => {
+      const sortedRecentSelected = [...filteredTransactions].sort((a, b) => {
         const ad = a?.date || a?.datetime || a?.createdAt || 0;
         const bd = b?.date || b?.datetime || b?.createdAt || 0;
         return new Date(bd) - new Date(ad);
@@ -1440,9 +1599,9 @@ export default function Dashboard() {
         totalIncome,
         totalExpenses,
         netSavings: totalIncome - totalExpenses,
-        recentTransactions: sortedRecentAll.slice(0, 5),
-        recentIncome: sortedRecentAll.filter((t) => t?.type === 'income').slice(0, 5),
-        recentExpense: sortedRecentAll.filter((t) => t?.type === 'expense').slice(0, 5),
+        recentTransactions: sortedRecentSelected.slice(0, 5),
+        recentIncome: sortedRecentSelected.filter((t) => t?.type === 'income').slice(0, 5),
+        recentExpense: sortedRecentSelected.filter((t) => t?.type === 'expense').slice(0, 5),
         transactionsAll: filteredTransactions,
         todayExpenseTotal,
         currentMonthIncomeTotal: Number(cmIncome) || 0,
@@ -1714,14 +1873,20 @@ export default function Dashboard() {
       return;
     }
 
-    if (!addFormData.category) {
-      setError(t('err_choose_category'));
+    const token = localStorage.getItem('token');
+    if (!token) {
+      window.location.href = '/login';
       return;
     }
 
     try {
-      const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+      const categoryId = addFormData.category
+        ? String(addFormData.category)
+        : (await ensureCategoryIdByName({ type: addFormData.type, name: 'อื่นๆ', icon: 'other' }));
+      if (!categoryId) {
+        setError(t('err_choose_category'));
+        return;
+      }
       const res = await fetch(`${API_BASE}/api/transactions`, {
         method: 'POST',
         headers: {
@@ -1730,6 +1895,7 @@ export default function Dashboard() {
         },
         body: JSON.stringify({
           ...addFormData,
+          category: categoryId,
           amount: parseFloat(addFormData.amount),
         }),
       });
@@ -2404,12 +2570,72 @@ export default function Dashboard() {
                     <ChevronLeft className="h-5 w-5" />
                   </button>
 
-                  <div className="min-w-0 flex-1 text-center">
-                    <div className="text-sm font-extrabold text-[color:var(--app-text)]">
-                      {Number(monthPickerYear) + 543}
-                    </div>
-                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('buddhist_era')}</div>
-                  </div>
+	                  <div ref={monthPickerYearMenuRef} className="min-w-0 flex-1 text-center relative">
+	                    <button
+	                      type="button"
+	                      onClick={() => setMonthPickerYearMenuOpen((v) => !v)}
+	                      className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-4 py-2 text-sm font-extrabold text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-emerald-400/30 transition"
+	                      aria-label={t('pick_year')}
+	                      aria-haspopup="listbox"
+	                      aria-expanded={monthPickerYearMenuOpen}
+	                    >
+	                      <span className="tabular-nums">{Number(monthPickerYear) + 543}</span>
+	                    </button>
+
+	                    {monthPickerYearMenuOpen && (
+	                      <div
+	                        role="listbox"
+	                        className="absolute left-1/2 z-10 mt-2 w-[min(260px,100%)] -translate-x-1/2 overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)]/95 backdrop-blur shadow-2xl shadow-black/40 ring-1 ring-white/10"
+	                      >
+	                        <div className="flex items-center justify-between gap-2 border-b border-white/10 bg-white/5 px-3 py-2">
+	                          <div className="text-[11px] font-semibold text-[color:var(--app-muted)]">{t('pick_year')}</div>
+	                          <button
+	                            type="button"
+	                            onClick={() => {
+	                              const y = getBangkokDateParts(Date.now())?.year || new Date().getFullYear();
+	                              setMonthPickerYear(y);
+	                              setMonthPickerYearMenuOpen(false);
+	                            }}
+	                            className="rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-extrabold text-slate-100 hover:bg-white/10"
+	                          >
+	                            {t('this_year')}
+	                          </button>
+	                        </div>
+
+	                        <div className="max-h-56 overflow-y-auto p-1.5">
+	                          {availableYears.map((y) => {
+	                            const active = Number(y) === Number(monthPickerYear);
+	                            return (
+	                              <button
+	                                key={y}
+	                                type="button"
+	                                role="option"
+	                                aria-selected={active}
+	                                onClick={() => {
+	                                  setMonthPickerYear(y);
+	                                  setMonthPickerYearMenuOpen(false);
+	                                }}
+	                                className={[
+	                                  'w-full rounded-xl px-3 py-2 text-sm font-extrabold transition',
+	                                  'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+	                                  active
+	                                    ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/25'
+	                                    : 'text-slate-100 hover:bg-white/10',
+	                                ].join(' ')}
+	                              >
+	                                <span className="flex items-center justify-between gap-2">
+	                                  <span className="tabular-nums">{y + 543}</span>
+	                                  {active && <Check className="h-4 w-4" aria-hidden="true" />}
+	                                </span>
+	                              </button>
+	                            );
+	                          })}
+	                        </div>
+	                      </div>
+	                    )}
+
+	                    <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('buddhist_era')}</div>
+	                  </div>
 
                   <button
                     type="button"
@@ -2426,34 +2652,36 @@ export default function Dashboard() {
                   </button>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {monthPickerMonthsForYear.map((m) => {
-                    const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
-                    const disabled = m.idx == null;
-                    return (
-                      <button
-                        key={`${monthPickerYear}-${m.monthIndex}`}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => {
-                          if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
-                          setShowMonthPicker(false);
-                        }}
-                        className={[
-                          'h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
-                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
-                          disabled
-                            ? 'border-white/10 bg-white/5 text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
-                            : isActive
-                              ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
-                              : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10',
-                        ].join(' ')}
-                      >
-                        {m.name}
-                      </button>
-                    );
-                  })}
-                </div>
+	                  <div className="mt-4 grid grid-cols-3 gap-2">
+	                  {monthPickerMonthsForYear.map((m) => {
+	                    const isActive = typeof m.idx === 'number' && m.idx === currentMonthIndex;
+	                    const disabled = m.idx == null;
+	                    return (
+	                      <button
+	                        key={`${monthPickerYear}-${m.monthIndex}`}
+	                        type="button"
+	                        disabled={disabled}
+	                        onClick={() => {
+	                          if (typeof m.idx === 'number') setCurrentMonthIndex(m.idx);
+	                        }}
+	                        className={[
+	                          'relative h-11 rounded-2xl border px-3 text-sm font-extrabold transition',
+	                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+	                          disabled
+	                            ? 'border-white/10 bg-white/5 text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
+	                            : isActive
+	                              ? 'border-emerald-400/30 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+	                              : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 active:scale-[0.99]',
+	                        ].join(' ')}
+	                      >
+	                        <span className="inline-flex items-center justify-center gap-1.5">
+	                          {m.name}
+	                          {isActive && <Check className="h-4 w-4" aria-hidden="true" />}
+	                        </span>
+	                      </button>
+	                    );
+	                  })}
+	                </div>
               </div>
 
               <div className="border-t border-white/10 bg-white/5 p-3 flex items-center justify-between gap-2">
@@ -3519,7 +3747,7 @@ export default function Dashboard() {
                     <button
                       type="submit"
                       className="h-14 w-full rounded-full bg-emerald-500 text-slate-950 font-extrabold text-base shadow-lg shadow-emerald-500/15 hover:brightness-95 disabled:opacity-60"
-                      disabled={!addFormData.category}
+                      disabled={!addFormData.amount || Number(addFormData.amount) <= 0}
                     >
                       {t('save_transaction')}
                     </button>

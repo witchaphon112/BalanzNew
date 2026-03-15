@@ -20,6 +20,23 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+async function ensureOtherCategoryId({ userId, type } = {}) {
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const name = 'อื่นๆ';
+
+  const existing = await Category.findOne({ userId, type: safeType, name }).select({ _id: 1 }).lean();
+  if (existing?._id) return existing._id;
+
+  try {
+    const created = await Category.create({ userId, type: safeType, name, icon: 'other', isDefault: false });
+    return created?._id || null;
+  } catch (e) {
+    // Unique index race
+    const retry = await Category.findOne({ userId, type: safeType, name }).select({ _id: 1 }).lean();
+    return retry?._id || null;
+  }
+}
+
 router.post('/', authMiddleware, async (req, res) => {
   const { amount, type, category, date, notes } = req.body;
   console.log('Received data:', { amount, type, category, date, notes });
@@ -35,15 +52,19 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     let categoryId;
-    if (mongoose.Types.ObjectId.isValid(category)) {
-      categoryId = new mongoose.Types.ObjectId(category);
+    const categoryText = String(category || '').trim();
+    if (!categoryText) {
+      categoryId = await ensureOtherCategoryId({ userId: req.user.userId, type });
+    } else if (mongoose.Types.ObjectId.isValid(categoryText)) {
+      const found = await Category.findOne({ _id: new mongoose.Types.ObjectId(categoryText), userId: req.user.userId })
+        .select({ _id: 1 })
+        .lean();
+      categoryId = found?._id || (await ensureOtherCategoryId({ userId: req.user.userId, type }));
     } else {
-      const foundCategory = await Category.findOne({ name: category, userId: req.user.userId });
-      if (!foundCategory) {
-        return res.status(400).json({ message: 'Category not found' });
-      }
-      categoryId = foundCategory._id;
+      const foundCategory = await Category.findOne({ name: categoryText, userId: req.user.userId, type }).select({ _id: 1 }).lean();
+      categoryId = foundCategory?._id || (await ensureOtherCategoryId({ userId: req.user.userId, type }));
     }
+    if (!categoryId) return res.status(500).json({ message: 'Cannot resolve category' });
 
     let transactionDate;
     if (date.includes('T')) {
@@ -117,14 +138,19 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
     if (category !== undefined) {
       let categoryId;
-      if (mongoose.Types.ObjectId.isValid(category)) {
-        categoryId = new mongoose.Types.ObjectId(category);
+      const categoryText = String(category || '').trim();
+      if (!categoryText) {
+        categoryId = await ensureOtherCategoryId({ userId: req.user.userId, type: transaction.type });
+      } else if (mongoose.Types.ObjectId.isValid(categoryText)) {
+        const found = await Category.findOne({ _id: new mongoose.Types.ObjectId(categoryText), userId: req.user.userId })
+          .select({ _id: 1 })
+          .lean();
+        categoryId = found?._id || (await ensureOtherCategoryId({ userId: req.user.userId, type: transaction.type }));
       } else {
-        const foundCategory = await Category.findOne({ name: category, userId: req.user.userId });
-        if (!foundCategory) {
-          return res.status(400).json({ message: 'Category not found' });
-        }
-        categoryId = foundCategory._id;
+        const foundCategory = await Category.findOne({ name: categoryText, userId: req.user.userId, type: transaction.type })
+          .select({ _id: 1 })
+          .lean();
+        categoryId = foundCategory?._id || (await ensureOtherCategoryId({ userId: req.user.userId, type: transaction.type }));
       }
       transaction.categoryId = categoryId;
     }

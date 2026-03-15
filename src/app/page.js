@@ -9,7 +9,7 @@ export default function Home() {
       <header className="w-full bg-white/80 backdrop-blur sticky top-0 z-30 border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-0 flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2 select-none">
-            <span className="font-extrabold text-xl text-[#4db8a8] tracking-tight">Balanz<span className="text-[#191919]">.IA</span></span>
+            <span className="font-extrabold text-xl text-[#4db8a8] tracking-tight">น้องจิ๋วช่วยจด</span>
           </Link>          
         </div>
       </header>
@@ -34,9 +34,8 @@ export default function Home() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-0 py-8 md:py-20 grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-12 items-center">
              <div className="md:col-span-6 text-center md:text-left">
                    <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold leading-tight text-[#191919] mb-4">
-                     ยินดีต้อนรับเข้าสู่{' '}
-                     <span className="text-[#4db8a8]">Balanz</span>
-                     <span className="text-[#191919]">.IA</span>
+                     <span>ยินดีต้อนรับเข้าสู่</span>
+                     <span className="block mt-1 text-[#4db8a8]">น้องจิ๋วช่วยจด</span>
                    </h1>
                    
                    <p className="text-[#191919] text-base md:text-lg mb-3">
@@ -68,7 +67,7 @@ export default function Home() {
                  <div className="hidden sm:flex justify-center md:col-span-6 mt-8 md:mt-0">
                    <img
                      src="/Home.png"
-                     alt="Balanz.IA infographic"
+                     alt="อินโฟกราฟิก น้องจิ๋วช่วยจด"
                      className="w-[300px] sm:w-[380px] md:w-[420px] lg:w-[520px] h-auto select-none drop-shadow-2xl animate-float"
                      draggable="false"
                    />
