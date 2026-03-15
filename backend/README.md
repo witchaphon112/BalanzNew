@@ -30,7 +30,7 @@ curl -X POST "http://localhost:5050/webhooks/line/richmenu/create" \
     {"bounds":{"x":2015,"y":125,"width":395,"height":405},"action":{"type":"message","text":"สรุปวันนี้"}},
     {"bounds":{"x":1575,"y":550,"width":395,"height":405},"action":{"type":"message","text":"เข้าเว็บ"}},
     {"bounds":{"x":2020,"y":545,"width":400,"height":410},"action":{"type":"message","text":"เข้าเว็บ"}},
-    {"bounds":{"x":95,"y":986,"width":1430,"height":345},"action":{"type":"message","text":"ประกาศ"}},
+    {"bounds":{"x":95,"y":986,"width":1430,"height":345},"action":{"type":"uri","label":"ประกาศ","uri":"line://ti/p/@156twxxb"}},
     {"bounds":{"x":1575,"y":986,"width":840,"height":345},"action":{"type":"message","text":"help"}}
   ]'
 ```
@@ -51,7 +51,7 @@ curl -X POST "http://localhost:5050/webhooks/line/richmenu/create" \
     {"bounds":{"x":2015,"y":125,"width":395,"height":405},"action":{"type":"postback","data":"action=summary_today"}},
     {"bounds":{"x":1575,"y":550,"width":395,"height":405},"action":{"type":"postback","data":"action=web_login"}},
     {"bounds":{"x":2020,"y":545,"width":400,"height":410},"action":{"type":"postback","data":"action=web_login"}},
-    {"bounds":{"x":95,"y":986,"width":1430,"height":345},"action":{"type":"postback","data":"action=announce"}},
+    {"bounds":{"x":95,"y":986,"width":1430,"height":345},"action":{"type":"uri","label":"ประกาศ","uri":"line://ti/p/@156twxxb"}},
     {"bounds":{"x":1575,"y":986,"width":840,"height":345},"action":{"type":"postback","data":"action=help"}}
   ]'
 ```

@@ -2,8 +2,9 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const LineStrategy = require('passport-line').Strategy;
+const line = require('@line/bot-sdk');
 const jwt = require('jsonwebtoken');
-const { User, Transaction, Category, Budget } = require('./models');
+const { User, Transaction, Category, Budget, ReminderSetting, BudgetAlertState } = require('./models');
 const { mergeUsers } = require('./utils/mergeUsers');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -22,6 +23,8 @@ const aiRoutes = require('./routes/ai'); // OpenAI (slip + transcription)
 const lineWebhookRouter = require('./routes/line');
 const debugRoutes = require('./routes/debug');
 const leaderboardRoutes = require('./routes/leaderboard');
+const reminderRoutes = require('./routes/reminders');
+const notificationSettingsRoutes = require('./routes/notificationSettings');
 const app = express();
 
 async function findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId } = {}) {
@@ -311,6 +314,8 @@ app.use('/api/budgets', budgetRoutes); // แก้ไขการพิมพ�
 app.use('/api', notificationsRouter); // ใช้ /api/notifications
 app.use('/api/ocr', ocrRoutes); // OCR routes
 app.use('/api/ai', aiRoutes); // OpenAI routes (slip + transcription)
+app.use('/api/reminders', reminderRoutes);
+app.use('/api/notification-settings', notificationSettingsRoutes);
 // Serve uploaded files (use absolute path so it works regardless of process cwd)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Dev debug endpoints
@@ -319,6 +324,559 @@ app.use('/api/leaderboard', leaderboardRoutes);
 
 // LINE Messaging API webhook
 app.use('/webhooks/line', lineWebhookRouter);
+
+function getBangkokNowParts() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Bangkok',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const map = {};
+    parts.forEach((p) => { if (p?.type) map[p.type] = p.value; });
+    const yyyy = String(map.year || '').trim();
+    const mm = String(map.month || '').trim();
+    const dd = String(map.day || '').trim();
+    const hh = String(map.hour || '').trim().padStart(2, '0');
+    const mi = String(map.minute || '').trim().padStart(2, '0');
+    const dateKey = `${yyyy}-${mm}-${dd}`;
+    const hhmm = `${hh}:${mi}`;
+    return { dateKey, hhmm };
+  } catch {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return { dateKey: `${yyyy}-${mm}-${dd}`, hhmm: `${hh}:${mi}` };
+  }
+}
+
+let reminderClient = null;
+let reminderClientToken = '';
+function ensureReminderClient() {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+  const secret = process.env.LINE_CHANNEL_SECRET || '';
+  if (!token) {
+    reminderClient = null;
+    reminderClientToken = '';
+    return null;
+  }
+  if (!reminderClient || reminderClientToken !== token) {
+    reminderClientToken = token;
+    reminderClient = new line.Client({ channelAccessToken: token, channelSecret: secret });
+  }
+  return reminderClient;
+}
+
+async function pushLineText(toUserId, text) {
+  const userId = String(toUserId || '').trim();
+  if (!userId) return null;
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const c = ensureReminderClient();
+  if (!c) {
+    console.log('Daily reminder push skipped (no LINE_CHANNEL_ACCESS_TOKEN).', userId, t);
+    return null;
+  }
+  try {
+    return await c.pushMessage(userId, { type: 'text', text: t });
+  } catch (e) {
+    const detail =
+      e?.originalError?.response?.data ||
+      e?.response?.data ||
+      e?.originalError?.response ||
+      e?.response ||
+      null;
+    console.error('Daily reminder push error', detail || e);
+    return null;
+  }
+}
+
+async function pushLineMessage(toUserId, message) {
+  const userId = String(toUserId || '').trim();
+  if (!userId) return null;
+  const msg = message && typeof message === 'object' ? message : null;
+  if (!msg || !msg.type) return null;
+  const c = ensureReminderClient();
+  if (!c) {
+    console.log('Daily reminder push skipped (no LINE_CHANNEL_ACCESS_TOKEN).', userId, msg);
+    return null;
+  }
+  try {
+    return await c.pushMessage(userId, msg);
+  } catch (e) {
+    const detail =
+      e?.originalError?.response?.data ||
+      e?.response?.data ||
+      e?.originalError?.response ||
+      e?.response ||
+      null;
+    console.error('Daily reminder push error', detail || e);
+    return null;
+  }
+}
+
+function buildDailyReminderFlexMessage({ timeHHMM } = {}) {
+  const timeLabel = String(timeHHMM || '').trim();
+  const title = 'เตือนจดรายรับรายจ่ายประจำวัน';
+  const subtitle = timeLabel ? `วันนี้เวลา ${timeLabel} อย่าลืมจดนะ` : 'อย่าลืมจดนะ';
+  return {
+    type: 'flex',
+    altText: title,
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#ECFDF5' },
+        body: { backgroundColor: '#FFFFFF' },
+        footer: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: title, weight: 'bold', size: 'lg', color: '#0F172A', wrap: true, flex: 1 },
+              {
+                type: 'box',
+                layout: 'vertical',
+                width: '22px',
+                height: '22px',
+                cornerRadius: '999px',
+                backgroundColor: '#10B981',
+                contents: [{ type: 'text', text: '⏰', align: 'center', gravity: 'center', color: '#FFFFFF', size: 'sm', weight: 'bold' }],
+              },
+            ],
+          },
+          { type: 'text', text: subtitle, size: 'sm', color: '#64748B', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'text',
+            text: 'พิมพ์รายการสั้นๆได้เลย เช่น',
+            size: 'sm',
+            color: '#0F172A',
+            weight: 'bold',
+            wrap: true,
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: '• ผัดกระเพรา 20', size: 'sm', color: '#334155', wrap: true },
+              { type: 'text', text: '• จ่าย 107 ข้าวมันไก่', size: 'sm', color: '#334155', wrap: true },
+              { type: 'text', text: '• รับ 20000 เงินเดือน', size: 'sm', color: '#334155', wrap: true },
+            ],
+          },
+          {
+            type: 'text',
+            text: 'หรือถาม “วันนี้ใช้ไปเท่าไหร่”',
+            size: 'sm',
+            color: '#64748B',
+            wrap: true,
+          },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '16px',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'link',
+            action: { type: 'postback', label: 'เปิดในเว็บ', data: 'action=web_login' },
+          },
+        ],
+      },
+    },
+  };
+}
+
+	function formatThb(amount) {
+	  const n = Number(amount) || 0;
+	  return `฿${n.toLocaleString('th-TH', { maximumFractionDigits: 0 })}`;
+	}
+
+	function iconKeyToEmoji(iconKey) {
+	  const raw = String(iconKey || '').trim();
+	  if (!raw) return '📌';
+	  if (!/^[a-z0-9_ -]+$/i.test(raw) && raw.length <= 8) return raw;
+	  const key = raw.toLowerCase().replace(/\s+/g, '_');
+	  const map = {
+	    food: '🍜',
+	    drink: '☕️',
+	    transport: '🚆',
+	    bills: '🧾',
+	    shopping: '🛍️',
+	    health: '🩺',
+	    salary: '💼',
+	    bonus: '🎁',
+	    gift: '🎁',
+	    money: '💰',
+	    refund: '💸',
+	    investment: '📈',
+	    other: '📌',
+	    misc: '📌',
+	    home: '🏠',
+	    fuel: '⛽️',
+	    education: '🎓',
+	    work: '💼',
+	    pet: '🐾',
+	  };
+	  return map[key] || '📌';
+	}
+
+const BANGKOK_TZ = 'Asia/Bangkok';
+const MONTH_NAMES_TH = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+function getBangkokYearMonthIndex(dateInput) {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: BANGKOK_TZ, year: 'numeric', month: '2-digit' }).formatToParts(d);
+    const map = {};
+    parts.forEach((p) => { if (p?.type) map[p.type] = p.value; });
+    const year = Number(map.year);
+    const month = Number(map.month);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+    return { year, monthIndex: month - 1 };
+  } catch {
+    return { year: d.getFullYear(), monthIndex: d.getMonth() };
+  }
+}
+
+function toThaiMonthLabel(dateInput) {
+  const p = getBangkokYearMonthIndex(dateInput);
+  if (!p) return '';
+  const monthName = MONTH_NAMES_TH[p.monthIndex] || '';
+  const buddhistYear = p.year + 543;
+  if (!monthName || !Number.isFinite(buddhistYear)) return '';
+  return `${monthName} ${buddhistYear}`;
+}
+
+function getBangkokMonthRange(dateInput) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const bangkokMs = d.getTime() + 7 * 60 * 60 * 1000;
+  const bd = new Date(bangkokMs);
+  const year = bd.getUTCFullYear();
+  const month = bd.getUTCMonth();
+  const startUtcMs = Date.UTC(year, month, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  const endUtcMs = Date.UTC(year, month + 1, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  return { start: new Date(startUtcMs), end: new Date(endUtcMs) };
+}
+
+	function buildCategoryBudgetOverFlexMessage({ monthLabel, categoryName, categoryIcon, spent, budgetTotal, overAmount, pct } = {}) {
+	  const safeMonth = String(monthLabel || '').trim();
+	  const safeCategory = String(categoryName || '').trim() || 'หมวดหมู่';
+	  const safeIcon = iconKeyToEmoji(categoryIcon);
+	  const safeSpent = Number(spent) || 0;
+	  const safeBudget = Number(budgetTotal) || 0;
+	  const safeOver = Number(overAmount) || 0;
+	  const safePct = Math.max(0, Math.round(Number(pct) || 0));
+
+  const pctClamped = Math.max(0, Math.min(160, safePct));
+  const barFill = Math.max(1, Math.min(100, pctClamped));
+  const barRest = Math.max(1, 100 - Math.min(100, barFill));
+
+  return {
+    type: 'flex',
+    altText: `เกินงบหมวด ${safeCategory} (${safeMonth || 'เดือนนี้'})`,
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#FEF2F2' },
+        body: { backgroundColor: '#FFFFFF' },
+        footer: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: `${safeIcon} เกินงบแล้ว`, size: 'lg', weight: 'bold', color: '#991B1B', flex: 1, wrap: true },
+              {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: '6px',
+                paddingStart: '12px',
+                paddingEnd: '12px',
+                cornerRadius: '999px',
+                backgroundColor: '#FEE2E2',
+                flex: 0,
+                contents: [{ type: 'text', text: `${safePct}%`, size: 'xs', weight: 'bold', color: '#991B1B', align: 'center' }],
+              },
+            ],
+          },
+          ...(safeMonth ? [{ type: 'text', text: safeMonth, size: 'sm', color: '#64748B', wrap: true }] : []),
+          { type: 'text', text: safeCategory, size: 'md', weight: 'bold', color: '#0F172A', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: 'ใช้งบไป', size: 'sm', color: '#64748B', flex: 1 },
+              { type: 'text', text: formatThb(safeSpent), size: 'sm', weight: 'bold', color: '#0F172A', flex: 0 },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: 'งบที่ตั้งไว้', size: 'sm', color: '#64748B', flex: 1 },
+              { type: 'text', text: formatThb(safeBudget), size: 'sm', weight: 'bold', color: '#0F172A', flex: 0 },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: 'เกินงบ', size: 'sm', color: '#DC2626', flex: 1, weight: 'bold' },
+              { type: 'text', text: formatThb(safeOver), size: 'sm', weight: 'bold', color: '#DC2626', flex: 0 },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            height: '10px',
+            cornerRadius: '999px',
+            backgroundColor: '#E2E8F0',
+            contents: [
+              { type: 'box', layout: 'vertical', flex: barFill, backgroundColor: '#EF4444', cornerRadius: '999px', contents: [] },
+              { type: 'box', layout: 'vertical', flex: barRest, backgroundColor: '#00000000', contents: [] },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '14px',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'button',
+            style: 'secondary',
+            action: { type: 'postback', label: 'ดูสรุปเดือนนี้', data: 'action=summary_month' },
+          },
+          {
+            type: 'button',
+            style: 'primary',
+            color: '#10B981',
+            action: { type: 'postback', label: 'เปิดในเว็บ', data: 'action=web_login' },
+          },
+        ],
+      },
+    },
+  };
+}
+
+let budgetAlertTickInFlight = false;
+setInterval(async () => {
+  if (budgetAlertTickInFlight) return;
+  budgetAlertTickInFlight = true;
+  try {
+    const monthLabel = toThaiMonthLabel(Date.now());
+    if (!monthLabel) return;
+
+    const monthRange = getBangkokMonthRange(new Date());
+    if (!monthRange?.start || !monthRange?.end) return;
+
+    // Only alert for expense category budgets in the current month.
+    const budgets = await Budget.find({ month: monthLabel, total: { $gt: 0 } })
+      .select({ userId: 1, category: 1, categoryId: 1, total: 1 })
+      .lean()
+      .catch(() => []);
+    if (!Array.isArray(budgets) || budgets.length === 0) return;
+
+    const userIds = Array.from(new Set(budgets.map((b) => String(b?.userId || '')).filter(Boolean)));
+    const catIds = Array.from(new Set(budgets.map((b) => String(b?.category || b?.categoryId || '')).filter(Boolean)));
+    if (userIds.length === 0 || catIds.length === 0) return;
+
+    const [users, cats] = await Promise.all([
+      User.find({
+        _id: { $in: userIds },
+        lineMessagingUserId: { $exists: true, $ne: '' },
+        lineBudgetAlertsEnabled: { $ne: false },
+      })
+        .select({ _id: 1, lineMessagingUserId: 1, name: 1 })
+        .lean()
+        .catch(() => []),
+      Category.find({ _id: { $in: catIds } })
+        .select({ _id: 1, name: 1, icon: 1, type: 1 })
+        .lean()
+        .catch(() => []),
+    ]);
+
+    const pushIdByUserId = new Map((users || []).map((u) => [String(u._id), String(u?.lineMessagingUserId || '').trim()]));
+    const catById = new Map((cats || []).map((c) => [String(c._id), c]));
+
+    // Aggregate month spending by user+category (expense only).
+    const spendRows = await Transaction.aggregate([
+      {
+        $match: {
+          userId: { $in: userIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          type: 'expense',
+          datetime: { $gte: monthRange.start, $lt: monthRange.end },
+          categoryId: { $in: catIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        },
+      },
+      {
+        $group: {
+          _id: { userId: '$userId', categoryId: '$categoryId' },
+          total: { $sum: '$amount' },
+        },
+      },
+    ]).catch(() => []);
+
+    const spentMap = new Map(
+      (spendRows || []).map((r) => [`${String(r?._id?.userId)}_${String(r?._id?.categoryId)}`, Number(r?.total) || 0])
+    );
+
+    const states = await BudgetAlertState.find({ userId: { $in: userIds }, month: monthLabel })
+      .select({ userId: 1, categoryId: 1, lastStage: 1 })
+      .lean()
+      .catch(() => []);
+    const stateMap = new Map((states || []).map((s) => [`${String(s.userId)}_${String(s.categoryId)}`, Number(s?.lastStage) || 0]));
+
+    const toNotify = [];
+    for (const b of budgets) {
+      const uid = String(b?.userId || '');
+      const pushId = pushIdByUserId.get(uid);
+      if (!pushId) continue;
+
+      const catId = String(b?.category || b?.categoryId || '');
+      if (!catId) continue;
+      const cat = catById.get(catId);
+      if (cat && String(cat.type || '').toLowerCase() !== 'expense') continue;
+
+      const budgetTotal = Number(b?.total) || 0;
+      if (!(budgetTotal > 0)) continue;
+
+      const spent = spentMap.get(`${uid}_${catId}`) || 0;
+      const pct = budgetTotal > 0 ? (spent / budgetTotal) * 100 : 0;
+      if (pct < 100) continue; // only "over budget" notifications
+
+      const lastStage = stateMap.get(`${uid}_${catId}`) || 0;
+      const stage = 100;
+      if (lastStage >= stage) continue;
+
+      toNotify.push({
+        userId: uid,
+        pushId,
+        monthLabel,
+        categoryId: catId,
+        categoryName: String(cat?.name || '').trim() || 'หมวดหมู่',
+        categoryIcon: String(cat?.icon || '').trim(),
+        spent,
+        budgetTotal,
+        overAmount: Math.max(0, spent - budgetTotal),
+        pct,
+        stage,
+      });
+    }
+
+    if (toNotify.length === 0) return;
+
+    // Send and persist state.
+    for (const n of toNotify.slice(0, 200)) {
+      try {
+        const flex = buildCategoryBudgetOverFlexMessage(n);
+        const sent = await pushLineMessage(n.pushId, flex);
+        if (!sent) continue;
+        await BudgetAlertState.updateOne(
+          { userId: n.userId, month: monthLabel, categoryId: n.categoryId },
+          { $set: { lastStage: n.stage, lastSentAt: new Date() } },
+          { upsert: true }
+        ).catch(() => {});
+      } catch (e) {
+        console.error('Budget alert push error', e);
+      }
+    }
+  } catch (e) {
+    console.error('Budget alert tick error', e);
+  } finally {
+    budgetAlertTickInFlight = false;
+  }
+}, 60 * 1000);
+
+let reminderTickInFlight = false;
+setInterval(async () => {
+  if (reminderTickInFlight) return;
+  reminderTickInFlight = true;
+  try {
+    const { dateKey, hhmm } = getBangkokNowParts();
+    if (!dateKey || !hhmm) return;
+
+    const due = await ReminderSetting.find({
+      enabled: true,
+      timeHHMM: hhmm,
+      lastSentDate: { $ne: dateKey },
+    }).limit(500).lean();
+    if (!Array.isArray(due) || due.length === 0) return;
+
+	    for (const s of due) {
+	      try {
+	        const user = await User.findById(s.userId).select({ lineMessagingUserId: 1, name: 1 }).lean();
+	        const pushId = String(user?.lineMessagingUserId || '').trim();
+	        if (!pushId) continue;
+
+        const flex = buildDailyReminderFlexMessage({ timeHHMM: s?.timeHHMM });
+        const sentFlex = await pushLineMessage(pushId, flex);
+        const sent = sentFlex || (await pushLineText(pushId, flex?.altText || 'เตือนจดรายรับรายจ่ายประจำวัน'));
+        if (!sent) continue;
+
+        await ReminderSetting.updateOne(
+          { _id: s._id },
+          { $set: { lastSentDate: dateKey, lastSentAt: new Date() } }
+        ).catch(() => {});
+      } catch (e) {
+        console.error('Daily reminder tick item error', e);
+      }
+    }
+  } catch (e) {
+    console.error('Daily reminder tick error', e);
+  } finally {
+    reminderTickInFlight = false;
+  }
+}, 20 * 1000);
 
 // Start server
 const PORT = process.env.PORT || 5050;

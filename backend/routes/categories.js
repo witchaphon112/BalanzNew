@@ -5,6 +5,15 @@ const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
 const router = express.Router();
 
+const normalizeCategoryName = (name) => String(name || '').trim().replace(/\s+/g, '');
+const isReservedOtherCategoryName = (name) => {
+  const n = normalizeCategoryName(name);
+  if (!n) return false;
+  if (n === 'อื่นๆ') return true;
+  if (n.toLowerCase() === 'other') return true;
+  return false;
+};
+
 const authMiddleware = (req, res, next) => {
   const token = req.header('Authorization')?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ message: 'No token provided' });
@@ -23,8 +32,27 @@ const authMiddleware = (req, res, next) => {
 // Get categories for user
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const existingCategories = await Category.find({ userId: req.user.userId });
-    const categories = await Category.find({ userId: req.user.userId });
+    const userId = req.user.userId;
+
+    const ensureOtherCategory = async (type) => {
+      const safeType = type === 'income' ? 'income' : 'expense';
+      const existing = await Category.findOne({ userId, type: safeType, name: 'อื่นๆ' });
+      if (existing) return existing;
+      const doc = new Category({ userId, type: safeType, name: 'อื่นๆ', icon: 'other' });
+      try {
+        await doc.save();
+        return doc;
+      } catch (e) {
+        if (e && e.code === 11000) {
+          return await Category.findOne({ userId, type: safeType, name: 'อื่นๆ' });
+        }
+        throw e;
+      }
+    };
+
+    await Promise.all([ensureOtherCategory('expense'), ensureOtherCategory('income')]);
+
+    const categories = await Category.find({ userId });
     res.json(categories);
   } catch (error) {
     res.status(500).json({ message: 'Server error: ' + error.message });
@@ -109,6 +137,10 @@ router.delete('/:categoryId', authMiddleware, async (req, res) => {
 
     if (category.userId.toString() !== req.user.userId) {
       return res.status(403).json({ message: 'คุณไม่มีสิทธิ์ลบหมวดหมู่นี้' });
+    }
+
+    if (isReservedOtherCategoryName(category?.name)) {
+      return res.status(400).json({ message: 'ไม่สามารถลบหมวด “อื่นๆ” ได้' });
     }
 
     // Detach related data instead of forcing a fallback category.

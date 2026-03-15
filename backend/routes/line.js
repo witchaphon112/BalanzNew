@@ -8,6 +8,7 @@ const path = require('path');
 const { transcribeAudioFile } = require('../utils/transcribeAudio');
 const { mergeUsers } = require('../utils/mergeUsers');
 const { parseSlipImageBuffer } = require('../utils/openaiSlip');
+const { summarizeFinanceDay } = require('../utils/openaiFinanceSummary');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -131,6 +132,20 @@ function formatThaiDateTime(input) {
   }
 }
 
+function formatThaiDate(input) {
+  try {
+    const d = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '';
+  }
+}
+
 function getBangkokMonthRange(dateInput) {
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
@@ -144,6 +159,443 @@ function getBangkokMonthRange(dateInput) {
   const startUtcMs = Date.UTC(year, month, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
   const endUtcMs = Date.UTC(year, month + 1, 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
   return { start: new Date(startUtcMs), end: new Date(endUtcMs) };
+}
+
+function getBangkokDayRange(dateInput) {
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const bangkokMs = d.getTime() + 7 * 60 * 60 * 1000;
+  const bd = new Date(bangkokMs);
+  const year = bd.getUTCFullYear();
+  const month = bd.getUTCMonth();
+  const day = bd.getUTCDate();
+
+  const startUtcMs = Date.UTC(year, month, day, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  const endUtcMs = Date.UTC(year, month, day + 1, 0, 0, 0, 0) - 7 * 60 * 60 * 1000;
+  return { start: new Date(startUtcMs), end: new Date(endUtcMs) };
+}
+
+const MONTH_NAMES_TH = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+];
+
+function parseMonthSpecifierFromText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
+  const s = normalizeDigits(raw).toLowerCase();
+
+  if (s.includes('เดือนนี้')) return { kind: 'relative', offset: 0 };
+  if (s.includes('เดือนที่แล้ว') || s.includes('เดือนก่อน')) return { kind: 'relative', offset: -1 };
+  if (s.includes('เดือนหน้า') || s.includes('เดือนถัดไป')) return { kind: 'relative', offset: 1 };
+
+  // Thai month abbreviations: ม.ค., ก.พ., มี.ค., เม.ย., พ.ค., มิ.ย., ก.ค., ส.ค., ก.ย., ต.ค., พ.ย., ธ.ค.
+  const ABBR_TH = [
+    ['ม.ค', 0], ['ก.พ', 1], ['มี.ค', 2], ['เม.ย', 3], ['พ.ค', 4], ['มิ.ย', 5],
+    ['ก.ค', 6], ['ส.ค', 7], ['ก.ย', 8], ['ต.ค', 9], ['พ.ย', 10], ['ธ.ค', 11],
+  ];
+  for (const [abbr, monthIndex] of ABBR_TH) {
+    const re = new RegExp(`${abbr}\\.?(?:\\s*)(\\d{4})`, 'i');
+    const match = raw.match(re);
+    if (match) {
+      let year = Number(match[1]);
+      if (year >= 2400) year -= 543;
+      if (Number.isFinite(year)) return { kind: 'absolute', year, monthIndex };
+    }
+  }
+
+  // Thai month + year (B.E. or C.E.)
+  for (let i = 0; i < MONTH_NAMES_TH.length; i++) {
+    const mName = MONTH_NAMES_TH[i];
+    const re = new RegExp(`${mName}\\s*(\\d{4})`, 'i');
+    const match = raw.match(re);
+    if (match) {
+      let year = Number(match[1]);
+      if (year >= 2400) year -= 543;
+      if (Number.isFinite(year)) return { kind: 'absolute', year, monthIndex: i };
+    }
+  }
+
+  // YYYY-MM
+  const ym = s.match(/(\d{4})\s*-\s*(\d{1,2})/);
+  if (ym) {
+    const year = Number(ym[1]);
+    const month = Number(ym[2]);
+    if (Number.isFinite(year) && month >= 1 && month <= 12) return { kind: 'absolute', year, monthIndex: month - 1 };
+  }
+
+  // MM/YYYY (B.E. supported)
+  const my = s.match(/(\d{1,2})\s*\/\s*(\d{4})/);
+  if (my) {
+    const month = Number(my[1]);
+    let year = Number(my[2]);
+    if (year >= 2400) year -= 543;
+    if (Number.isFinite(year) && month >= 1 && month <= 12) return { kind: 'absolute', year, monthIndex: month - 1 };
+  }
+
+  return null;
+}
+
+async function getTopExpenseCategories({ userId, range, limit = 3 } = {}) {
+  if (!userId || !range?.start || !range?.end) return [];
+
+  const rows = await Transaction.aggregate([
+    {
+      $match: {
+        userId,
+        type: 'expense',
+        datetime: { $gte: range.start, $lt: range.end },
+      },
+    },
+    {
+      $group: {
+        _id: '$categoryId',
+        total: { $sum: '$amount' },
+        count: { $sum: 1 },
+      },
+    },
+    { $sort: { total: -1 } },
+    { $limit: Math.max(1, Math.min(10, Number(limit) || 3)) },
+  ]).catch(() => []);
+
+  const catIds = (rows || [])
+    .map((r) => r?._id)
+    .filter((id) => id != null);
+
+  const cats = await Category.find({ _id: { $in: catIds } })
+    .select({ _id: 1, name: 1, icon: 1 })
+    .lean()
+    .catch(() => []);
+
+  const catMap = new Map((cats || []).map((c) => [String(c._id), c]));
+  return (rows || []).map((r) => {
+    const c = r?._id ? catMap.get(String(r._id)) : null;
+    const name = String(c?.name || '').trim() || 'อื่นๆ';
+    const iconDisplay = pickCategoryIconDisplay(c?.icon);
+    return {
+      categoryId: r?._id || null,
+      name,
+      icon: iconDisplay?.value || '🤖',
+      total: Number(r?.total) || 0,
+      count: Number(r?.count) || 0,
+    };
+  });
+}
+
+async function getMonthBudgetTotal({ userId, monthLabel } = {}) {
+  if (!userId || !monthLabel) return null;
+  const rows = await Budget.find({ userId, month: String(monthLabel) })
+    .select({ total: 1 })
+    .lean()
+    .catch(() => []);
+  const total = (rows || []).reduce((s, b) => s + (Number(b?.total) || 0), 0);
+  return Number.isFinite(total) && total > 0 ? total : null;
+}
+
+function buildFinanceStatusFlexMessage({
+  label,
+  range,
+  income,
+  expense,
+  remaining,
+  txCount,
+  topExpenses,
+  budgetTotal,
+  budgetRemaining,
+  aiSummary,
+} = {}) {
+  const safeLabel = String(label || '').trim();
+  const pillText = safeLabel.length > 22 ? `${safeLabel.slice(0, 22)}…` : safeLabel;
+  const safeIncome = Number(income) || 0;
+  const safeExpense = Number(expense) || 0;
+  const safeRemaining = Number(remaining) || 0;
+  const safeTxCount = Number(txCount) || 0;
+
+  const remainingColor = safeRemaining < 0 ? '#DC2626' : '#16A34A';
+  const headerBg = safeRemaining < 0 ? '#FEF2F2' : '#ECFDF5';
+
+  const dateHint = range?.start ? formatThaiDate(range.start) : '';
+  const dateHint2 = range?.end ? formatThaiDate(new Date(new Date(range.end).getTime() - 1)) : '';
+  const periodHint = dateHint && dateHint2 && dateHint !== dateHint2 ? `${dateHint} - ${dateHint2}` : (dateHint || '');
+
+  const budgetSection =
+    Number.isFinite(Number(budgetTotal)) && Number(budgetTotal) > 0
+      ? [
+          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            margin: 'lg',
+            contents: [
+              { type: 'text', text: 'งบประมาณ', size: 'sm', weight: 'bold', color: '#0F172A' },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'ตั้งไว้', size: 'sm', color: '#64748B', flex: 1 },
+                  { type: 'text', text: formatThb(budgetTotal), size: 'sm', weight: 'bold', color: '#0F172A', flex: 0 },
+                ],
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'ใช้ไป', size: 'sm', color: '#64748B', flex: 1 },
+                  { type: 'text', text: formatThb(safeExpense), size: 'sm', weight: 'bold', color: '#0F172A', flex: 0 },
+                ],
+              },
+              {
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: 'เหลือจากงบ', size: 'sm', color: '#64748B', flex: 1 },
+                  {
+                    type: 'text',
+                    text: formatThb(budgetRemaining),
+                    size: 'sm',
+                    weight: 'bold',
+                    color: (Number(budgetRemaining) || 0) < 0 ? '#DC2626' : '#16A34A',
+                    flex: 0,
+                  },
+                ],
+              },
+            ],
+          },
+        ]
+      : [];
+
+  const topExpenseSection =
+    Array.isArray(topExpenses) && topExpenses.length > 0
+      ? [
+          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            margin: 'lg',
+            contents: [
+              { type: 'text', text: 'หมวดรายจ่ายสูงสุด', size: 'sm', weight: 'bold', color: '#0F172A' },
+              ...topExpenses.slice(0, 3).map((r) => ({
+                type: 'box',
+                layout: 'horizontal',
+                contents: [
+                  { type: 'text', text: `${String(r?.icon || '•')} ${String(r?.name || 'อื่นๆ')}`, size: 'sm', color: '#334155', flex: 1, wrap: true },
+                  { type: 'text', text: formatThb(r?.total), size: 'sm', weight: 'bold', color: '#0F172A', flex: 0 },
+                ],
+              })),
+            ],
+          },
+        ]
+      : [];
+
+  const aiSummaryText = String(aiSummary || '').trim();
+  const aiSection =
+    aiSummaryText
+      ? [
+          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            margin: 'lg',
+            contents: [
+              { type: 'text', text: 'สรุปโดย AI', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: aiSummaryText, size: 'sm', color: '#334155', wrap: true },
+            ],
+          },
+        ]
+      : [];
+
+  return {
+    type: 'flex',
+    altText: safeLabel ? `สรุปการเงิน (${safeLabel})` : 'สรุปการเงิน',
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: headerBg },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'sm',
+        contents: [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'sm',
+            contents: [
+              { type: 'text', text: 'สถานะการเงิน', weight: 'bold', size: 'xl', color: '#0F172A', flex: 1, wrap: true },
+              {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: '6px',
+                paddingStart: '12px',
+                paddingEnd: '12px',
+                cornerRadius: '999px',
+                backgroundColor: '#E2E8F0',
+                flex: 0,
+                contents: [{ type: 'text', text: pillText || '-', size: 'xs', weight: 'bold', color: '#334155', align: 'center' }],
+              },
+            ],
+          },
+          ...(periodHint
+            ? [{ type: 'text', text: periodHint, size: 'sm', color: '#64748B', wrap: true }]
+            : []),
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          { type: 'text', text: 'คงเหลือ (สุทธิ)', size: 'sm', color: '#64748B' },
+          { type: 'text', text: formatThb(safeRemaining), size: 'xxl', weight: 'bold', color: remainingColor, wrap: true },
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'md',
+            contents: [
+              {
+                type: 'box',
+                layout: 'vertical',
+                flex: 1,
+                contents: [
+                  { type: 'text', text: 'รายจ่าย', size: 'xs', color: '#94A3B8' },
+                  { type: 'text', text: formatThb(safeExpense), size: 'md', weight: 'bold', color: '#0F172A', wrap: true },
+                ],
+              },
+              {
+                type: 'box',
+                layout: 'vertical',
+                flex: 1,
+                contents: [
+                  { type: 'text', text: 'รายรับ', size: 'xs', color: '#94A3B8' },
+                  { type: 'text', text: formatThb(safeIncome), size: 'md', weight: 'bold', color: '#0F172A', wrap: true },
+                ],
+              },
+              {
+                type: 'box',
+                layout: 'vertical',
+                flex: 0,
+                contents: [
+                  { type: 'text', text: 'รายการ', size: 'xs', color: '#94A3B8' },
+                  { type: 'text', text: String(safeTxCount), size: 'md', weight: 'bold', color: '#0F172A' },
+                ],
+              },
+            ],
+          },
+          ...aiSection,
+          ...topExpenseSection,
+          ...budgetSection,
+        ],
+      },
+    },
+  };
+}
+
+function buildQuickNoteFlexMessage() {
+  return {
+    type: 'flex',
+    altText: 'เพิ่มรายการ',
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#10B981' },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'sm',
+        contents: [
+          { type: 'text', text: 'เพิ่มรายการ', weight: 'bold', size: 'xl', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: 'พิมพ์ข้อความ แล้วผมจะบันทึกให้', size: 'sm', color: '#CBD5E1', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'ตัวอย่าง (พิมพ์ได้เลย):', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: '• ข้าวมันไก่ 50\n• กาแฟ 65\n• เงินเดือน 20000\n• ค่าน้ำ 180', size: 'sm', color: '#334155', wrap: true },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'ทิป', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: '• พิมพ์หลายรายการได้ (ขึ้นบรรทัดใหม่)\n• ใส่จำนวนเงินท้ายประโยคจะเดาได้แม่นขึ้น', size: 'sm', color: '#475569', wrap: true },
+            ],
+          },
+        ],
+      },
+    },
+  };
+}
+
+function buildAnnounceFlexMessage() {
+  // Deep link opens the LINE profile page directly in the app (better UX than https)
+  const profileUrl = 'line://ti/p/@156twxxb';
+  const profileUrlHttp = 'https://line.me/R/ti/p/@156twxxb';
+  return {
+    type: 'flex',
+    altText: 'ประกาศ',
+    contents: {
+      type: 'bubble',
+      action: { type: 'uri', uri: profileUrl },
+      styles: {
+        header: { backgroundColor: '#10B981' },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'xs',
+        contents: [
+          { type: 'text', text: 'ประกาศ', weight: 'bold', size: 'xl', color: '#052E2B', wrap: true },
+          { type: 'text', text: 'แตะการ์ดนี้เพื่อเปิดหน้าโปรไฟล์/VOOM', size: 'sm', color: '#064E3B', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            paddingAll: '12px',
+            cornerRadius: '14px',
+            backgroundColor: '#ECFDF5',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'เปิดลิงก์:', size: 'sm', weight: 'bold', color: '#064E3B' },
+              { type: 'text', text: profileUrlHttp, size: 'xs', color: '#0F766E', wrap: true },
+            ],
+          },
+          { type: 'text', text: 'ทิป: แตะที่การ์ดเพื่อเปิด “หน้าโปรไฟล์” ทันที (ในแอป LINE)', size: 'xs', color: '#64748B', wrap: true },
+        ],
+      },
+    },
+  };
 }
 
 async function sumCategoryTotalForMonth({ userId, categoryId, type, when } = {}) {
@@ -172,6 +624,24 @@ function pickCategoryIconDisplay(categoryIcon) {
   if (!raw) return { kind: 'emoji', value: '🤖' };
   // If user stored an emoji in DB, show it directly.
   if (!/^[a-z0-9_ -]+$/i.test(raw) && raw.length <= 8) return { kind: 'emoji', value: raw };
+  const key = raw.toLowerCase().replace(/\s+/g, '_');
+  const iconMap = {
+    food: '🍜',
+    drink: '☕️',
+    transport: '🚆',
+    bills: '🧾',
+    shopping: '🛍️',
+    health: '🩺',
+    salary: '💼',
+    bonus: '🎁',
+    gift: '🎁',
+    money: '💰',
+    refund: '💸',
+    investment: '📈',
+    other: '📌',
+    misc: '📌',
+  };
+  if (iconMap[key]) return { kind: 'emoji', value: iconMap[key] };
   return { kind: 'emoji', value: '🤖' };
 }
 
@@ -195,8 +665,8 @@ function buildRecordedSuccessFlexMessage({
   const safeAmount = Number(amount) || 0;
   const safeCategoryTotal = Number.isFinite(Number(categoryTotal)) ? Number(categoryTotal) : safeAmount;
   const safeNote = String(note || '').trim() || '-';
-  const safeCategory = String(categoryName || '').trim() || 'ไม่ระบุ';
-  const isCategoryUnknown = safeCategory === 'ไม่ระบุ';
+  const safeCategory = String(categoryName || '').trim() || 'อื่นๆ';
+  const isCategoryUnknown = safeCategory === 'อื่นๆ';
   const whenText = formatThaiDateTime(when) || '';
   const safeSource = String(sourceLabel || '').trim();
 
@@ -475,11 +945,30 @@ function parseTransactionText(text) {
   const tl = t.toLowerCase();
   // commands: help, สรุปวันนี้, สรุปเดือนนี้, export
   if (/^help$/i.test(t) || /^ช่วยเหลือ$/i.test(t)) return { command: 'help' };
-  if (/^สรุปวันนี้$/i.test(t)) return { command: 'summary_today' };
-  if (/^สรุปเดือนนี้$/i.test(t)) return { command: 'summary_month' };
+  if (/^สรุปวันนี้$/i.test(t)) return { command: 'status_day', when };
+  if (/^สรุปเดือนนี้$/i.test(t)) return { command: 'status_month', monthText: t };
   if (/^export(\s+.*)?$/i.test(t)) return { command: 'export' };
   if (/^\s*จด(รายการ(บันทึก)?)\s*$/i.test(t)) return { command: 'quick_note' };
   if (/^\s*จด\s*$/i.test(t)) return { command: 'quick_note' };
+  if (/^(สถานะการเงิน|ภาพรวม(การเงิน)?|สรุปการเงิน)$/i.test(t)) return { command: 'status_month', monthText: 'เดือนนี้', queryText: t };
+
+  // finance/status queries (today/month)
+  const isQuestion = /(เท่าไหร่|เท่าไร|กี่บาท|ยังไง|ไหม|\?)/i.test(t);
+  const wantsBalance = /(ยอดคงเหลือ|คงเหลือ|เหลือเงิน|เหลือเท่าไหร่|เหลือเท่าไร)/i.test(t);
+  const wantsSpent = /(วันนี้\s*)?(ใช้ไป|จ่ายไป|ใช้จ่าย|รายจ่าย)/i.test(t);
+  const wantsIncome = /(รายรับ|รายได้|รับมา|ได้เงิน)/i.test(t);
+  const mentionsMonth =
+    /(เดือนนี้|เดือนที่แล้ว|เดือนก่อน|เดือนหน้า|เดือนถัดไป)/i.test(t) ||
+    MONTH_NAMES_TH.some((m) => t.includes(m)) ||
+    /\d{4}\s*-\s*\d{1,2}/.test(t) ||
+    /\d{1,2}\s*\/\s*\d{4}/.test(t);
+
+  if ((wantsBalance || wantsSpent || wantsIncome) && (isQuestion || wantsBalance)) {
+    if (when) return { command: 'status_day', when, queryText: t };
+    if (mentionsMonth) return { command: 'status_month', monthText: t, queryText: t };
+    // default to current month if no explicit time specified
+    return { command: 'status_month', monthText: 'เดือนนี้', queryText: t };
+  }
 
   // transaction: จ่าย 120 ข้าวมันไก่  OR  รับ 500 เงินลูกค้า
   const m = t.match(/^(จ่าย|จ่่าย|จ|จ\.?)\s*([0-9,\.]+)\s*(.*)$/i) || t.match(/^(รับ|เรีัย|ร)\s*([0-9,\.]+)\s*(.*)$/i);
@@ -612,6 +1101,13 @@ async function ensureUserCategory({ userId, type, name, icon }) {
     if (fallback) return fallback;
     throw e;
   }
+}
+
+async function ensureOtherCategoryId({ userId, type } = {}) {
+  if (!userId) return null;
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const doc = await ensureUserCategory({ userId, type: safeType, name: 'อื่นๆ', icon: 'other' });
+  return doc?._id || null;
 }
 
 async function resolveMessagingUser(lineMessagingUserId) {
@@ -757,70 +1253,16 @@ async function handleTextEvent(event) {
     // ignore logging errors
   }
 
-  // Quick UI trigger: when user types a phrase starting with 'จดรายการ' or 'จดรายการบันทึก',
-  // reply with a Flex bubble + button. Match more flexibly to allow extra words after the phrase.
-  const isFlexTrigger = /^\s*จด(รายการ(บันทึก)?)?(\b|\s|$)/i.test(text) || /^\s*จด/i.test(text);
-  console.log('LINE flex trigger test:', isFlexTrigger);
-  if (isFlexTrigger) {
-    const flexMessage = {
-      type: 'flex',
-      altText: 'จดเลย',
-      contents: {
-        type: 'bubble',
-        body: {
-          type: 'box',
-          layout: 'vertical',
-          spacing: 'md',
-          contents: [
-            { type: 'text', text: 'พิมพ์บอกน้องจิ๋วได้เลย เช่น', weight: 'bold', size: 'md' },
-            { type: 'text', text: '- ข้าวมันไก่ 50\n- เงินเดือน 20000', wrap: true, margin: 'sm' }
-          ]
-        },
-        footer: {
-          type: 'box',
-          layout: 'vertical',
-          contents: [
-            {
-              type: 'button',
-              style: 'primary',
-              color: '#87bfe3',
-              action: { type: 'uri', label: 'จดเลย', uri: 'line://msg/text/' }
-            }
-          ]
-        }
-      }
-    };
-    console.log('LINE flex trigger matched, sending flex message.');
-    return sendReply(event.replyToken, flexMessage);
-  }
-
-  // If user taps the 'จดเลย' button (sends message 'จดเลย'), prompt for example input
-  const isJodLey = /^\s*จดเลย\s*$/i.test(text);
-  console.log('LINE "จดเลย" trigger:', isJodLey);
-  if (isJodLey) {
-    const prompt = 'พิมพ์บอกป้่าได้เลย เช่น\n- ข้าวมันไก่ 50\n- เงินเดือน 20000\nผมจะจดและจัดประเภทให้อัตโนมัติ';
-    return sendReply(event.replyToken, { type: 'text', text: prompt });
+  // Quick-note UI: only when user explicitly triggers the command (e.g., "จด", "จดรายการ")
+  if (parsed && parsed.command === 'quick_note') {
+    return sendReply(event.replyToken, buildQuickNoteFlexMessage());
   }
 
   // If user types 'ประกาศ', send a quick-reply URI that opens the LINE profile when tapped.
   // NOTE: the server cannot force the client to open a link automatically — user must tap the quick-reply button.
   const isAnnounce = /^\s*ประกาศ\s*$/i.test(text);
   if (isAnnounce) {
-    // Send a Buttons template which shows a clear tappable button to open the profile/VOOM URL.
-    // Template buttons are more visible than quickReply and reliably surface a URI action.
-    const profileUrl = 'https://line.me/R/ti/p/@156twxxb';
-    const message = {
-      type: 'template',
-      altText: 'ดูโปรไฟล์ LINE',
-      template: {
-        type: 'buttons',
-        text: 'แตะปุ่มด้านล่างเพื่อเปิดหน้าโปรไฟล์/VOOM',
-        actions: [
-          { type: 'uri', label: 'ดูโปรไฟล์', uri: profileUrl }
-        ]
-      }
-    };
-    return sendReply(event.replyToken, message);
+    return sendReply(event.replyToken, buildAnnounceFlexMessage());
   }
 
   if (!lineMessagingUserId) {
@@ -902,6 +1344,13 @@ async function handleTextEvent(event) {
       '- จ่าย 120 ข้าวมันไก่',
       '- รับ 500 เงินลูกค้า',
       '',
+      'ถามสถานะการเงิน:',
+      '- วันนี้ใช้ไปเท่าไหร่',
+      '- เมื่อวานใช้ไปเท่าไหร่',
+      '- เดือนนี้ใช้ไปเท่าไหร่',
+      '- ยอดคงเหลือเดือนนี้เท่าไหร่',
+      '- ยอดคงเหลือ มีนาคม 2569',
+      '',
       'บันทึกย้อนหลังได้:',
       '- เมื่อวาน จ่าย 50 กาแฟ',
       '- ย้อนหลัง 3 วัน รับ 2000 เงินลูกค้า',
@@ -916,25 +1365,90 @@ async function handleTextEvent(event) {
     return sendReply(event.replyToken, { type: 'text', text: helpText });
   }
 
-  if (parsed.command === 'summary_today') {
-    const start = new Date(); start.setHours(0,0,0,0);
-    const end = new Date(); end.setHours(23,59,59,999);
-    const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
-    const income = txs.filter(t=>t.type==='income').reduce((s,n)=>s+n.amount,0);
-    const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
-    const reply = `สรุปวันนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
-    return sendReply(event.replyToken, { type: 'text', text: reply });
+  const buildPeriodStatusReply = async ({ range, label, monthLabelForBudget } = {}) => {
+    if (!range?.start || !range?.end) return { type: 'text', text: 'ขออภัย ผมหาช่วงวันที่ไม่เจอ' };
+
+    const txAgg = await Transaction.aggregate([
+      {
+        $match: {
+          userId: user._id,
+          datetime: { $gte: range.start, $lt: range.end },
+        },
+      },
+      {
+        $group: {
+          _id: '$type',
+          total: { $sum: '$amount' },
+          count: { $sum: 1 },
+        },
+      },
+    ]).catch(() => []);
+
+    const income = (txAgg || []).find((r) => r?._id === 'income')?.total || 0;
+    const expense = (txAgg || []).find((r) => r?._id === 'expense')?.total || 0;
+    const txCount = (txAgg || []).reduce((s, r) => s + (Number(r?.count) || 0), 0);
+    const remaining = (Number(income) || 0) - (Number(expense) || 0);
+
+    const topExpenses = await getTopExpenseCategories({ userId: user._id, range, limit: 3 });
+
+    let budgetTotal = null;
+    let budgetRemaining = null;
+    if (monthLabelForBudget) {
+      budgetTotal = await getMonthBudgetTotal({ userId: user._id, monthLabel: monthLabelForBudget });
+      if (Number.isFinite(Number(budgetTotal))) budgetRemaining = (Number(budgetTotal) || 0) - (Number(expense) || 0);
+    }
+
+    return buildFinanceStatusFlexMessage({
+      label,
+      range,
+      income,
+      expense,
+      remaining,
+      txCount,
+      topExpenses,
+      budgetTotal,
+      budgetRemaining,
+    });
+  };
+
+  if (parsed.command === 'status_day') {
+    const when = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
+    const range = getBangkokDayRange(when);
+    const label = /เมื่อวาน/i.test(String(event?.message?.text || ''))
+      ? 'เมื่อวาน'
+      : 'วันนี้';
+    return sendReply(event.replyToken, await buildPeriodStatusReply({ range, label }));
   }
 
-  if (parsed.command === 'summary_month') {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth()+1, 0,23,59,59,999);
-    const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
-    const income = txs.filter(t=>t.type==='income').reduce((s,n)=>s+n.amount,0);
-    const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
-    const reply = `สรุปเดือนนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
-    return sendReply(event.replyToken, { type: 'text', text: reply });
+  if (parsed.command === 'status_month') {
+    const spec = parseMonthSpecifierFromText(parsed?.monthText || event?.message?.text || '');
+    let range = null;
+    let label = 'เดือนนี้';
+    let budgetMonthLabel = null;
+
+    if (spec?.kind === 'absolute') {
+      const d = new Date(`${spec.year}-${String(spec.monthIndex + 1).padStart(2, '0')}-01T12:00:00+07:00`);
+      range = getBangkokMonthRange(d);
+      label = `${MONTH_NAMES_TH[spec.monthIndex] || ''} ${spec.year + 543}`;
+      budgetMonthLabel = label;
+    } else {
+      const offset = spec?.kind === 'relative' ? (Number(spec.offset) || 0) : 0;
+      const now = new Date();
+      const bangkokMs = now.getTime() + 7 * 60 * 60 * 1000;
+      const bd = new Date(bangkokMs);
+      const year = bd.getUTCFullYear();
+      const month = bd.getUTCMonth() + offset;
+      const pivot = new Date(Date.UTC(year, month, 15, 12, 0, 0, 0) - 7 * 60 * 60 * 1000);
+      range = getBangkokMonthRange(pivot);
+      const b2 = new Date(pivot.getTime() + 7 * 60 * 60 * 1000);
+      const y2 = b2.getUTCFullYear();
+      const m2 = b2.getUTCMonth();
+      const ymLabel = `${MONTH_NAMES_TH[m2] || ''} ${y2 + 543}`;
+      label = offset === -1 ? `เดือนที่แล้ว (${ymLabel})` : offset === 1 ? `เดือนหน้า (${ymLabel})` : ymLabel;
+      budgetMonthLabel = ymLabel;
+    }
+
+    return sendReply(event.replyToken, await buildPeriodStatusReply({ range, label, monthLabelForBudget: budgetMonthLabel }));
   }
 
   if (parsed.command === 'export') {
@@ -968,12 +1482,25 @@ async function handleTextEvent(event) {
       if (!categoryId) {
         const cat = classifyCategoryFromNote(notesText, parsed.type);
         if (cat && cat.name) {
-          const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
+          // Do NOT auto-create categories from LINE messages.
+          // If the category doesn't exist, fall back to "อื่นๆ".
+          const doc = await Category.findOne({ userId: user._id, type: parsed.type, name: String(cat.name).trim() })
+            .select({ _id: 1 })
+            .lean();
           categoryId = doc?._id || null;
         }
       }
     } catch (e) {
       console.warn('LINE auto-categorize failed:', e?.message || e);
+    }
+
+    // 3) Fallback: always map to "อื่นๆ" instead of leaving category blank (uncategorized)
+    try {
+      if (!categoryId) {
+        categoryId = await ensureOtherCategoryId({ userId: user._id, type: parsed.type });
+      }
+    } catch (e) {
+      console.warn('LINE other-category fallback failed:', e?.message || e);
     }
     // save transaction
     const txWhen = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
@@ -1000,6 +1527,8 @@ async function handleTextEvent(event) {
     } catch {
       // ignore
     }
+    if (!categoryName) categoryName = 'อื่นๆ';
+    if (!categoryIcon) categoryIcon = 'other';
 
 		    const flexMessage = buildRecordedSuccessFlexMessage({
 		      txId: tx?._id,
@@ -1113,7 +1642,11 @@ async function handleImageEvent(event) {
       try {
         const cat = classifyCategoryFromNote(note, type);
         if (cat && cat.name) {
-          const doc = await ensureUserCategory({ userId: user._id, type, name: cat.name, icon: cat.icon });
+          // Do NOT auto-create categories from LINE messages.
+          // If the category doesn't exist, fall back to "อื่นๆ".
+          const doc = await Category.findOne({ userId: user._id, type, name: String(cat.name).trim() })
+            .select({ _id: 1 })
+            .lean();
           categoryId = doc?._id || null;
         }
       } catch (e) {
@@ -1123,12 +1656,21 @@ async function handleImageEvent(event) {
       try {
         if (!categoryId) {
           const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
-          const catIcon = 'money';
-          const doc = await ensureUserCategory({ userId: user._id, type, name: catName, icon: catIcon });
+          const doc = await Category.findOne({ userId: user._id, type, name: String(catName).trim() })
+            .select({ _id: 1 })
+            .lean();
           categoryId = doc?._id || null;
         }
       } catch (e) {
         console.warn('LINE slip AI category create failed:', e?.message || e);
+      }
+
+      try {
+        if (!categoryId) {
+          categoryId = await ensureOtherCategoryId({ userId: user._id, type });
+        }
+      } catch (e) {
+        console.warn('LINE slip AI other-category fallback failed:', e?.message || e);
       }
 
       const tx = new Transaction({
@@ -1155,6 +1697,8 @@ async function handleImageEvent(event) {
       } catch {
         // ignore
       }
+      if (!categoryName) categoryName = 'อื่นๆ';
+      if (!categoryIcon) categoryIcon = 'other';
 
 	      const flexMessage = buildRecordedSuccessFlexMessage({
 	        txId: tx?._id,
@@ -1259,11 +1803,21 @@ async function handleAudioEvent(event) {
       try {
         const cat = classifyCategoryFromNote(notesText, parsed.type);
         if (cat && cat.name) {
-          const doc = await ensureUserCategory({ userId: user._id, type: parsed.type, name: cat.name, icon: cat.icon });
+          const doc = await Category.findOne({ userId: user._id, type: parsed.type, name: String(cat.name).trim() })
+            .select({ _id: 1 })
+            .lean();
           categoryId = doc?._id || null;
         }
       } catch (e) {
         console.warn('VOICE auto-categorize failed:', e?.message || e);
+      }
+
+      try {
+        if (!categoryId) {
+          categoryId = await ensureOtherCategoryId({ userId: user._id, type: parsed.type });
+        }
+      } catch (e) {
+        console.warn('VOICE other-category fallback failed:', e?.message || e);
       }
 
       const txWhen = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
@@ -1299,6 +1853,8 @@ async function handleAudioEvent(event) {
       } catch {
         // ignore
       }
+      if (!categoryName) categoryName = 'อื่นๆ';
+      if (!categoryIcon) categoryIcon = 'other';
 
 		      const flexMessage = buildRecordedSuccessFlexMessage({
 		        txId: tx?._id,
@@ -1336,35 +1892,7 @@ async function handlePostbackEvent(event) {
     const action = (params.get('action') || '').trim().toLowerCase();
     const isQuickNote = action === 'quick_note' || rawData.trim().toLowerCase() === 'action=quick_note' || rawData.toLowerCase().includes('action=quick_note');
     if (isQuickNote) {
-      const flexMessage = {
-        type: 'flex',
-        altText: 'จดเลย',
-        contents: {
-          type: 'bubble',
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'md',
-            contents: [
-              { type: 'text', text: 'พิมพ์บอกน้องจิ๋วได้เลย เช่น', weight: 'bold', size: 'md' },
-              { type: 'text', text: '- ข้าวมันไก่ 50\n- เงินเดือน 20000', wrap: true, margin: 'sm' }
-            ]
-          },
-          footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [
-              {
-                type: 'button',
-                style: 'primary',
-                color: '#87bfe3',
-                action: { type: 'uri', label: 'จดเลย', uri: 'line://msg/text/' }
-              }
-            ]
-          }
-        }
-      };
-      return sendReply(event.replyToken, flexMessage);
+      return sendReply(event.replyToken, buildQuickNoteFlexMessage());
     }
   } catch (e) {
     console.warn('postback quick_note parse error', e, 'data=', data);
@@ -1407,24 +1935,91 @@ async function handlePostbackEvent(event) {
   }
 
   if (actionValue === 'summary' || actionValue === 'summary_today') {
-    const start = new Date(); start.setHours(0,0,0,0);
-    const end = new Date(); end.setHours(23,59,59,999);
-    const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
-    const income = txs.filter(t=>t.type==='income').reduce((s,n)=>s+n.amount,0);
-    const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
-    const reply = `สรุปวันนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
-    return sendReply(event.replyToken, { type: 'text', text: reply });
+    const range = getBangkokDayRange(new Date());
+    if (!range) return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ผมหาช่วงวันที่ไม่เจอ' });
+
+    const txAgg = await Transaction.aggregate([
+      { $match: { userId: user._id, datetime: { $gte: range.start, $lt: range.end } } },
+      { $group: { _id: '$type', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]).catch(() => []);
+
+    const income = (txAgg || []).find((r) => r?._id === 'income')?.total || 0;
+    const expense = (txAgg || []).find((r) => r?._id === 'expense')?.total || 0;
+    const txCount = (txAgg || []).reduce((s, r) => s + (Number(r?.count) || 0), 0);
+    const remaining = (Number(income) || 0) - (Number(expense) || 0);
+    const topExpenses = await getTopExpenseCategories({ userId: user._id, range, limit: 3 });
+
+    let aiSummary = '';
+    try {
+      const dateLabel = formatThaiDate(range.start) || 'วันนี้';
+      aiSummary = await summarizeFinanceDay({
+        language: 'th',
+        dateLabel,
+        income,
+        expense,
+        remaining,
+        txCount,
+        topExpenses,
+      });
+    } catch (e) {
+      console.warn('AI daily finance summary failed', e);
+      aiSummary = `AI ยังไม่พร้อม: ${buildAiUserErrorMessage(e)}`;
+    }
+
+    return sendReply(
+      event.replyToken,
+      buildFinanceStatusFlexMessage({
+        label: 'วันนี้',
+        range,
+        income,
+        expense,
+        remaining,
+        txCount,
+        topExpenses,
+        aiSummary,
+      })
+    );
   }
 
   if (actionValue === 'summary_month') {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth()+1, 0,23,59,59,999);
-    const txs = await Transaction.find({ userId: user._id, datetime: { $gte: start, $lte: end } });
-    const income = txs.filter(t=>t.type==='income').reduce((s,n)=>s+n.amount,0);
-    const expense = txs.filter(t=>t.type==='expense').reduce((s,n)=>s+n.amount,0);
-    const reply = `สรุปเดือนนี้\nรายรับ: ${income}\nรายจ่าย: ${expense}\nรายการ: ${txs.length}`;
-    return sendReply(event.replyToken, { type: 'text', text: reply });
+    const range = getBangkokMonthRange(now);
+    if (!range) return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ผมหาช่วงวันที่ไม่เจอ' });
+
+    // Bangkok month label for budget lookup
+    const b2 = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+    const y2 = b2.getUTCFullYear();
+    const m2 = b2.getUTCMonth();
+    const monthLabel = `${MONTH_NAMES_TH[m2] || ''} ${y2 + 543}`;
+
+    const txAgg = await Transaction.aggregate([
+      { $match: { userId: user._id, datetime: { $gte: range.start, $lt: range.end } } },
+      { $group: { _id: '$type', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]).catch(() => []);
+
+    const income = (txAgg || []).find((r) => r?._id === 'income')?.total || 0;
+    const expense = (txAgg || []).find((r) => r?._id === 'expense')?.total || 0;
+    const txCount = (txAgg || []).reduce((s, r) => s + (Number(r?.count) || 0), 0);
+    const remaining = (Number(income) || 0) - (Number(expense) || 0);
+    const topExpenses = await getTopExpenseCategories({ userId: user._id, range, limit: 3 });
+
+    const budgetTotal = await getMonthBudgetTotal({ userId: user._id, monthLabel });
+    const budgetRemaining = Number.isFinite(Number(budgetTotal)) ? (Number(budgetTotal) || 0) - (Number(expense) || 0) : null;
+
+    return sendReply(
+      event.replyToken,
+      buildFinanceStatusFlexMessage({
+        label: monthLabel,
+        range,
+        income,
+        expense,
+        remaining,
+        txCount,
+        topExpenses,
+        budgetTotal,
+        budgetRemaining,
+      })
+    );
   }
 
   if (actionValue === 'help') {
@@ -1485,19 +2080,7 @@ async function handlePostbackEvent(event) {
   }
 
   if (actionValue === 'announce' || actionValue === 'ประกาศ') {
-    const profileUrl = 'https://line.me/R/ti/p/@156twxxb';
-    const message = {
-      type: 'template',
-      altText: 'ดูโปรไฟล์ LINE',
-      template: {
-        type: 'buttons',
-        text: 'แตะปุ่มด้านล่างเพื่อเปิดหน้าโปรไฟล์/VOOM',
-        actions: [
-          { type: 'uri', label: 'ดูโปรไฟล์', uri: profileUrl }
-        ]
-      }
-    };
-    return sendReply(event.replyToken, message);
+    return sendReply(event.replyToken, buildAnnounceFlexMessage());
   }
 
   // unknown/unsupported postback: respond minimally for debugging
