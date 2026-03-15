@@ -24,6 +24,7 @@ const lineWebhookRouter = require('./routes/line');
 const debugRoutes = require('./routes/debug');
 const leaderboardRoutes = require('./routes/leaderboard');
 const reminderRoutes = require('./routes/reminders');
+const notificationSettingsRoutes = require('./routes/notificationSettings');
 const app = express();
 
 async function findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId } = {}) {
@@ -314,6 +315,7 @@ app.use('/api', notificationsRouter); // ใช้ /api/notifications
 app.use('/api/ocr', ocrRoutes); // OCR routes
 app.use('/api/ai', aiRoutes); // OpenAI routes (slip + transcription)
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/notification-settings', notificationSettingsRoutes);
 // Serve uploaded files (use absolute path so it works regardless of process cwd)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Dev debug endpoints
@@ -499,17 +501,6 @@ function buildDailyReminderFlexMessage({ timeHHMM } = {}) {
         paddingAll: '16px',
         spacing: 'sm',
         contents: [
-          {
-            type: 'button',
-            style: 'primary',
-            color: '#10B981',
-            action: { type: 'uri', label: 'จดเลย', uri: 'line://msg/text/' },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            action: { type: 'postback', label: 'ดูสรุปวันนี้', data: 'action=summary_today' },
-          },
           {
             type: 'button',
             style: 'link',
@@ -740,7 +731,11 @@ setInterval(async () => {
     if (userIds.length === 0 || catIds.length === 0) return;
 
     const [users, cats] = await Promise.all([
-      User.find({ _id: { $in: userIds }, lineMessagingUserId: { $exists: true, $ne: '' } })
+      User.find({
+        _id: { $in: userIds },
+        lineMessagingUserId: { $exists: true, $ne: '' },
+        lineBudgetAlertsEnabled: { $ne: false },
+      })
         .select({ _id: 1, lineMessagingUserId: 1, name: 1 })
         .lean()
         .catch(() => []),

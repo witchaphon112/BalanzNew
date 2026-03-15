@@ -8,6 +8,7 @@ const path = require('path');
 const { transcribeAudioFile } = require('../utils/transcribeAudio');
 const { mergeUsers } = require('../utils/mergeUsers');
 const { parseSlipImageBuffer } = require('../utils/openaiSlip');
+const { summarizeFinanceDay } = require('../utils/openaiFinanceSummary');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -303,6 +304,7 @@ function buildFinanceStatusFlexMessage({
   topExpenses,
   budgetTotal,
   budgetRemaining,
+  aiSummary,
 } = {}) {
   const safeLabel = String(label || '').trim();
   const pillText = safeLabel.length > 22 ? `${safeLabel.slice(0, 22)}…` : safeLabel;
@@ -389,15 +391,32 @@ function buildFinanceStatusFlexMessage({
         ]
       : [];
 
+  const aiSummaryText = String(aiSummary || '').trim();
+  const aiSection =
+    aiSummaryText
+      ? [
+          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'sm',
+            margin: 'lg',
+            contents: [
+              { type: 'text', text: 'สรุปโดย AI', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: aiSummaryText, size: 'sm', color: '#334155', wrap: true },
+            ],
+          },
+        ]
+      : [];
+
   return {
     type: 'flex',
-    altText: safeLabel ? `สถานะการเงิน (${safeLabel})` : 'สถานะการเงิน',
+    altText: safeLabel ? `สรุปการเงิน (${safeLabel})` : 'สรุปการเงิน',
     contents: {
       type: 'bubble',
       styles: {
         header: { backgroundColor: headerBg },
         body: { backgroundColor: '#FFFFFF' },
-        footer: { backgroundColor: '#FFFFFF' },
       },
       header: {
         type: 'box',
@@ -471,32 +490,108 @@ function buildFinanceStatusFlexMessage({
               },
             ],
           },
+          ...aiSection,
           ...topExpenseSection,
           ...budgetSection,
         ],
       },
-      footer: {
+    },
+  };
+}
+
+function buildQuickNoteFlexMessage() {
+  return {
+    type: 'flex',
+    altText: 'เพิ่มรายการ',
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: '#10B981' },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
         type: 'box',
         layout: 'vertical',
-        paddingAll: '14px',
+        paddingAll: '18px',
         spacing: 'sm',
         contents: [
+          { type: 'text', text: 'เพิ่มรายการ', weight: 'bold', size: 'xl', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: 'พิมพ์ข้อความ แล้วผมจะบันทึกให้', size: 'sm', color: '#CBD5E1', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
           {
-            type: 'button',
-            style: 'secondary',
-            action: { type: 'postback', label: 'สรุปวันนี้', data: 'action=summary_today' },
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'ตัวอย่าง (พิมพ์ได้เลย):', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: '• ข้าวมันไก่ 50\n• กาแฟ 65\n• เงินเดือน 20000\n• ค่าน้ำ 180', size: 'sm', color: '#334155', wrap: true },
+            ],
           },
           {
-            type: 'button',
-            style: 'secondary',
-            action: { type: 'postback', label: 'สรุปเดือนนี้', data: 'action=summary_month' },
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'ทิป', size: 'sm', weight: 'bold', color: '#0F172A' },
+              { type: 'text', text: '• พิมพ์หลายรายการได้ (ขึ้นบรรทัดใหม่)\n• ใส่จำนวนเงินท้ายประโยคจะเดาได้แม่นขึ้น', size: 'sm', color: '#475569', wrap: true },
+            ],
           },
+        ],
+      },
+    },
+  };
+}
+
+function buildAnnounceFlexMessage() {
+  // Deep link opens the LINE profile page directly in the app (better UX than https)
+  const profileUrl = 'line://ti/p/@156twxxb';
+  const profileUrlHttp = 'https://line.me/R/ti/p/@156twxxb';
+  return {
+    type: 'flex',
+    altText: 'ประกาศ',
+    contents: {
+      type: 'bubble',
+      action: { type: 'uri', uri: profileUrl },
+      styles: {
+        header: { backgroundColor: '#10B981' },
+        body: { backgroundColor: '#FFFFFF' },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'xs',
+        contents: [
+          { type: 'text', text: 'ประกาศ', weight: 'bold', size: 'xl', color: '#052E2B', wrap: true },
+          { type: 'text', text: 'แตะการ์ดนี้เพื่อเปิดหน้าโปรไฟล์/VOOM', size: 'sm', color: '#064E3B', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '18px',
+        spacing: 'md',
+        contents: [
           {
-            type: 'button',
-            style: 'primary',
-            color: '#10B981',
-            action: { type: 'postback', label: 'เปิดในเว็บ', data: 'action=web_login' },
+            type: 'box',
+            layout: 'vertical',
+            paddingAll: '12px',
+            cornerRadius: '14px',
+            backgroundColor: '#ECFDF5',
+            spacing: 'xs',
+            contents: [
+              { type: 'text', text: 'เปิดลิงก์:', size: 'sm', weight: 'bold', color: '#064E3B' },
+              { type: 'text', text: profileUrlHttp, size: 'xs', color: '#0F766E', wrap: true },
+            ],
           },
+          { type: 'text', text: 'ทิป: แตะที่การ์ดเพื่อเปิด “หน้าโปรไฟล์” ทันที (ในแอป LINE)', size: 'xs', color: '#64748B', wrap: true },
         ],
       },
     },
@@ -1158,70 +1253,16 @@ async function handleTextEvent(event) {
     // ignore logging errors
   }
 
-  // Quick UI trigger: when user types a phrase starting with 'จดรายการ' or 'จดรายการบันทึก',
-  // reply with a Flex bubble + button. Match more flexibly to allow extra words after the phrase.
-  const isFlexTrigger = /^\s*จด(รายการ(บันทึก)?)?(\b|\s|$)/i.test(text) || /^\s*จด/i.test(text);
-  console.log('LINE flex trigger test:', isFlexTrigger);
-  if (isFlexTrigger) {
-    const flexMessage = {
-      type: 'flex',
-      altText: 'จดเลย',
-      contents: {
-        type: 'bubble',
-        body: {
-          type: 'box',
-          layout: 'vertical',
-          spacing: 'md',
-          contents: [
-            { type: 'text', text: 'พิมพ์บอกน้องจิ๋วได้เลย เช่น', weight: 'bold', size: 'md' },
-            { type: 'text', text: '- ข้าวมันไก่ 50\n- เงินเดือน 20000', wrap: true, margin: 'sm' }
-          ]
-        },
-        footer: {
-          type: 'box',
-          layout: 'vertical',
-          contents: [
-            {
-              type: 'button',
-              style: 'primary',
-              color: '#87bfe3',
-              action: { type: 'uri', label: 'จดเลย', uri: 'line://msg/text/' }
-            }
-          ]
-        }
-      }
-    };
-    console.log('LINE flex trigger matched, sending flex message.');
-    return sendReply(event.replyToken, flexMessage);
-  }
-
-  // If user taps the 'จดเลย' button (sends message 'จดเลย'), prompt for example input
-  const isJodLey = /^\s*จดเลย\s*$/i.test(text);
-  console.log('LINE "จดเลย" trigger:', isJodLey);
-  if (isJodLey) {
-    const prompt = 'พิมพ์บอกป้่าได้เลย เช่น\n- ข้าวมันไก่ 50\n- เงินเดือน 20000\nผมจะจดและจัดประเภทให้อัตโนมัติ';
-    return sendReply(event.replyToken, { type: 'text', text: prompt });
+  // Quick-note UI: only when user explicitly triggers the command (e.g., "จด", "จดรายการ")
+  if (parsed && parsed.command === 'quick_note') {
+    return sendReply(event.replyToken, buildQuickNoteFlexMessage());
   }
 
   // If user types 'ประกาศ', send a quick-reply URI that opens the LINE profile when tapped.
   // NOTE: the server cannot force the client to open a link automatically — user must tap the quick-reply button.
   const isAnnounce = /^\s*ประกาศ\s*$/i.test(text);
   if (isAnnounce) {
-    // Send a Buttons template which shows a clear tappable button to open the profile/VOOM URL.
-    // Template buttons are more visible than quickReply and reliably surface a URI action.
-    const profileUrl = 'https://line.me/R/ti/p/@156twxxb';
-    const message = {
-      type: 'template',
-      altText: 'ดูโปรไฟล์ LINE',
-      template: {
-        type: 'buttons',
-        text: 'แตะปุ่มด้านล่างเพื่อเปิดหน้าโปรไฟล์/VOOM',
-        actions: [
-          { type: 'uri', label: 'ดูโปรไฟล์', uri: profileUrl }
-        ]
-      }
-    };
-    return sendReply(event.replyToken, message);
+    return sendReply(event.replyToken, buildAnnounceFlexMessage());
   }
 
   if (!lineMessagingUserId) {
@@ -1851,35 +1892,7 @@ async function handlePostbackEvent(event) {
     const action = (params.get('action') || '').trim().toLowerCase();
     const isQuickNote = action === 'quick_note' || rawData.trim().toLowerCase() === 'action=quick_note' || rawData.toLowerCase().includes('action=quick_note');
     if (isQuickNote) {
-      const flexMessage = {
-        type: 'flex',
-        altText: 'จดเลย',
-        contents: {
-          type: 'bubble',
-          body: {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'md',
-            contents: [
-              { type: 'text', text: 'พิมพ์บอกน้องจิ๋วได้เลย เช่น', weight: 'bold', size: 'md' },
-              { type: 'text', text: '- ข้าวมันไก่ 50\n- เงินเดือน 20000', wrap: true, margin: 'sm' }
-            ]
-          },
-          footer: {
-            type: 'box',
-            layout: 'vertical',
-            contents: [
-              {
-                type: 'button',
-                style: 'primary',
-                color: '#87bfe3',
-                action: { type: 'uri', label: 'จดเลย', uri: 'line://msg/text/' }
-              }
-            ]
-          }
-        }
-      };
-      return sendReply(event.replyToken, flexMessage);
+      return sendReply(event.replyToken, buildQuickNoteFlexMessage());
     }
   } catch (e) {
     console.warn('postback quick_note parse error', e, 'data=', data);
@@ -1936,6 +1949,23 @@ async function handlePostbackEvent(event) {
     const remaining = (Number(income) || 0) - (Number(expense) || 0);
     const topExpenses = await getTopExpenseCategories({ userId: user._id, range, limit: 3 });
 
+    let aiSummary = '';
+    try {
+      const dateLabel = formatThaiDate(range.start) || 'วันนี้';
+      aiSummary = await summarizeFinanceDay({
+        language: 'th',
+        dateLabel,
+        income,
+        expense,
+        remaining,
+        txCount,
+        topExpenses,
+      });
+    } catch (e) {
+      console.warn('AI daily finance summary failed', e);
+      aiSummary = `AI ยังไม่พร้อม: ${buildAiUserErrorMessage(e)}`;
+    }
+
     return sendReply(
       event.replyToken,
       buildFinanceStatusFlexMessage({
@@ -1946,6 +1976,7 @@ async function handlePostbackEvent(event) {
         remaining,
         txCount,
         topExpenses,
+        aiSummary,
       })
     );
   }
@@ -2049,19 +2080,7 @@ async function handlePostbackEvent(event) {
   }
 
   if (actionValue === 'announce' || actionValue === 'ประกาศ') {
-    const profileUrl = 'https://line.me/R/ti/p/@156twxxb';
-    const message = {
-      type: 'template',
-      altText: 'ดูโปรไฟล์ LINE',
-      template: {
-        type: 'buttons',
-        text: 'แตะปุ่มด้านล่างเพื่อเปิดหน้าโปรไฟล์/VOOM',
-        actions: [
-          { type: 'uri', label: 'ดูโปรไฟล์', uri: profileUrl }
-        ]
-      }
-    };
-    return sendReply(event.replyToken, message);
+    return sendReply(event.replyToken, buildAnnounceFlexMessage());
   }
 
   // unknown/unsupported postback: respond minimally for debugging

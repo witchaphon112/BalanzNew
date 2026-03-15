@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema({
   // LINE Messaging API user id (from webhook event.source.userId)
   lineMessagingUserId: { type: String },
   timezone: { type: String, default: 'Asia/Bangkok' },
+  // LINE notifications
+  lineBudgetAlertsEnabled: { type: Boolean, default: true },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
 }, {

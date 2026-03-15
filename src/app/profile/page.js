@@ -52,16 +52,19 @@ const I18N = {
     updated_at: 'อัปเดตล่าสุด {time}',
     dark_mode: 'โหมดกลางคืน',
     reminder: 'เตือนจดประจำวัน',
+    budget_alerts: 'แจ้งเตือนเกินงบ',
     language: 'ภาษา',
     categories: 'ตั้งค่าหมวด',
     clear_all: 'ลบรายการทั้งหมด',
     reminder_on: 'เปิด {time}',
+    budget_alerts_on: 'เปิด',
     lang_th: 'ไทย',
     lang_en: 'English',
     logout: 'ออกจากระบบ',
     footer: 'เวอร์ชัน 1.0.0 - สร้างด้วย ❤️ โดยทีม Balanz',
 
     modal_reminder: 'เตือนจดประจำวัน',
+    modal_budget_alerts: 'แจ้งเตือนเกินงบ',
     modal_autocat: 'จัดหมวดด้วยความจำ',
     modal_language: 'ภาษา',
     modal_clear_all: 'ลบรายการทั้งหมด',
@@ -75,6 +78,9 @@ const I18N = {
 	    reminder_custom_time: 'กำหนดเอง',
 	    cancel: 'ยกเลิก',
 	    save: 'บันทึก',
+
+    enable_budget_alerts: 'เปิดแจ้งเตือนเกินงบ',
+    budget_alerts_desc: 'ส่งแจ้งเตือนเข้า LINE เมื่อใช้จ่ายเกินงบที่ตั้งไว้ (เฉพาะหมวดรายจ่าย)',
 
     enable_autocat: 'เปิดจัดหมวดอัตโนมัติจากข้อความ/จำนวน',
     autocat_desc: 'เมื่อเปิด ระบบจะพยายามเดาหมวดหมู่จากหมายเหตุและจำนวนเงิน',
@@ -121,6 +127,10 @@ const I18N = {
 	    reminder_save_failed: 'บันทึกการเตือนไม่สำเร็จ',
 	    reminder_need_link_line: 'ยังไม่ได้เชื่อม LINE (Messaging) — จะส่งเตือนเข้าไลน์ไม่ได้',
 	    reminder_saved_but_need_link_line: 'บันทึกแล้ว แต่ยังไม่ได้เชื่อม LINE — ยังส่งเตือนไม่ได้',
+      budget_alerts_saved: 'บันทึกการแจ้งเตือนเกินงบเรียบร้อย',
+      budget_alerts_save_failed: 'บันทึกการแจ้งเตือนเกินงบไม่สำเร็จ',
+      budget_alerts_need_link_line: 'ยังไม่ได้เชื่อม LINE (Messaging) — จะส่งแจ้งเตือนไม่ได้',
+      budget_alerts_saved_but_need_link_line: 'บันทึกแล้ว แต่ยังไม่ได้เชื่อม LINE — ยังส่งแจ้งเตือนไม่ได้',
 	    autocat_saved: 'บันทึกการจัดหมวดเรียบร้อย',
 	    language_saved: 'บันทึกภาษาเรียบร้อย',
 	    delete_failed: 'ลบรายการไม่สำเร็จ',
@@ -141,16 +151,19 @@ const I18N = {
     updated_at: 'Updated {time}',
     dark_mode: 'Dark mode',
     reminder: 'Daily reminder',
+    budget_alerts: 'Over-budget alerts',
     language: 'Language',
     categories: 'Categories',
     clear_all: 'Delete all transactions',
     reminder_on: 'On {time}',
+    budget_alerts_on: 'On',
     lang_th: 'Thai',
     lang_en: 'English',
     logout: 'Log out',
     footer: 'Version 1.0.0 — Made with ❤️ by Balanz',
 
     modal_reminder: 'Daily reminder',
+    modal_budget_alerts: 'Over-budget alerts',
     modal_autocat: 'Auto categorize',
     modal_language: 'Language',
     modal_clear_all: 'Delete all',
@@ -164,6 +177,9 @@ const I18N = {
 	    reminder_custom_time: 'Custom',
 	    cancel: 'Cancel',
 	    save: 'Save',
+
+    enable_budget_alerts: 'Enable over-budget alerts',
+    budget_alerts_desc: 'Send a LINE notification when you go over your expense budgets.',
 
     enable_autocat: 'Enable auto-categorization from text/amount',
     autocat_desc: 'When enabled, we will try to guess the category from notes and amount.',
@@ -210,6 +226,10 @@ const I18N = {
 	    reminder_save_failed: 'Failed to save reminder',
 	    reminder_need_link_line: 'LINE not linked — reminders cannot be sent to LINE',
 	    reminder_saved_but_need_link_line: 'Saved, but LINE is not linked yet',
+      budget_alerts_saved: 'Over-budget alerts saved',
+      budget_alerts_save_failed: 'Failed to save over-budget alerts',
+      budget_alerts_need_link_line: 'LINE not linked — alerts cannot be sent to LINE',
+      budget_alerts_saved_but_need_link_line: 'Saved, but LINE is not linked yet',
 	    autocat_saved: 'Auto-categorize saved',
 	    language_saved: 'Language saved',
 	    delete_failed: 'Delete failed',
@@ -291,24 +311,26 @@ export default function Profile() {
   const [rankingLoading, setRankingLoading] = useState(false);
   const [rankingError, setRankingError] = useState('');
 
-	  // Local feature settings (stored in localStorage)
-	  const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'autocat' | 'language' | 'clearAll' | 'categories'
-		  const [reminderEnabled, setReminderEnabled] = useState(false);
-		  const [reminderTime, setReminderTime] = useState('08:00');
-		  const [reminderCanPush, setReminderCanPush] = useState(true);
-		  const [reminderTimeMenuOpen, setReminderTimeMenuOpen] = useState(false);
-		  const [autoCategorize, setAutoCategorize] = useState(false);
-		  const [language, setLanguage] = useState('th'); // 'th' | 'en'
-		  const [deleteConfirmText, setDeleteConfirmText] = useState('');
-		  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
-		  const reminderTimeOptionsRef = useRef(null);
-		  if (!reminderTimeOptionsRef.current) reminderTimeOptionsRef.current = buildTimeOptions(15);
-		  const reminderTimePresetsRef = useRef(null);
-		  if (!reminderTimePresetsRef.current) reminderTimePresetsRef.current = ['07:00', '08:00', '09:00', '12:00', '18:00', '20:00', '21:00', '22:00'];
-		  const reminderTimeMenuRootRef = useRef(null);
-		  const reminderTimeMenuPanelRef = useRef(null);
-		  const [reminderTimeMenuStyle, setReminderTimeMenuStyle] = useState(() => ({ left: 12, top: 12, width: 280, transform: 'translateY(0)' }));
-		  const [reminderTimeMenuMaxH, setReminderTimeMenuMaxH] = useState(320);
+  // Local feature settings (stored in localStorage)
+  const [activeModal, setActiveModal] = useState(null); // 'reminder' | 'budgetAlerts' | 'autocat' | 'language' | 'clearAll' | 'categories'
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState('08:00');
+  const [reminderCanPush, setReminderCanPush] = useState(true);
+  const [reminderTimeMenuOpen, setReminderTimeMenuOpen] = useState(false);
+  const [budgetAlertEnabled, setBudgetAlertEnabled] = useState(true);
+  const [budgetAlertCanPush, setBudgetAlertCanPush] = useState(true);
+  const [autoCategorize, setAutoCategorize] = useState(false);
+  const [language, setLanguage] = useState('th'); // 'th' | 'en'
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
+  const reminderTimeOptionsRef = useRef(null);
+  if (!reminderTimeOptionsRef.current) reminderTimeOptionsRef.current = buildTimeOptions(15);
+  const reminderTimePresetsRef = useRef(null);
+  if (!reminderTimePresetsRef.current) reminderTimePresetsRef.current = ['07:00', '08:00', '09:00', '12:00', '18:00', '20:00', '21:00', '22:00'];
+  const reminderTimeMenuRootRef = useRef(null);
+  const reminderTimeMenuPanelRef = useRef(null);
+  const [reminderTimeMenuStyle, setReminderTimeMenuStyle] = useState(() => ({ left: 12, top: 12, width: 280, transform: 'translateY(0)' }));
+  const [reminderTimeMenuMaxH, setReminderTimeMenuMaxH] = useState(320);
 
 		  const recomputeReminderTimeMenu = useCallback(() => {
 		    if (typeof window === 'undefined') return;
@@ -379,10 +401,12 @@ export default function Profile() {
     try {
       const rEn = localStorage.getItem('reminderEnabled');
       const rTime = localStorage.getItem('reminderTime');
+      const bEn = localStorage.getItem('budgetAlertEnabled');
       const aCat = localStorage.getItem('autoCategorize');
       const lang = localStorage.getItem('balanz_lang');
       if (rEn !== null) setReminderEnabled(JSON.parse(rEn));
       if (rTime) setReminderTime(rTime);
+      if (bEn !== null) setBudgetAlertEnabled(JSON.parse(bEn));
       if (aCat !== null) setAutoCategorize(JSON.parse(aCat));
       if (lang === 'en' || lang === 'th') setLanguage(lang);
     } catch (e) {}
@@ -406,6 +430,35 @@ export default function Profile() {
         if (typeof data?.enabled === 'boolean') setReminderEnabled(Boolean(data.enabled));
         if (typeof data?.time === 'string' && data.time) setReminderTime(String(data.time));
         if (typeof data?.canPush === 'boolean') setReminderCanPush(Boolean(data.canPush));
+      } catch {
+        // ignore: fall back to localStorage
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const run = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch(`${API_BASE}/api/notification-settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (cancelled) return;
+        if (typeof data?.budgetOverLineEnabled === 'boolean') setBudgetAlertEnabled(Boolean(data.budgetOverLineEnabled));
+        if (typeof data?.canPush === 'boolean') setBudgetAlertCanPush(Boolean(data.canPush));
       } catch {
         // ignore: fall back to localStorage
       }
@@ -553,6 +606,38 @@ export default function Profile() {
       closeModal();
     } catch (e) {
       setError(e?.message ? String(e.message) : t('reminder_save_failed'));
+    }
+  };
+
+  const saveBudgetAlerts = async () => {
+    setError('');
+    try {
+      localStorage.setItem('budgetAlertEnabled', JSON.stringify(budgetAlertEnabled));
+    } catch {}
+
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const res = await fetch(`${API_BASE}/api/notification-settings`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ budgetOverLineEnabled: budgetAlertEnabled }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.message || t('budget_alerts_save_failed'));
+        if (typeof data?.canPush === 'boolean') setBudgetAlertCanPush(Boolean(data.canPush));
+        if (budgetAlertEnabled && data?.canPush === false) setSuccess(t('budget_alerts_saved_but_need_link_line'));
+        else setSuccess(t('budget_alerts_saved'));
+      } else {
+        setSuccess(t('budget_alerts_saved'));
+      }
+      setTimeout(() => setSuccess(''), 3000);
+      closeModal();
+    } catch (e) {
+      setError(e?.message ? String(e.message) : t('budget_alerts_save_failed'));
     }
   };
 
@@ -1051,6 +1136,7 @@ export default function Profile() {
 
               {[
                 { key: 'reminder', label: t('reminder'), icon: BellRing, right: reminderEnabled ? t('reminder_on', { time: reminderTime }) : '', action: () => openModal('reminder') },
+                { key: 'budgetAlerts', label: t('budget_alerts'), icon: BellRing, right: budgetAlertEnabled ? t('budget_alerts_on') : '', action: () => openModal('budgetAlerts') },
                 { key: 'language', label: t('language'), icon: Languages, right: language === 'en' ? t('lang_en') : t('lang_th'), action: () => openModal('language') },
                 { key: 'categories', label: t('categories'), icon: LayoutGrid, right: '', action: () => router.push('/budget') },
                 { key: 'clearAll', label: t('clear_all'), icon: Trash2, right: '', action: () => openModal('clearAll') },
@@ -1105,6 +1191,8 @@ export default function Profile() {
               <h3 className="text-lg font-extrabold">
                 {activeModal === 'reminder'
                   ? t('modal_reminder')
+                  : activeModal === 'budgetAlerts'
+                    ? t('modal_budget_alerts')
                   : activeModal === 'autocat'
                     ? t('modal_autocat')
                     : activeModal === 'language'
@@ -1317,6 +1405,64 @@ export default function Profile() {
 			                  </div>
 		                </div>
 		              )}
+
+              {activeModal === 'budgetAlerts' && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-sm font-extrabold text-[color:var(--app-text)]">{t('enable_budget_alerts')}</div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">
+                          {t('budget_alerts_desc')}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setBudgetAlertEnabled((v) => !v)}
+                        className={[
+                          'relative inline-flex h-8 w-14 items-center rounded-full transition ring-1',
+                          budgetAlertEnabled
+                            ? 'bg-emerald-500 ring-emerald-400/30'
+                            : 'bg-white/10 ring-white/10',
+                        ].join(' ')}
+                        role="switch"
+                        aria-checked={budgetAlertEnabled}
+                        aria-label={t('enable_budget_alerts')}
+                      >
+                        <span
+                          className={[
+                            'inline-block h-6 w-6 transform rounded-full bg-white shadow transition',
+                            budgetAlertEnabled ? 'translate-x-7' : 'translate-x-1',
+                          ].join(' ')}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {budgetAlertEnabled && !budgetAlertCanPush ? (
+                    <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+                      {t('budget_alerts_need_link_line')}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={closeModal}
+                      className="flex-1 h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm font-extrabold text-[color:var(--app-text)] hover:bg-white/10"
+                    >
+                      {t('cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveBudgetAlerts}
+                      className="flex-1 h-11 rounded-2xl bg-emerald-500 px-4 text-sm font-extrabold text-slate-950 hover:brightness-95 shadow-sm shadow-emerald-500/15"
+                    >
+                      {t('save')}
+                    </button>
+                  </div>
+                </div>
+              )}
 
 	              {activeModal === 'autocat' && (
 	                <div className="space-y-3">
