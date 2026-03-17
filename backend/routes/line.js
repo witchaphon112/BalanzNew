@@ -122,6 +122,24 @@ async function findUserByMessagingIdOrAlias(lineMessagingUserId) {
   return User.findById(alias.userId).catch(() => null);
 }
 
+function looksLikePlaceholderUser(u) {
+  const email = String(u?.email || '').trim();
+  const pw = String(u?.password || '').trim();
+  const placeholderEmail = email.endsWith('@local') || email.endsWith('@line.local') || /^line_msg_/i.test(email) || /^line_/i.test(email);
+  const noPw = !pw;
+  return placeholderEmail && noPw;
+}
+
+function isVeryRecent(u, ms) {
+  try {
+    const t = new Date(u?.createdAt || 0).getTime();
+    if (!Number.isFinite(t) || t <= 0) return false;
+    return (Date.now() - t) <= Number(ms || 0);
+  } catch {
+    return false;
+  }
+}
+
 async function ensureMessagingAlias({ aliasId, userId, source } = {}) {
   const a = String(aliasId || '').trim();
   const u = String(userId || '').trim();
@@ -1592,7 +1610,6 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
         // If we have a profile hint, try to attach this messaging id as an alias of an existing user
         // (prevents duplicates when LIFF and bot return different `userId` values).
         const hintName = String(profile?.displayName || '').trim();
-        const hintPic = String(profile?.pictureUrl || '').trim();
         if (hintName) {
           const since = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
           const candidates = await User.find({
@@ -1608,16 +1625,18 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
               Budget.countDocuments({ userId: u._id }).catch(() => 0),
             ]);
             const score = (Number(t) || 0) + (Number(c) || 0) + (Number(b) || 0);
-            const pic = String(u?.profilePic || '').trim();
-            const picMatches = hintPic && pic ? (pic === hintPic) : true; // if either missing, don't block
-            return { u, score, picMatches };
+            return { u, score };
           }));
 
-          const withData = scored.filter((s) => s.score > 0 && s.picMatches);
-          const pick =
-            withData.length === 1
-              ? withData[0].u
-              : (scored.filter((s) => s.picMatches).length === 1 ? scored.filter((s) => s.picMatches)[0].u : null);
+          // Prefer exactly one candidate that already has user data.
+          const withData = scored.filter((s) => s.score > 0);
+          let pick = withData.length === 1 ? withData[0].u : null;
+
+          // If no data exists yet, only pick when the choice is unambiguous AND very recent placeholder.
+          if (!pick && scored.length === 1) {
+            const only = scored[0].u;
+            if (looksLikePlaceholderUser(only) && isVeryRecent(only, 10 * 60 * 1000)) pick = only;
+          }
 
           if (pick) {
             await ensureMessagingAlias({ aliasId: String(lineMessagingUserId), userId: pick._id, source: 'heuristic' }).catch(() => {});
@@ -2827,8 +2846,12 @@ router.get('/open-dashboard', async (req, res) => {
       if (withData.length === 1) {
         user = withData[0].u;
       } else if (!user) {
-        // If nobody has data yet, only pick when the choice is unambiguous (exactly 1 candidate).
-        if (scored.length === 1) user = scored[0].u;
+        // If nobody has data yet, only pick when the choice is unambiguous (exactly 1 candidate),
+        // and it looks like a fresh placeholder.
+        if (scored.length === 1) {
+          const only = scored[0].u;
+          if (looksLikePlaceholderUser(only) && isVeryRecent(only, 10 * 60 * 1000)) user = only;
+        }
       }
     }
 
