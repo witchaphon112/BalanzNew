@@ -1607,14 +1607,12 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
     // ignore
   }
 
-  // Auto-unify: if the web OAuth user was created first (lineUserId exists) and the bot user
-  // was created shortly after, unify them automatically when it's unambiguous.
+  // Auto-unify: if a web OAuth user was created first (lineUserId exists) and the bot user
+  // was created shortly after (lineMessagingUserId exists), try to merge the "empty" OAuth users
+  // into the messaging user.
   //
-  // We can’t deterministically map lineUserId <-> lineMessagingUserId, so only do this when:
-  // - exact same display name
-  // - exactly 1 OAuth candidate within a short time window
-  // - OAuth candidate has no data (no tx/categories/budgets)
-  // This keeps the system “one user record” for most common flows without requiring the link code.
+  // We can’t deterministically map lineUserId <-> lineMessagingUserId, so we only merge candidates
+  // that look like fresh LINE-login-only accounts and have no user data yet.
   try {
     const messagingName = String(user?.name || '').trim();
     const hasLineUserIdAlready = Boolean(String(user?.lineUserId || '').trim());
@@ -1624,12 +1622,14 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
         name: messagingName,
         lineUserId: { $exists: true, $ne: '' },
         lineMessagingUserId: { $exists: false },
+        password: { $in: ['', null] },
         email: { $regex: /@line\.local$/i },
         createdAt: { $gte: since },
-      }).sort({ createdAt: -1 }).limit(2);
+      }).sort({ createdAt: -1 }).limit(10);
 
-      if (candidates.length === 1) {
-        const oauthUser = candidates[0];
+      for (const oauthUser of candidates) {
+        if (!oauthUser?._id || String(oauthUser._id) === String(user?._id)) continue;
+
         const [txCount, catCount, budCount] = await Promise.all([
           Transaction.countDocuments({ userId: oauthUser._id }).catch(() => 0),
           Category.countDocuments({ userId: oauthUser._id }).catch(() => 0),
@@ -1637,7 +1637,7 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
         ]);
         const hasAnyData = (Number(txCount) + Number(catCount) + Number(budCount)) > 0;
 
-        // Only merge if OAuth user is empty to avoid accidental merges.
+        // Only merge if the OAuth user is empty to avoid accidental merges.
         if (!hasAnyData) {
           await mergeUsers({ fromUserId: oauthUser._id, toUserId: user._id, deleteSource: true });
           user = await User.findById(user._id) || user;
