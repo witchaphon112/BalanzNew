@@ -28,6 +28,15 @@ const reminderRoutes = require('./routes/reminders');
 const notificationSettingsRoutes = require('./routes/notificationSettings');
 const app = express();
 
+function normalizeBaseUrl(raw, fallback) {
+  const s = String(raw || '').trim();
+  const base = s || String(fallback || '').trim();
+  return base.replace(/\/+$/, '');
+}
+
+const PORT = Number(process.env.PORT || 5050);
+const BACKEND_URL = normalizeBaseUrl(process.env.BACKEND_URL, `http://localhost:${PORT}`);
+
 // Basic health endpoints (useful for Render uptime checks / quick verification)
 app.get('/', (req, res) => {
   res.status(200).json({
@@ -195,12 +204,21 @@ async function autoUnifyMessagingUserOnLineLogin({ oauthUser, lineId, displayNam
 }
 
 // LINE Login configuration
-passport.use(new LineStrategy({
-  channelID: '2008748910',
-  channelSecret: '36ca849ef6db52fdf5126b41a03c6ef4',
-  callbackURL: 'https://balanznew.onrender.com/callback',
-  scope: ['profile', 'openid', 'email']
-}, async (accessToken, refreshToken, params, profile, done) => {
+const LINE_LOGIN_CHANNEL_ID =
+  String(process.env.LINE_LOGIN_CHANNEL_ID || process.env.LINE_CHANNEL_ID || '').trim();
+const LINE_LOGIN_CHANNEL_SECRET =
+  String(process.env.LINE_LOGIN_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || '').trim();
+const LINE_CALLBACK_URL = String(process.env.LINE_CALLBACK_URL || `${BACKEND_URL}/callback`).trim();
+
+if (!LINE_LOGIN_CHANNEL_ID || !LINE_LOGIN_CHANNEL_SECRET) {
+  console.warn('[line-login] Missing LINE login config. Set LINE_LOGIN_CHANNEL_ID and LINE_LOGIN_CHANNEL_SECRET.');
+} else {
+  passport.use(new LineStrategy({
+    channelID: LINE_LOGIN_CHANNEL_ID,
+    channelSecret: LINE_LOGIN_CHANNEL_SECRET,
+    callbackURL: LINE_CALLBACK_URL,
+    scope: ['profile', 'openid', 'email'],
+  }, async (accessToken, refreshToken, params, profile, done) => {
   try {
     // LINE profile: profile.id, profile.displayName, profile.emails
     const lineId = profile.id;
@@ -304,7 +322,8 @@ passport.use(new LineStrategy({
   } catch (err) {
     return done(err);
   }
-}));
+  }));
+}
 
 passport.serializeUser((user, done) => {
   done(null, user);
@@ -313,7 +332,7 @@ passport.deserializeUser((obj, done) => {
   done(null, obj);
 });
 // Middleware - Enhanced CORS configuration
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const FRONTEND_URL = normalizeBaseUrl(process.env.FRONTEND_URL, 'http://localhost:3000');
 const corsOrigins = (() => {
   const extra = String(process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
   // Always allow local dev defaults.
@@ -331,23 +350,36 @@ app.use(cors({
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 // Session and Passport middleware
+// Render/Vercel run behind proxies; enable secure cookies when HTTPS is used.
+app.set('trust proxy', 1);
 app.use(session({
-  secret: 'your-session-secret',
+  secret: String(process.env.SESSION_SECRET || process.env.JWT_SECRET || 'dev-session-secret'),
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false } // Set to true if using HTTPS
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  },
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 
 // LINE Login routes
-app.get('/auth/line', passport.authenticate('line'));
+app.get('/auth/line', (req, res, next) => {
+  if (!LINE_LOGIN_CHANNEL_ID || !LINE_LOGIN_CHANNEL_SECRET) {
+    return res.status(500).json({ error: 'LINE Login not configured (missing LINE_LOGIN_CHANNEL_ID/SECRET)' });
+  }
+  return passport.authenticate('line')(req, res, next);
+});
 // If LINE auth fails, Passport redirects to `/login`. This backend doesn't implement a login page,
 // so forward users to the frontend with an error flag instead of showing "Cannot GET /login".
 app.get('/login', (req, res) => {
   return res.redirect(`${FRONTEND_URL}/?error=line_login_failed`);
 });
 app.get('/callback', (req, res, next) => {
+  if (!LINE_LOGIN_CHANNEL_ID || !LINE_LOGIN_CHANNEL_SECRET) {
+    return res.redirect(`${FRONTEND_URL}/?error=line_login_failed&reason=${encodeURIComponent('LINE Login not configured')}`);
+  }
   return passport.authenticate('line', { session: true }, (err, user, info) => {
     if (err || !user) {
       const reason =
@@ -368,9 +400,10 @@ app.get('/callback', (req, res, next) => {
   // Successful authentication
   // Generate JWT token for the user
   const user = req.user;
+  const jwtSecret = String(process.env.JWT_SECRET || 'dev-jwt-secret');
   const token = jwt.sign(
     { userId: user._id, role: user.role },
-    process.env.JWT_SECRET,
+    jwtSecret,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
   // Redirect to frontend with token and profilePic as query params
@@ -956,5 +989,4 @@ setInterval(async () => {
 }, 20 * 1000);
 
 // Start server
-const PORT = process.env.PORT || 5050;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

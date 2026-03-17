@@ -11,8 +11,8 @@ const { parseSlipImageBuffer } = require('../utils/openaiSlip');
 const { summarizeFinanceDay } = require('../utils/openaiFinanceSummary');
 const { suggestCategoryIdFromNote } = require('../utils/openaiCategorySuggest');
 
-const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
-let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
+const CHANNEL_SECRET = String(process.env.LINE_CHANNEL_SECRET || '').trim();
+let CHANNEL_TOKEN = String(process.env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const LINK_TTL_MS = 10 * 60 * 1000;
 
