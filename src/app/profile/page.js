@@ -61,7 +61,6 @@ const I18N = {
     lang_th: 'ไทย',
     lang_en: 'English',
     logout: 'ออกจากระบบ',
-    footer: 'เวอร์ชัน 1.0.0 - สร้างด้วย ❤️ โดยทีม Balanz',
 
     modal_reminder: 'เตือนจดประจำวัน',
     modal_budget_alerts: 'แจ้งเตือนเกินงบ',
@@ -160,7 +159,6 @@ const I18N = {
     lang_th: 'Thai',
     lang_en: 'English',
     logout: 'Log out',
-    footer: 'Version 1.0.0 — Made with ❤️ by Balanz',
 
     modal_reminder: 'Daily reminder',
     modal_budget_alerts: 'Over-budget alerts',
@@ -1174,7 +1172,6 @@ export default function Profile() {
                 {t('logout')}
               </button>
               <div className="mt-5 text-center text-xs font-semibold text-[color:var(--app-muted-2)]">
-                {t('footer')}
               </div>
             </div>
           </div>

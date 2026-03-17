@@ -14,6 +14,10 @@ const userSchema = new mongoose.Schema({
   timezone: { type: String, default: 'Asia/Bangkok' },
   // LINE notifications
   lineBudgetAlertsEnabled: { type: Boolean, default: true },
+  // Budget cycle cutoff day (0 = calendar month; 1-31 = cutoff day each month)
+  budgetCutoffDay: { type: Number, default: 0 },
+  // Auto monthly report via LINE (requires lineMessagingUserId)
+  lineMonthlyReportsEnabled: { type: Boolean, default: true },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
 }, {

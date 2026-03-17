@@ -189,7 +189,7 @@ const dateStringForSelectedMonthWithCutoff = (selectedMonthLabel, cutoffDay) => 
   if (todayLabel && todayLabel === selectedMonthLabel) return todayIso;
 
   const parsed = parseThaiMonthLabel(selectedMonthLabel);
-  if (!parsed) return toดdayIso;
+  if (!parsed) return todayIso;
   const { year, monthIndex } = parsed;
   const effectiveCutoff = Math.min(Math.max(1, Math.round(cutoff)), getDaysInMonth(year, monthIndex));
   return `${year}-${pad2(monthIndex + 1)}-${pad2(effectiveCutoff)}`;

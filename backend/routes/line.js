@@ -146,6 +146,12 @@ function formatThaiDate(input) {
   }
 }
 
+const THAI_TONE_MARK_RE = /[\u0E47\u0E48-\u0E4C\u0E4D\u0E4E]/;
+const THAI_TONE_MARK_GLOBAL_RE = /[\u0E47\u0E48-\u0E4C\u0E4D\u0E4E]/g;
+function normalizeThaiCommand(input) {
+  return String(input || '').normalize('NFC').replace(THAI_TONE_MARK_GLOBAL_RE, '').replace(/\s+/g, '');
+}
+
 function getBangkokMonthRange(dateInput) {
   const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
   if (Number.isNaN(d.getTime())) return null;
@@ -306,6 +312,171 @@ function buildFinanceStatusFlexMessage({
   budgetRemaining,
   aiSummary,
 } = {}) {
+  const buildAiSummaryBox = (aiText) => {
+    const raw = String(aiText || '').trim();
+    if (!raw) return null;
+
+    const lines = raw
+      .split('\n')
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .map((ln) => ln.replace(/^\s*[-•]\s+/, '').trim())
+      .filter(Boolean);
+
+    const normalized =
+      lines.length === 1
+        ? lines[0]
+            .split(/(?:\s*•\s*)|(?:\s*-\s*)/g)
+            .map((s) => String(s || '').trim())
+            .filter(Boolean)
+            .slice(0, 6)
+        : lines.slice(0, 6);
+
+    const toBulletRow = (content) => ({
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        { type: 'text', text: '•', size: 'sm', color: '#64748B', flex: 0 },
+        content,
+      ],
+    });
+
+    const line1 = normalized[0] || '';
+    const m1 = line1.match(
+      /^(.+?)\s*ใช้ไป\s+(฿-?[\d,]+)\s*(?:•|\|)\s*รับ\s+(฿-?[\d,]+)\s*(?:•|\|)\s*สุทธิ\s+(฿-?[\d,]+)\s*(?:•|\|)\s*(\d+)\s*รายการ$/
+    );
+    const line1Content = m1
+      ? (() => {
+          const dateLabel = String(m1[1] || '').trim();
+          const expText = String(m1[2] || '').trim();
+          const incText = String(m1[3] || '').trim();
+          const netText = String(m1[4] || '').trim();
+          const txText = String(m1[5] || '').trim();
+          const netNeg = /฿-/.test(netText);
+          // Force vertical layout (each metric on its own line) to avoid wrap mixing.
+          return {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            flex: 1,
+            contents: [
+              {
+                type: 'text',
+                size: 'sm',
+                color: '#0F172A',
+                wrap: true,
+                contents: [
+                  { type: 'span', text: dateLabel, weight: 'bold' },
+                ],
+              },
+              {
+                type: 'text',
+                size: 'sm',
+                color: '#0F172A',
+                wrap: true,
+                contents: [
+                  { type: 'span', text: 'ใช้ไป ' },
+                  { type: 'span', text: expText, weight: 'bold' },
+                ],
+              },
+              {
+                type: 'text',
+                size: 'sm',
+                color: '#0F172A',
+                wrap: true,
+                contents: [
+                  { type: 'span', text: 'รับ ' },
+                  { type: 'span', text: incText, weight: 'bold' },
+                ],
+              },
+              {
+                type: 'text',
+                size: 'sm',
+                color: '#0F172A',
+                wrap: true,
+                contents: [
+                  { type: 'span', text: 'สุทธิ ' },
+                  { type: 'span', text: netText, weight: 'bold', color: netNeg ? '#DC2626' : '#16A34A' },
+                ],
+              },
+              {
+                type: 'text',
+                size: 'sm',
+                color: '#0F172A',
+                wrap: true,
+                contents: [
+                  { type: 'span', text: txText, weight: 'bold' },
+                  { type: 'span', text: ' รายการ' },
+                ],
+              },
+            ],
+          };
+        })()
+      : {
+          type: 'text',
+          text: line1,
+          size: 'sm',
+          color: '#0F172A',
+          wrap: true,
+        };
+
+    const formatOtherLine = (ln) => {
+      const s = String(ln || '').trim();
+      if (!s) return null;
+      const split = s.split(/\s*[:：]\s*/);
+      if (split.length >= 2) {
+        const head = String(split[0] || '').trim();
+        const tail = String(split.slice(1).join(':') || '').trim();
+        return {
+          type: 'text',
+          size: 'sm',
+          color: '#0F172A',
+          wrap: true,
+          contents: [
+            { type: 'span', text: head, weight: 'bold' },
+            { type: 'span', text: ': ' },
+            { type: 'span', text: tail },
+          ],
+        };
+      }
+      return { type: 'text', text: s, size: 'sm', color: '#0F172A', wrap: true };
+    };
+
+    const otherRows = normalized
+      .slice(1, 6)
+      .map((ln) => formatOtherLine(ln))
+      .filter(Boolean)
+      .map((c) => toBulletRow(c));
+
+    return {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      margin: 'lg',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'sm',
+          contents: [
+            { type: 'text', text: '🤖', size: 'md', color: '#0F172A', flex: 0 },
+            { type: 'text', text: 'สรุปโดย AI', size: 'sm', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'md',
+          paddingAll: '14px',
+          cornerRadius: '18px',
+          backgroundColor: '#F1F5F9',
+          contents: [toBulletRow(line1Content), ...otherRows],
+        },
+      ],
+    };
+  };
+
   const safeLabel = String(label || '').trim();
   const pillText = safeLabel.length > 22 ? `${safeLabel.slice(0, 22)}…` : safeLabel;
   const safeIncome = Number(income) || 0;
@@ -392,22 +563,8 @@ function buildFinanceStatusFlexMessage({
       : [];
 
   const aiSummaryText = String(aiSummary || '').trim();
-  const aiSection =
-    aiSummaryText
-      ? [
-          { type: 'separator', color: '#E5E7EB', margin: 'lg' },
-          {
-            type: 'box',
-            layout: 'vertical',
-            spacing: 'sm',
-            margin: 'lg',
-            contents: [
-              { type: 'text', text: 'สรุปโดย AI', size: 'sm', weight: 'bold', color: '#0F172A' },
-              { type: 'text', text: aiSummaryText, size: 'sm', color: '#334155', wrap: true },
-            ],
-          },
-        ]
-      : [];
+  const aiBox = buildAiSummaryBox(aiSummaryText);
+  const aiSection = aiBox ? [{ type: 'separator', color: '#E5E7EB', margin: 'lg' }, aiBox] : [];
 
   return {
     type: 'flex',
@@ -866,31 +1023,61 @@ function parseTransactionText(text) {
     return dt;
   };
 
+  const now = new Date();
+  const todayBkk = makeBangkokDateTime({
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    day: now.getDate(),
+    hour: now.getHours(),
+    minute: now.getMinutes(),
+  });
+
+  const consumeBarePrefix = (raw, barePrefix) => {
+    const target = String(barePrefix || '');
+    if (!target) return String(raw || '').trim();
+    const src = String(raw || '');
+    let out = '';
+    let i = 0;
+    while (i < src.length && out.length < target.length) {
+      const ch = src[i];
+      if (!THAI_TONE_MARK_RE.test(ch)) out += ch;
+      i += 1;
+    }
+    if (out === target) return src.slice(i).trim();
+    return src.trim();
+  };
+
   const extractWhenPrefix = (input) => {
     const raw = normalizeDigits(input).trim();
+    const rawBare = normalizeThaiCommand(raw);
     let rest = raw;
     let when = null;
-
-    const now = new Date();
-    const todayBkk = makeBangkokDateTime({ year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate(), hour: now.getHours(), minute: now.getMinutes() });
 
     const consume = (len) => {
       rest = raw.slice(len).trim();
     };
 
     // Keywords: วันนี้ / เมื่อวาน
-    if (/^(วันนี้)(?:\s|$)/i.test(raw)) {
+    if (rawBare.startsWith('วันนี')) {
       when = todayBkk || new Date();
-      consume(RegExp.$1.length);
+      rest = consumeBarePrefix(raw, 'วันนี');
       return { when, rest };
     }
-    if (/^(เมื่อวาน|เมื่อวานนี้)(?:\s|$)/i.test(raw)) {
+    if (rawBare.startsWith('เมื่อวานนี')) {
+      const base = todayBkk || new Date();
+      const dt = new Date(base);
+      dt.setDate(dt.getDate() - 1);
+      when = makeBangkokDateTime({ year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate(), hour: dt.getHours(), minute: dt.getMinutes() }) || dt;
+      rest = consumeBarePrefix(raw, 'เมื่อวานนี');
+      return { when, rest };
+    }
+    if (rawBare.startsWith('เมื่อวาน')) {
       const base = todayBkk || new Date();
       const dt = new Date(base);
       dt.setDate(dt.getDate() - 1);
       // keep time roughly same; normalize to Bangkok offset via ISO rebuild
       when = makeBangkokDateTime({ year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate(), hour: dt.getHours(), minute: dt.getMinutes() }) || dt;
-      consume(RegExp.$1.length);
+      rest = consumeBarePrefix(raw, 'เมื่อวาน');
       return { when, rest };
     }
 
@@ -943,6 +1130,36 @@ function parseTransactionText(text) {
   const { when, rest } = extractWhenPrefix(text);
   const t = String(rest || '').trim();
   const tl = t.toLowerCase();
+
+  const tlBareCompact = normalizeThaiCommand(tl);
+  if (tlBareCompact === normalizeThaiCommand('ยอดวันนี้') || tlBareCompact === normalizeThaiCommand('วันนี้')) {
+    return { command: 'status_day', when: todayBkk || new Date(), queryText: t };
+  }
+  if (
+    tlBareCompact === normalizeThaiCommand('ยอดเมื่อวาน') ||
+    tlBareCompact === normalizeThaiCommand('ยอดเมื่อวานนี้') ||
+    tlBareCompact === normalizeThaiCommand('เมื่อวาน') ||
+    tlBareCompact === normalizeThaiCommand('เมื่อวานนี้')
+  ) {
+    const base = todayBkk || new Date();
+    const dt = new Date(base);
+    dt.setDate(dt.getDate() - 1);
+    const yWhen = makeBangkokDateTime({ year: dt.getFullYear(), month: dt.getMonth() + 1, day: dt.getDate(), hour: dt.getHours(), minute: dt.getMinutes() }) || dt;
+    return { command: 'status_day', when: yWhen, queryText: t };
+  }
+  if (
+    tlBareCompact === normalizeThaiCommand('ยอดเดือนนี้') ||
+    tlBareCompact === normalizeThaiCommand('เดือนนี้')
+  ) {
+    return { command: 'status_month', monthText: 'เดือนนี้', queryText: t };
+  }
+  if (
+    tlBareCompact === normalizeThaiCommand('ยอดเดือนที่แล้ว') ||
+    tlBareCompact === normalizeThaiCommand('เดือนที่แล้ว') ||
+    tlBareCompact === normalizeThaiCommand('เดือนก่อน')
+  ) {
+    return { command: 'status_month', monthText: 'เดือนที่แล้ว', queryText: t };
+  }
   // commands: help, สรุปวันนี้, สรุปเดือนนี้, export
   if (/^help$/i.test(t) || /^ช่วยเหลือ$/i.test(t)) return { command: 'help' };
   if (/^สรุปวันนี้$/i.test(t)) return { command: 'status_day', when };
@@ -1338,6 +1555,36 @@ async function handleTextEvent(event) {
     });
   }
 
+  // One-tap deep links (auto login -> jump to specific page)
+  const isOpenBudget = /^\s*(งบ|งบประมาณ|budget)\s*$/i.test(text);
+  const isOpenCategories = /^\s*(หมวด|หมวดหมู่|category|categories)\s*$/i.test(text);
+  const deepLinkNext = (isOpenBudget || isOpenCategories) ? '/budget' : '';
+  if (deepLinkNext) {
+    const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+    const rawToken = createSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    try {
+      await LineLoginSession.create({
+        tokenHash,
+        userId: user._id,
+        lineUserId: String(lineMessagingUserId),
+        expiresAt,
+      });
+    } catch (e) {
+      console.error('LineLoginSession create failed', e);
+      return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ระบบสร้างลิงก์เข้าเว็บไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+
+    const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}&next=${encodeURIComponent(deepLinkNext)}`;
+    const label = isOpenBudget ? 'งบประมาณ/หมวดงบ' : 'หมวด/งบประมาณ';
+    return sendReply(event.replyToken, {
+      type: 'text',
+      text: `แตะลิงก์นี้เพื่อเปิดหน้า${label}ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}`,
+    });
+  }
+
   if (parsed.command === 'help') {
     const helpText = [
       'คำสั่งตัวอย่าง:',
@@ -1346,6 +1593,7 @@ async function handleTextEvent(event) {
       '',
       'ถามสถานะการเงิน:',
       '- วันนี้ใช้ไปเท่าไหร่',
+      '- ยอดเดือนนี้',
       '- เมื่อวานใช้ไปเท่าไหร่',
       '- เดือนนี้ใช้ไปเท่าไหร่',
       '- ยอดคงเหลือเดือนนี้เท่าไหร่',
@@ -1360,12 +1608,16 @@ async function handleTextEvent(event) {
       'สรุป:',
       '- สรุปวันนี้',
       '- สรุปเดือนนี้',
+      '',
+      'เปิดหน้าในเว็บ:',
+      '- งบ',
+      '- หมวด',
       '- export',
     ].join('\n');
     return sendReply(event.replyToken, { type: 'text', text: helpText });
   }
 
-  const buildPeriodStatusReply = async ({ range, label, monthLabelForBudget } = {}) => {
+  const buildPeriodStatusReply = async ({ range, label, monthLabelForBudget, includeAiSummary, aiDateLabel } = {}) => {
     if (!range?.start || !range?.end) return { type: 'text', text: 'ขออภัย ผมหาช่วงวันที่ไม่เจอ' };
 
     const txAgg = await Transaction.aggregate([
@@ -1398,6 +1650,24 @@ async function handleTextEvent(event) {
       if (Number.isFinite(Number(budgetTotal))) budgetRemaining = (Number(budgetTotal) || 0) - (Number(expense) || 0);
     }
 
+    let aiSummary = '';
+    if (includeAiSummary) {
+      try {
+        const dateLabel = String(aiDateLabel || label || '').trim() || formatThaiDate(range.start) || 'วันนี้';
+        aiSummary = await summarizeFinanceDay({
+          language: 'th',
+          dateLabel,
+          income,
+          expense,
+          remaining,
+          txCount,
+          topExpenses,
+        });
+      } catch (e) {
+        aiSummary = `AI ยังไม่พร้อม: ${buildAiUserErrorMessage(e)}`;
+      }
+    }
+
     return buildFinanceStatusFlexMessage({
       label,
       range,
@@ -1408,16 +1678,19 @@ async function handleTextEvent(event) {
       topExpenses,
       budgetTotal,
       budgetRemaining,
+      aiSummary,
     });
   };
 
   if (parsed.command === 'status_day') {
     const when = parsed?.when instanceof Date && !Number.isNaN(parsed.when.getTime()) ? parsed.when : new Date();
     const range = getBangkokDayRange(when);
-    const label = /เมื่อวาน/i.test(String(event?.message?.text || ''))
+    const msgBare = normalizeThaiCommand(String(event?.message?.text || '')).toLowerCase();
+    const labelBase = /เมื่อวาน/i.test(msgBare)
       ? 'เมื่อวาน'
       : 'วันนี้';
-    return sendReply(event.replyToken, await buildPeriodStatusReply({ range, label }));
+    const label = `ยอด${labelBase}`;
+    return sendReply(event.replyToken, await buildPeriodStatusReply({ range, label, includeAiSummary: true, aiDateLabel: label }));
   }
 
   if (parsed.command === 'status_month') {
@@ -1448,7 +1721,17 @@ async function handleTextEvent(event) {
       budgetMonthLabel = ymLabel;
     }
 
-    return sendReply(event.replyToken, await buildPeriodStatusReply({ range, label, monthLabelForBudget: budgetMonthLabel }));
+    const labelWithTotal = String(label || '').startsWith('ยอด') ? String(label) : `ยอด${label}`;
+    return sendReply(
+      event.replyToken,
+      await buildPeriodStatusReply({
+        range,
+        label: labelWithTotal,
+        monthLabelForBudget: budgetMonthLabel,
+        includeAiSummary: true,
+        aiDateLabel: labelWithTotal,
+      })
+    );
   }
 
   if (parsed.command === 'export') {
@@ -1736,8 +2019,6 @@ async function handleAudioEvent(event) {
   }
 
   // Ack quickly, then transcribe + save transaction asynchronously.
-  await sendReply(event.replyToken, { type: 'text', text: 'รับเสียงแล้ว กำลังถอดเสียงให้...' });
-
   (async () => {
     try {
       ensureClient();
@@ -1793,7 +2074,7 @@ async function handleAudioEvent(event) {
 
       const parsed = parseTransactionText(transcript);
       if (!(parsed?.type && parsed?.amount)) {
-        await pushToUser(pushTargetId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 107 ข้าวมันไก่\n- รับ 20000 เงินเดือน${extra}` });
+        await pushToUser(pushTargetId, { type: 'text', text: `ผมได้ยินว่า: "${transcript}"\nแต่ยังจับ “จำนวนเงิน” ไม่ได้ ลองพูดแบบนี้:\n- จ่าย 100 ข้าวมันไก่\n- รับ 20000 เงินเดือน${extra}` });
         return;
       }
 
@@ -1932,6 +2213,28 @@ async function handlePostbackEvent(event) {
 
     const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}`;
     return sendReply(event.replyToken, { type: 'text', text: `แตะลิงก์นี้เพื่อเข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}` });
+  }
+
+  if (actionValue === 'budget' || actionValue === 'open_budget' || actionValue === 'categories' || actionValue === 'open_categories') {
+    const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+    const rawToken = createSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    try {
+      await LineLoginSession.create({
+        tokenHash,
+        userId: user._id,
+        lineUserId: String(lineMessagingUserId),
+        expiresAt,
+      });
+    } catch (e) {
+      console.error('LineLoginSession create failed', e);
+      return sendReply(event.replyToken, { type: 'text', text: 'ขออภัย ระบบสร้างลิงก์เข้าเว็บไม่สำเร็จ ลองใหม่อีกครั้ง' });
+    }
+
+    const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}&next=${encodeURIComponent('/budget')}`;
+    return sendReply(event.replyToken, { type: 'text', text: `แตะลิงก์นี้เพื่อไปหน้า “งบประมาณ/หมวด” ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}` });
   }
 
   if (actionValue === 'summary' || actionValue === 'summary_today') {
@@ -2191,6 +2494,8 @@ router.get('/health', (req, res) => {
 router.get('/session-login', async (req, res) => {
   try {
     const token = String(req.query.token || '').trim();
+    const nextRaw = String(req.query.next || '').trim();
+    const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
     if (!token) return res.status(400).send('Missing token');
 
     const tokenHash = hashSessionToken(token);
@@ -2210,7 +2515,8 @@ router.get('/session-login', async (req, res) => {
 
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
     const profilePic = encodeURIComponent(user.profilePic || '');
-    return res.redirect(`${frontend}/dashboard?token=${encodeURIComponent(jwtToken)}&profilePic=${profilePic}`);
+    const nextParam = nextPath ? `&next=${encodeURIComponent(nextPath)}` : '';
+    return res.redirect(`${frontend}/dashboard?token=${encodeURIComponent(jwtToken)}&profilePic=${profilePic}${nextParam}`);
   } catch (err) {
     console.error('session-login error', err);
     return res.status(500).send('Internal error');

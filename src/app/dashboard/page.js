@@ -526,6 +526,7 @@ export default function Dashboard() {
       const url = new URL(window.location.href);
       const token = url.searchParams.get('token');
       const profilePic = url.searchParams.get('profilePic');
+      const next = url.searchParams.get('next');
       if (token) {
         localStorage.setItem('token', token);
       }
@@ -536,11 +537,15 @@ export default function Dashboard() {
           // ignore
         }
       }
-      if (token || profilePic) {
-        // Remove token/profilePic from URL for security
+      if (token || profilePic || next) {
+        // Remove token/profilePic/next from URL for security and to avoid loops
         url.searchParams.delete('token');
         url.searchParams.delete('profilePic');
+        url.searchParams.delete('next');
         window.history.replaceState({}, document.title, url.pathname + url.search);
+        if (token && next && String(next).startsWith('/')) {
+          window.location.replace(String(next));
+        }
       }
     }
   }, []);
@@ -646,6 +651,10 @@ export default function Dashboard() {
   const autoCatTimerRef = useRef(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerTarget, setDatePickerTarget] = useState('add'); // 'add' | 'edit'
+  const [datePickerMonthMenuOpen, setDatePickerMonthMenuOpen] = useState(false);
+  const [datePickerYearMenuOpen, setDatePickerYearMenuOpen] = useState(false);
+  const datePickerMonthMenuRef = useRef(null);
+  const datePickerYearMenuRef = useRef(null);
 	  const [datePickerMonth, setDatePickerMonth] = useState(() => {
 	    const p = getBangkokDateParts(Date.now());
 	    return { year: p?.year || new Date().getFullYear(), monthIndex: p?.monthIndex ?? new Date().getMonth() };
@@ -1397,6 +1406,57 @@ export default function Dashboard() {
       document.removeEventListener('touchstart', onDown, true);
     };
   }, [monthPickerYearMenuOpen]);
+
+  useEffect(() => {
+    if (!showDatePicker) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (datePickerMonthMenuOpen) setDatePickerMonthMenuOpen(false);
+      else if (datePickerYearMenuOpen) setDatePickerYearMenuOpen(false);
+      else setShowDatePicker(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [showDatePicker, datePickerMonthMenuOpen, datePickerYearMenuOpen]);
+
+  useEffect(() => {
+    if (!showDatePicker) {
+      if (datePickerMonthMenuOpen) setDatePickerMonthMenuOpen(false);
+      if (datePickerYearMenuOpen) setDatePickerYearMenuOpen(false);
+    }
+  }, [showDatePicker, datePickerMonthMenuOpen, datePickerYearMenuOpen]);
+
+  useEffect(() => {
+    if (!datePickerMonthMenuOpen) return;
+    const onDown = (e) => {
+      const el = datePickerMonthMenuRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setDatePickerMonthMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+    };
+  }, [datePickerMonthMenuOpen]);
+
+  useEffect(() => {
+    if (!datePickerYearMenuOpen) return;
+    const onDown = (e) => {
+      const el = datePickerYearMenuRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setDatePickerYearMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('touchstart', onDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('touchstart', onDown, true);
+    };
+  }, [datePickerYearMenuOpen]);
 
   const recomputeEditCategoryPanel = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -3790,15 +3850,12 @@ export default function Dashboard() {
               const activeISO = datePickerTarget === 'edit' ? editFormData?.date : addFormData?.date;
               const selectedParsed = parseISODateKey(activeISO) || todayParsed;
               const { year, monthIndex } = datePickerMonth || todayParsed;
-
-              const firstWeekday = getBangkokWeekdayIndex(year, monthIndex, 1); // 0=Sun
-              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
               const canGoNext = year < maxParsed.year || (year === maxParsed.year && monthIndex < maxParsed.monthIndex);
 
-              const monthLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
-              const weekdayLabels = language === 'en'
-                ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-                : ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+              const weekStartsOnMonday = language !== 'en';
+              const weekdayLabels = weekStartsOnMonday
+                ? ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+                : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
               const isBeyondMax = (d) => {
                 const iso = toISOFromParts(year, monthIndex, d);
@@ -3826,10 +3883,32 @@ export default function Dashboard() {
                 else setDatePickerMonth({ year: year + 1, monthIndex: 0 });
               };
 
+              const clampToMax = (nextYear, nextMonthIndex) => {
+                let y = Number(nextYear);
+                let m = Number(nextMonthIndex);
+                if (!Number.isFinite(y)) y = year;
+                if (!Number.isFinite(m)) m = monthIndex;
+                if (y > maxParsed.year) y = maxParsed.year;
+                if (y === maxParsed.year && m > maxParsed.monthIndex) m = maxParsed.monthIndex;
+                if (m < 0) m = 0;
+                if (m > 11) m = 11;
+                return { year: y, monthIndex: m };
+              };
+
+              const firstWeekdayRaw = getBangkokWeekdayIndex(year, monthIndex, 1); // 0=Sun
+              const firstWeekday = weekStartsOnMonday ? (firstWeekdayRaw + 6) % 7 : firstWeekdayRaw;
+              const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+
+              const monthHeaderLabel = `${MONTH_NAMES_TH[monthIndex] || ''} ${year + 543}`;
+
               const cells = [];
               for (let i = 0; i < firstWeekday; i++) cells.push(null);
               for (let d = 1; d <= daysInMonth; d++) cells.push(d);
               while (cells.length % 7 !== 0) cells.push(null);
+
+              const minYear = Math.max(1970, todayParsed.year - 50);
+              const yearOptions = [];
+              for (let y = maxParsed.year; y >= minYear; y--) yearOptions.push(y);
 
               return (
                 <>
@@ -3845,8 +3924,137 @@ export default function Dashboard() {
                       </button>
 
                       <div className="min-w-0 flex-1 text-center">
-                        <div className="text-sm font-extrabold">{monthLabel}</div>
+                        <div className="text-lg font-extrabold tracking-tight">{monthHeaderLabel}</div>
                         <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--app-muted)]">{t('tap_day_to_select')}</div>
+
+                        <div className="mx-auto mt-3 grid w-full max-w-[320px] grid-cols-2 gap-2">
+                          <div ref={datePickerMonthMenuRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDatePickerYearMenuOpen(false);
+                                setDatePickerMonthMenuOpen((v) => !v);
+                              }}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-left text-sm font-extrabold text-[color:var(--app-text)] outline-none shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-2 focus:ring-emerald-400/30"
+                              aria-label={t('pick_month')}
+                              aria-haspopup="listbox"
+                              aria-expanded={datePickerMonthMenuOpen}
+                            >
+                              <span className="flex items-center justify-between gap-2">
+                                <span className="truncate">{MONTH_NAMES_TH[monthIndex] || ''}</span>
+                                <ChevronDown className="h-4 w-4 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                              </span>
+                            </button>
+
+                            {datePickerMonthMenuOpen && (
+                              <div className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-xl shadow-black/25">
+                                <div className="border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2 text-[11px] font-extrabold text-[color:var(--app-muted)]">
+                                  {t('pick_month')}
+                                </div>
+                                <div className="max-h-64 overflow-y-auto p-1.5" role="listbox" aria-label={t('pick_month')}>
+                                  {MONTH_NAMES_TH.map((name, mi) => {
+                                    const disabled = year === maxParsed.year && mi > maxParsed.monthIndex;
+                                    const active = mi === monthIndex;
+                                    return (
+                                      <button
+                                        key={name}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={active}
+                                        disabled={disabled}
+                                        onClick={() => {
+                                          if (disabled) return;
+                                          setDatePickerMonth(clampToMax(year, mi));
+                                          setDatePickerMonthMenuOpen(false);
+                                        }}
+                                        className={[
+                                          'w-full rounded-xl px-3 py-2 text-sm font-extrabold transition text-left',
+                                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                                          disabled
+                                            ? 'bg-transparent text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
+                                            : active
+                                              ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/25'
+                                              : 'text-[color:var(--app-text)] hover:bg-[var(--app-surface-2)]',
+                                        ].join(' ')}
+                                      >
+                                        <span className="flex items-center justify-between gap-2">
+                                          <span className="truncate">{name}</span>
+                                          {active && <Check className="h-4 w-4" aria-hidden="true" />}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div ref={datePickerYearMenuRef} className="relative">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDatePickerMonthMenuOpen(false);
+                                setDatePickerYearMenuOpen((v) => !v);
+                              }}
+                              className="h-11 w-full rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 text-left text-sm font-extrabold text-[color:var(--app-text)] outline-none shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)] focus:ring-2 focus:ring-emerald-400/30"
+                              aria-label={t('pick_year')}
+                              aria-haspopup="listbox"
+                              aria-expanded={datePickerYearMenuOpen}
+                            >
+                              <span className="flex items-center justify-between gap-2">
+                                <span className="tabular-nums">{year + 543}</span>
+                                <ChevronDown className="h-4 w-4 text-[color:var(--app-muted-2)]" aria-hidden="true" />
+                              </span>
+                            </button>
+
+                            {datePickerYearMenuOpen && (
+                              <div className="absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] shadow-xl shadow-black/25">
+                                <div className="flex items-center justify-between gap-2 border-b border-[color:var(--app-border)] bg-[var(--app-surface-2)] px-3 py-2">
+                                  <div className="text-[11px] font-extrabold text-[color:var(--app-muted)]">{t('pick_year')}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDatePickerMonth(clampToMax(todayParsed.year, todayParsed.monthIndex));
+                                      setDatePickerYearMenuOpen(false);
+                                    }}
+                                    className="rounded-xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-2.5 py-1 text-[11px] font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                                  >
+                                    {t('this_year')}
+                                  </button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto p-1.5" role="listbox" aria-label={t('pick_year')}>
+                                  {yearOptions.map((y) => {
+                                    const active = Number(y) === Number(year);
+                                    return (
+                                      <button
+                                        key={y}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={active}
+                                        onClick={() => {
+                                          setDatePickerMonth(clampToMax(y, monthIndex));
+                                          setDatePickerYearMenuOpen(false);
+                                        }}
+                                        className={[
+                                          'w-full rounded-xl px-3 py-2 text-sm font-extrabold transition text-left',
+                                          'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                                          active
+                                            ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/25'
+                                            : 'text-[color:var(--app-text)] hover:bg-[var(--app-surface-2)]',
+                                        ].join(' ')}
+                                      >
+                                        <span className="flex items-center justify-between gap-2">
+                                          <span className="tabular-nums">{y + 543}</span>
+                                          {active && <Check className="h-4 w-4" aria-hidden="true" />}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
 
                       <button
@@ -3860,47 +4068,49 @@ export default function Dashboard() {
                       </button>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-7 gap-1.5">
-                      {weekdayLabels.map((w) => (
-                        <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted-2)]">
-                          {w}
-                        </div>
-                      ))}
+                    <div className="mt-4 rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 shadow-sm shadow-black/10">
+                      <div className="grid grid-cols-7 gap-1.5">
+                        {weekdayLabels.map((w) => (
+                          <div key={w} className="text-center text-[11px] font-extrabold text-[color:var(--app-muted-2)]">
+                            {w}
+                          </div>
+                        ))}
 
-                      {cells.map((d, idx) => {
-                        if (!d) return <div key={`e-${idx}`} className="h-10" />;
-                        const iso = toISOFromParts(year, monthIndex, d);
-                        const selected = iso === String(addFormData?.date || '');
-                        const today = iso === todayKey;
-                        const disabled = iso > maxKey;
-                        return (
-                          <button
-                            key={iso}
-                            type="button"
-                            onClick={() => selectDay(d)}
-                            disabled={disabled}
-                            className={[
-                              'h-10 rounded-2xl text-sm font-extrabold transition',
-                              'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
-                              disabled
-                                ? 'bg-transparent text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
-                                : selected
-                                  ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
-                                  : today
-                                    ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
-                                    : 'bg-[var(--app-surface-2)] text-[color:var(--app-text)] ring-1 ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
-                            ].join(' ')}
-                            aria-pressed={selected}
-                            aria-label={`${t('pick_date')} ${d}`}
-                          >
-                            {d}
-                          </button>
-                        );
-                      })}
+                        {cells.map((d, idx) => {
+                          if (!d) return <div key={`e-${idx}`} className="h-10" />;
+                          const iso = toISOFromParts(year, monthIndex, d);
+                          const selected = iso === String(addFormData?.date || '');
+                          const today = iso === todayKey;
+                          const disabled = iso > maxKey;
+                          return (
+                            <button
+                              key={iso}
+                              type="button"
+                              onClick={() => selectDay(d)}
+                              disabled={disabled}
+                              className={[
+                                'h-10 rounded-2xl text-sm font-extrabold transition',
+                                'focus:outline-none focus:ring-2 focus:ring-emerald-400/30',
+                                disabled
+                                  ? 'bg-transparent text-[color:var(--app-muted-2)] opacity-50 cursor-not-allowed'
+                                  : selected
+                                    ? 'bg-emerald-400 text-slate-950 shadow-sm shadow-emerald-500/20'
+                                    : today
+                                      ? 'bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25 hover:bg-emerald-500/20'
+                                      : 'bg-[var(--app-surface)] text-[color:var(--app-text)] ring-1 ring-[color:var(--app-border)] hover:bg-[var(--app-surface-3)]',
+                              ].join(' ')}
+                              aria-pressed={selected}
+                              aria-label={`${t('pick_date')} ${monthHeaderLabel} ${d}`}
+                            >
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="mt-5 border-t border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-3 flex items-center justify-between gap-2">
+                  <div className="mt-5 border-t border-[color:var(--app-border)] bg-[var(--app-surface-2)] p-4 flex items-center justify-between gap-3">
                     <button
                       type="button"
                       onClick={() => {
@@ -3908,14 +4118,14 @@ export default function Dashboard() {
                         else setAddFormData((prev) => ({ ...prev, date: todayKey }));
                         setShowDatePicker(false);
                       }}
-                      className="rounded-2xl border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 py-2.5 text-xs font-extrabold text-[color:var(--app-text)] hover:bg-[var(--app-surface-3)]"
+                      className="h-12 rounded-full border border-[color:var(--app-border)] bg-[var(--app-surface)] px-6 text-sm font-extrabold text-[color:var(--app-text)] shadow-sm shadow-black/10 hover:bg-[var(--app-surface-3)]"
                     >
                       {t('today')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowDatePicker(false)}
-                      className="rounded-2xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:brightness-95 shadow-sm shadow-emerald-500/15"
+                      className="h-12 rounded-full bg-emerald-500 px-6 text-sm font-extrabold text-slate-950 hover:brightness-95 shadow-lg shadow-emerald-500/15"
                     >
                       {t('finish')}
                     </button>

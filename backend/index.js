@@ -4,12 +4,13 @@ const passport = require('passport');
 const LineStrategy = require('passport-line').Strategy;
 const line = require('@line/bot-sdk');
 const jwt = require('jsonwebtoken');
-const { User, Transaction, Category, Budget, ReminderSetting, BudgetAlertState } = require('./models');
+const { User, Transaction, Category, Budget, ReminderSetting, BudgetAlertState, MonthlyReportState } = require('./models');
 const { mergeUsers } = require('./utils/mergeUsers');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
+const { summarizeFinanceDay } = require('./utils/openaiFinanceSummary');
 // Load environment variables as early as possible so required modules can read them.
 // Use an explicit path so starting the server from the repo root still loads `backend/.env`.
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || path.join(__dirname, '.env') });
@@ -482,13 +483,13 @@ function buildDailyReminderFlexMessage({ timeHHMM } = {}) {
             spacing: 'sm',
             contents: [
               { type: 'text', text: '• ผัดกระเพรา 20', size: 'sm', color: '#334155', wrap: true },
-              { type: 'text', text: '• จ่าย 107 ข้าวมันไก่', size: 'sm', color: '#334155', wrap: true },
+              { type: 'text', text: '• จ่าย 100 ข้าวมันไก่', size: 'sm', color: '#334155', wrap: true },
               { type: 'text', text: '• รับ 20000 เงินเดือน', size: 'sm', color: '#334155', wrap: true },
             ],
           },
           {
             type: 'text',
-            text: 'หรือถาม “วันนี้ใช้ไปเท่าไหร่”',
+            text: 'หรือถาม “วันนี้ใช้ไปเท่าไหร่” ',
             size: 'sm',
             color: '#64748B',
             wrap: true,
