@@ -3481,14 +3481,13 @@ export default function Dashboard() {
 
                     <input
                       ref={slipInputRef}
-                      id="add-slip-upload-input-inline"
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        setSlipFile(f);
+	                      id="add-slip-upload-input-inline"
+	                      type="file"
+	                      accept="image/*"
+	                      className="hidden"
+	                      onChange={(e) => {
+	                        const f = e.target.files?.[0] || null;
+	                        setSlipFile(f);
                         setSlipError('');
                         if (slipPreviewUrl) {
                           try { URL.revokeObjectURL(slipPreviewUrl); } catch {}

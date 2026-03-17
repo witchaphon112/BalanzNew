@@ -1202,15 +1202,14 @@ export default function AddTransaction() {
             <div className="pt-2">
               <label className="text-xs font-bold text-slate-500 mb-2 block uppercase tracking-wider">สแกนบิล (OCR)</label>
               <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleOcrScan}
-                  disabled={ocrLoading}
-                  className="hidden"
-                  id="ocr-upload"
-                />
+	                <input
+	                  type="file"
+	                  accept="image/*"
+	                  onChange={handleOcrScan}
+	                  disabled={ocrLoading}
+	                  className="hidden"
+	                  id="ocr-upload"
+	                />
                 <label
                   htmlFor="ocr-upload"
                   className={`w-full p-4 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 cursor-pointer ${
@@ -1397,15 +1396,14 @@ export default function AddTransaction() {
             <div className="pt-2">
               <label className="text-xs font-bold text-slate-500 mb-2 block uppercase tracking-wider">สแกนสลิป (AI)</label>
               <div className="relative">
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleAiSlipScan}
-                  disabled={aiSlipLoading}
-                  className="hidden"
-                  id="ai-slip-upload"
-                />
+	                <input
+	                  type="file"
+	                  accept="image/*"
+	                  onChange={handleAiSlipScan}
+	                  disabled={aiSlipLoading}
+	                  className="hidden"
+	                  id="ai-slip-upload"
+	                />
                 <label
                   htmlFor="ai-slip-upload"
                   className={`w-full p-4 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 cursor-pointer ${
