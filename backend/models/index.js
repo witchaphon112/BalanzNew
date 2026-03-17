@@ -10,5 +10,6 @@ module.exports = {
   NotificationCount: require('./NotificationCount'),
   LineLoginSession: require('./LineLoginSession'),
   LineMessagingLinkSession: require('./LineMessagingLinkSession'),
+  LineMessagingAlias: require('./LineMessagingAlias'),
   ReminderSetting: require('./ReminderSetting'),
 };

@@ -1,7 +1,7 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
 const router = express.Router();
-const { User, Transaction, Category, Budget, ImportExportLog, LineLoginSession, LineMessagingLinkSession } = require('../models');
+const { User, Transaction, Category, Budget, ImportExportLog, LineLoginSession, LineMessagingLinkSession, LineMessagingAlias } = require('../models');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
@@ -111,6 +111,30 @@ function buildAiUserErrorMessage(err) {
 
 // debug: show whether token was loaded when this module initialized
 console.log('LINE webhook module loaded. CHANNEL_TOKEN present:', CHANNEL_TOKEN ? (CHANNEL_TOKEN.slice(0,8) + '...') : 'no');
+
+async function findUserByMessagingIdOrAlias(lineMessagingUserId) {
+  const id = String(lineMessagingUserId || '').trim();
+  if (!id) return null;
+  const direct = await User.findOne({ lineMessagingUserId: id }).catch(() => null);
+  if (direct) return direct;
+  const alias = await LineMessagingAlias.findOne({ aliasId: id }).catch(() => null);
+  if (!alias?.userId) return null;
+  return User.findById(alias.userId).catch(() => null);
+}
+
+async function ensureMessagingAlias({ aliasId, userId, source } = {}) {
+  const a = String(aliasId || '').trim();
+  const u = String(userId || '').trim();
+  if (!a || !u) return null;
+  try {
+    const existing = await LineMessagingAlias.findOne({ aliasId: a }).catch(() => null);
+    if (existing) return existing;
+    return await LineMessagingAlias.create({ aliasId: a, userId: u, source: String(source || '') });
+  } catch (e) {
+    if (e && e.code === 11000) return LineMessagingAlias.findOne({ aliasId: a }).catch(() => null);
+    throw e;
+  }
+}
 
 function formatThb(amount) {
   const n = Number(amount) || 0;
@@ -1490,7 +1514,7 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
   if (!lineMessagingUserId) return { user: null };
 
   const [userByMessagingId, userByLegacyLineId] = await Promise.all([
-    User.findOne({ lineMessagingUserId }),
+    findUserByMessagingIdOrAlias(lineMessagingUserId),
     // Backwards compat: some installs may have stored messaging userId in lineUserId
     User.findOne({ lineUserId: lineMessagingUserId }),
   ]);
@@ -1563,8 +1587,44 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
     }
 
     try {
-      user = await User.findOne({ lineMessagingUserId });
+      user = await findUserByMessagingIdOrAlias(lineMessagingUserId);
       if (!user) {
+        // If we have a profile hint, try to attach this messaging id as an alias of an existing user
+        // (prevents duplicates when LIFF and bot return different `userId` values).
+        const hintName = String(profile?.displayName || '').trim();
+        const hintPic = String(profile?.pictureUrl || '').trim();
+        if (hintName) {
+          const since = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+          const candidates = await User.find({
+            name: hintName,
+            lineMessagingUserId: { $exists: true, $ne: '' },
+            createdAt: { $gte: since },
+          }).sort({ createdAt: -1 }).limit(10);
+
+          const scored = await Promise.all((candidates || []).map(async (u) => {
+            const [t, c, b] = await Promise.all([
+              Transaction.countDocuments({ userId: u._id }).catch(() => 0),
+              Category.countDocuments({ userId: u._id }).catch(() => 0),
+              Budget.countDocuments({ userId: u._id }).catch(() => 0),
+            ]);
+            const score = (Number(t) || 0) + (Number(c) || 0) + (Number(b) || 0);
+            const pic = String(u?.profilePic || '').trim();
+            const picMatches = hintPic && pic ? (pic === hintPic) : true; // if either missing, don't block
+            return { u, score, picMatches };
+          }));
+
+          const withData = scored.filter((s) => s.score > 0 && s.picMatches);
+          const pick =
+            withData.length === 1
+              ? withData[0].u
+              : (scored.filter((s) => s.picMatches).length === 1 ? scored.filter((s) => s.picMatches)[0].u : null);
+
+          if (pick) {
+            await ensureMessagingAlias({ aliasId: String(lineMessagingUserId), userId: pick._id, source: 'heuristic' }).catch(() => {});
+            return { user: pick, userByMessagingId: pick, userByLegacyLineId };
+          }
+        }
+
         const placeholderEmail = `line_msg_${lineMessagingUserId}@local`;
         try {
           user = await User.create({
@@ -2740,7 +2800,7 @@ router.get('/open-dashboard', async (req, res) => {
     const liffPictureUrl = String(req.query.pic || '').trim();
 
     // 1) Try to resolve by the LIFF userId directly (ideal case: LIFF + bot share the same userId space).
-    let user = await User.findOne({ lineMessagingUserId }).catch(() => null);
+    let user = await findUserByMessagingIdOrAlias(lineMessagingUserId);
 
     // 2) If not found, try to resolve to an existing "real" account using LIFF profile as a hint.
     // This avoids creating a brand-new placeholder user every time when LIFF is configured under
@@ -2779,6 +2839,12 @@ router.get('/open-dashboard', async (req, res) => {
     }
 
     if (!user?._id) return res.status(404).send('User not found');
+
+    // Ensure this LIFF userId can always resolve to the canonical user.
+    // (Even if it's a different id-space than Messaging API userId.)
+    if (String(user.lineMessagingUserId || '') !== String(lineMessagingUserId)) {
+      await ensureMessagingAlias({ aliasId: String(lineMessagingUserId), userId: user._id, source: 'liff' }).catch(() => {});
+    }
 
     // Best-effort: LIFF can provide profile even when Messaging API profile fetch fails.
     // Populate missing fields to reduce "blank profile" placeholders.
