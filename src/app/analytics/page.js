@@ -26,7 +26,7 @@ import {
 // ลงทะเบียน Chart.js
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 // --- 2. CONSTANTS ---
 const MONTH_NAMES_TH = [

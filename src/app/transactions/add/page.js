@@ -49,7 +49,7 @@ const CategoryIcon = ({ iconName, className = "w-6 h-6" }) => {
   return <span className="text-xl leading-none">{iconName || '?'}</span>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 export default function AddTransaction() {
   const [formData, setFormData] = useState({

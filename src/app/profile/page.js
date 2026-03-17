@@ -20,7 +20,7 @@ import {
   Flame,
 } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const BANGKOK_TZ = 'Asia/Bangkok';
 const LEVEL_DAYS = 7;
 const USAGE_STATS_CACHE_KEY = 'balanz_usage_stats_cache_v1';

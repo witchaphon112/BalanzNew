@@ -53,7 +53,7 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat(locale, { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(amount);
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 const monthNamesTH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',

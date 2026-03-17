@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import LoadingMascot from '@/components/LoadingMascot';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5050';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
