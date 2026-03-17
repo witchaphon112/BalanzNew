@@ -2830,7 +2830,16 @@ function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
   const base = String(backendBase || '').trim() || 'http://localhost:5050';
   const liffId = String(process.env.LIFF_ID || process.env.LINE_LIFF_ID || '').trim();
   // Prefer launching via the official LIFF entry URL so LINE carries query params via `liff.state`.
-  const liffEntry = liffId ? `https://liff.line.me/${encodeURIComponent(liffId)}` : `${base}/webhooks/line/liff-dashboard`;
+  const liffEntry = liffId ? `https://liff.line.me/${encodeURIComponent(liffId)}` : '';
+  const liffBase = `${base}/webhooks/line/liff-dashboard`;
+  const liffUri = (nextPath) => {
+    const next = String(nextPath || '').trim();
+    if (!next.startsWith('/')) return liffBase;
+    // LINE often wraps incoming params into `liff.state`. Make it explicit to avoid losing `next`.
+    // Keep it simple: `liff.state=?next=%2Fbudget`
+    if (liffEntry) return `${liffEntry}?liff.state=${encodeURIComponent(`?next=${encodeURIComponent(next)}`)}`;
+    return `${liffBase}?next=${encodeURIComponent(next)}`;
+  };
   const size = { width: 2500, height: 1686 };
 
   // Coordinates tuned for `backend/uploads/richmenu/menuline.png` (2500x1686).
@@ -2840,12 +2849,12 @@ function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
     { bounds: { x: 0, y: 0, width: 1520, height: 900 }, action: { type: 'postback', data: 'action=quick_note', displayText: 'จดรายการ' } },
 
     // Top-right buttons (URI -> LIFF -> auto-login -> next)
-    { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fbudget` } }, // หมวด/งบ
-    { bounds: { x: 1956, y: 63, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fdashboard` } }, // สรุป
+    { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: liffUri('/budget') } }, // หมวด/งบ
+    { bounds: { x: 1956, y: 63, width: 515, height: 527 }, action: { type: 'uri', uri: liffUri('/dashboard') } }, // สรุป
 
     // Mid-right buttons
-    { bounds: { x: 1460, y: 509, width: 550, height: 631 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fanalytics` } }, // วิเคราะห์
-    { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Ftransactions` } }, // รายการ
+    { bounds: { x: 1460, y: 509, width: 550, height: 631 }, action: { type: 'uri', uri: liffUri('/analytics') } }, // วิเคราะห์
+    { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: liffUri('/transactions') } }, // รายการ
 
     // Bottom buttons (in-chat)
     { bounds: { x: 60, y: 870, width: 1540, height: 490 }, action: { type: 'postback', data: 'action=announce', displayText: 'ประกาศ' } },
