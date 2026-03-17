@@ -264,11 +264,19 @@ passport.deserializeUser((obj, done) => {
   done(null, obj);
 });
 // Middleware - Enhanced CORS configuration
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const corsOrigins = (() => {
+  const extra = String(process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  // Always allow local dev defaults.
+  const defaults = ['http://localhost:3000', 'http://localhost:3001'];
+  const all = [FRONTEND_URL, ...extra, ...defaults].filter(Boolean);
+  return Array.from(new Set(all));
+})();
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 // Preserve raw body for LINE signature verification middleware
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
@@ -299,7 +307,7 @@ app.get('/callback', passport.authenticate('line', {
   );
   // Redirect to frontend with token and profilePic as query params
   const profilePic = encodeURIComponent(user.profilePic || '');
-  res.redirect(`http://localhost:3000/dashboard?token=${token}&profilePic=${profilePic}`);
+  res.redirect(`${FRONTEND_URL}/dashboard?token=${encodeURIComponent(token)}&profilePic=${profilePic}`);
 });
 
 // Connect to MongoDB
