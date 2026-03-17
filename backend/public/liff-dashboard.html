@@ -55,14 +55,26 @@
         if (!nextRaw) {
           const stateRaw = String(sp.get('liff.state') || '').trim();
           if (stateRaw) {
-            const stateStr = stateRaw.startsWith('?') ? stateRaw.slice(1) : stateRaw;
-            const sp2 = new URLSearchParams(stateStr);
+            // `liff.state` can be:
+            // - "?next=%2Fbudget"
+            // - "/?next=%2Fbudget"
+            // - "/path?next=%2Fbudget"
+            let stateStr = stateRaw;
+            // Best-effort decode (LINE sometimes double-encodes).
+            for (let i = 0; i < 2; i++) {
+              try { if (stateStr.includes('%')) stateStr = decodeURIComponent(stateStr); } catch {}
+            }
+            const qIndex = stateStr.indexOf('?');
+            const queryOnly = qIndex >= 0 ? stateStr.slice(qIndex + 1) : (stateStr.startsWith('?') ? stateStr.slice(1) : stateStr);
+            const sp2 = new URLSearchParams(queryOnly);
             nextRaw = String(sp2.get('next') || '').trim();
           }
         }
 
         // Best-effort decode (some environments double-encode).
-        try { if (nextRaw.includes('%')) nextRaw = decodeURIComponent(nextRaw); } catch {}
+        for (let i = 0; i < 2; i++) {
+          try { if (nextRaw.includes('%')) nextRaw = decodeURIComponent(nextRaw); } catch {}
+        }
 
         const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
         return nextPath;

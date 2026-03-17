@@ -1458,7 +1458,35 @@ async function suggestExistingCategoryIdWithAi({ userId, type, noteText } = {}) 
   }
 }
 
-async function resolveMessagingUser(lineMessagingUserId) {
+async function fetchLineMessagingProfile(lineMessagingUserId, source) {
+  if (!lineMessagingUserId) return null;
+
+  // Try the simplest API first (works for 1:1 chat).
+  try {
+    ensureClient();
+    return await client.getProfile(lineMessagingUserId);
+  } catch {
+    // fall through
+  }
+
+  // In group/room contexts, profile must be fetched with member-profile endpoints.
+  const t = source && source.type;
+  try {
+    ensureClient();
+    if (t === 'group' && source.groupId) {
+      return await client.getGroupMemberProfile(source.groupId, lineMessagingUserId);
+    }
+    if (t === 'room' && source.roomId) {
+      return await client.getRoomMemberProfile(source.roomId, lineMessagingUserId);
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+async function resolveMessagingUser(lineMessagingUserId, source) {
   if (!lineMessagingUserId) return { user: null };
 
   const [userByMessagingId, userByLegacyLineId] = await Promise.all([
@@ -1494,8 +1522,7 @@ async function resolveMessagingUser(lineMessagingUserId) {
   if (!user) {
     let profile = null;
     try {
-      ensureClient();
-      profile = await client.getProfile(lineMessagingUserId);
+      profile = await fetchLineMessagingProfile(lineMessagingUserId, source);
     } catch (e) {
       // profile fetch may fail if CHANNEL_TOKEN not configured or permission denied - continue
     }
@@ -1525,6 +1552,24 @@ async function resolveMessagingUser(lineMessagingUserId) {
       console.error('user creation/upsert final error', finalErr);
       throw finalErr;
     }
+  }
+
+  // Best-effort: if we created (or found) a placeholder without displayName/profilePic,
+  // update it when the profile is available later (e.g., after adding the bot, or in 1:1 chat).
+  try {
+    const needName = !String(user?.name || '').trim();
+    const needPic = !String(user?.profilePic || '').trim();
+    if (user && (needName || needPic)) {
+      const profile = await fetchLineMessagingProfile(lineMessagingUserId, source);
+      let updated = false;
+      if (needName && profile?.displayName) { user.name = profile.displayName; updated = true; }
+      if (needPic && profile?.pictureUrl) { user.profilePic = profile.pictureUrl; updated = true; }
+      if (updated) {
+        await user.save().catch(() => {});
+      }
+    }
+  } catch {
+    // ignore
   }
 
   // Auto-unify: if the web OAuth user was created first (lineUserId exists) and the bot user
@@ -1618,7 +1663,7 @@ async function handleTextEvent(event) {
     return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบ userId จาก LINE' });
   }
 
-  const { user, userByMessagingId, userByLegacyLineId } = await resolveMessagingUser(lineMessagingUserId);
+  const { user, userByMessagingId, userByLegacyLineId } = await resolveMessagingUser(lineMessagingUserId, event.source);
 
   console.log('LINE resolved user mapping:', {
     lineMessagingUserId: String(lineMessagingUserId || ''),
@@ -2026,7 +2071,7 @@ async function handleImageEvent(event) {
   (async () => {
     try {
       ensureClient();
-      const { user } = await resolveMessagingUser(lineMessagingUserId);
+      const { user } = await resolveMessagingUser(lineMessagingUserId, event.source);
       if (!user) {
         await pushToUser(pushTargetId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
         return;
@@ -2188,7 +2233,7 @@ async function handleAudioEvent(event) {
   (async () => {
     try {
       ensureClient();
-      const { user } = await resolveMessagingUser(lineMessagingUserId);
+      const { user } = await resolveMessagingUser(lineMessagingUserId, event.source);
       if (!user) {
         await pushToUser(pushTargetId, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
         return;
@@ -2362,7 +2407,7 @@ async function handlePostbackEvent(event) {
   }
   console.log('postback actionValue resolved:', actionValue);
 
-  const { user } = await resolveMessagingUser(lineMessagingUserId);
+  const { user } = await resolveMessagingUser(lineMessagingUserId, event.source);
   if (!user) return sendReply(event.replyToken, { type: 'text', text: 'ไม่พบบัญชีผู้ใช้ของคุณ' });
 
   // handle known postback actions
@@ -2748,7 +2793,9 @@ function clampArea(area, maxW, maxH) {
 
 function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
   const base = String(backendBase || '').trim() || 'http://localhost:5050';
-  const liffBase = `${base}/webhooks/line/liff-dashboard`;
+  const liffId = String(process.env.LIFF_ID || process.env.LINE_LIFF_ID || '').trim();
+  // Prefer launching via the official LIFF entry URL so LINE carries query params via `liff.state`.
+  const liffEntry = liffId ? `https://liff.line.me/${encodeURIComponent(liffId)}` : `${base}/webhooks/line/liff-dashboard`;
   const size = { width: 2500, height: 1686 };
 
   // Coordinates tuned for `backend/uploads/richmenu/menuline.png` (2500x1686).
@@ -2758,12 +2805,12 @@ function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
     { bounds: { x: 0, y: 0, width: 1520, height: 900 }, action: { type: 'postback', data: 'action=quick_note', displayText: 'จดรายการ' } },
 
     // Top-right buttons (URI -> LIFF -> auto-login -> next)
-    { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fbudget` } }, // หมวด/งบ
-    { bounds: { x: 1956, y: 63, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fdashboard` } }, // สรุป
+    { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fbudget` } }, // หมวด/งบ
+    { bounds: { x: 1956, y: 63, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fdashboard` } }, // สรุป
 
     // Mid-right buttons
-    { bounds: { x: 1460, y: 509, width: 550, height: 631 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fanalytics` } }, // วิเคราะห์
-    { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: `${liffBase}?next=%2Ftransactions` } }, // รายการ
+    { bounds: { x: 1460, y: 509, width: 550, height: 631 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Fanalytics` } }, // วิเคราะห์
+    { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: `${liffEntry}?next=%2Ftransactions` } }, // รายการ
 
     // Bottom buttons (in-chat)
     { bounds: { x: 60, y: 870, width: 1540, height: 490 }, action: { type: 'postback', data: 'action=announce', displayText: 'ประกาศ' } },
