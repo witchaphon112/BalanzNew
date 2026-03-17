@@ -3022,7 +3022,7 @@ export default function Dashboard() {
 
                 <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
                   <div className="text-xs font-semibold text-slate-400">{t('remaining_this_month')}</div>
-                  <div className={`mt-1 text-3xl font-extrabold ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
+                  <div className={`mt-1 text-2xl sm:text-3xl font-extrabold break-words ${monthRemaining < 0 ? 'text-rose-300' : 'text-[color:var(--app-text)]'}`}>
                     {loading ? '—' : formatTHB(monthRemaining)}
                   </div>
                 </div>

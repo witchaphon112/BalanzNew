@@ -45,6 +45,32 @@
   <script>
     const statusEl = document.getElementById('status');
 
+    function parseNextPath() {
+      try {
+        const sp = new URLSearchParams(window.location.search || '');
+        let nextRaw = String(sp.get('next') || '').trim();
+
+        // When opened via `https://liff.line.me/<LIFF_ID>`, query params are often moved into `liff.state`.
+        // Example: `?liff.state=%3Fnext%3D%252Fbudget`
+        if (!nextRaw) {
+          const stateRaw = String(sp.get('liff.state') || '').trim();
+          if (stateRaw) {
+            const stateStr = stateRaw.startsWith('?') ? stateRaw.slice(1) : stateRaw;
+            const sp2 = new URLSearchParams(stateStr);
+            nextRaw = String(sp2.get('next') || '').trim();
+          }
+        }
+
+        // Best-effort decode (some environments double-encode).
+        try { if (nextRaw.includes('%')) nextRaw = decodeURIComponent(nextRaw); } catch {}
+
+        const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
+        return nextPath;
+      } catch {
+        return '';
+      }
+    }
+
     async function main() {
       try {
         // Initialize LIFF
@@ -65,9 +91,7 @@
         const encodedUserId = btoa(userId);
 
         // Optional deep-link path inside the web app (must start with "/")
-        const sp = new URLSearchParams(window.location.search || '');
-        const nextRaw = String(sp.get('next') || '').trim();
-        const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
+        const nextPath = parseNextPath();
 
         // Call backend one-tap endpoint (creates a one-time session then redirects to the web dashboard)
         const backendUrl = window.location.origin;
