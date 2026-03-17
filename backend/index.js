@@ -28,6 +28,18 @@ const reminderRoutes = require('./routes/reminders');
 const notificationSettingsRoutes = require('./routes/notificationSettings');
 const app = express();
 
+// Basic health endpoints (useful for Render uptime checks / quick verification)
+app.get('/', (req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'balanz-backend',
+    uptimeSec: Math.floor(process.uptime()),
+  });
+});
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 async function findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId } = {}) {
   if (!displayName) return null;
 
