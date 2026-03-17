@@ -2736,8 +2736,71 @@ router.get('/open-dashboard', async (req, res) => {
     const nextRaw = String(req.query.next || '').trim();
     const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
 
-    const { user } = await resolveMessagingUser(lineMessagingUserId);
+    const liffDisplayName = String(req.query.dn || '').trim();
+    const liffPictureUrl = String(req.query.pic || '').trim();
+
+    let { user } = await resolveMessagingUser(lineMessagingUserId);
     if (!user?._id) return res.status(404).send('User not found');
+
+    // Best-effort: LIFF can provide profile even when Messaging API profile fetch fails.
+    // Populate missing fields to reduce "blank profile" placeholders.
+    try {
+      const needName = !String(user?.name || '').trim();
+      const needPic = !String(user?.profilePic || '').trim();
+      let updated = false;
+      if (needName && liffDisplayName) { user.name = liffDisplayName; updated = true; }
+      if (needPic && liffPictureUrl) { user.profilePic = liffPictureUrl; updated = true; }
+      if (updated) await user.save().catch(() => {});
+    } catch {
+      // ignore
+    }
+
+    // Heuristic unify: sometimes LIFF is configured under a different LINE channel/provider than the bot,
+    // which produces a different userId and creates a second placeholder account.
+    // If this LIFF-created account has no user data yet and there's exactly one other user with the same
+    // display name that has data, merge into that user to keep "one account" for common cases.
+    try {
+      if (liffDisplayName) {
+        const [txCount, catCount, budCount] = await Promise.all([
+          Transaction.countDocuments({ userId: user._id }).catch(() => 0),
+          Category.countDocuments({ userId: user._id }).catch(() => 0),
+          Budget.countDocuments({ userId: user._id }).catch(() => 0),
+        ]);
+        const hasAnyData = (Number(txCount) + Number(catCount) + Number(budCount)) > 0;
+
+        if (!hasAnyData) {
+          const candidates = await User.find({
+            _id: { $ne: user._id },
+            name: liffDisplayName,
+            lineMessagingUserId: { $exists: true, $ne: '' },
+          }).sort({ createdAt: -1 }).limit(10);
+
+          const scored = await Promise.all((candidates || []).map(async (u) => {
+            const [t, c, b] = await Promise.all([
+              Transaction.countDocuments({ userId: u._id }).catch(() => 0),
+              Category.countDocuments({ userId: u._id }).catch(() => 0),
+              Budget.countDocuments({ userId: u._id }).catch(() => 0),
+            ]);
+            const score = (Number(t) || 0) + (Number(c) || 0) + (Number(b) || 0);
+            return { u, score };
+          }));
+
+          const withData = scored.filter((s) => s.score > 0);
+          if (withData.length === 1) {
+            const toUser = withData[0].u;
+            const fromEmail = String(user?.email || '');
+            const safeToDelete =
+              !user?.password &&
+              (fromEmail.endsWith('@local') || fromEmail.endsWith('@line.local') || /^line_/i.test(fromEmail) || /^line_msg_/i.test(fromEmail));
+
+            await mergeUsers({ fromUserId: user._id, toUserId: toUser._id, deleteSource: safeToDelete });
+            user = (await User.findById(toUser._id)) || toUser;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('open-dashboard heuristic unify skipped:', e?.message || e);
+    }
 
     const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
     const rawToken = createSessionToken();

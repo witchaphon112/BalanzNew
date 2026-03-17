@@ -107,7 +107,11 @@
 
         // Call backend one-tap endpoint (creates a one-time session then redirects to the web dashboard)
         const backendUrl = window.location.origin;
-        const redirectUrl = `${backendUrl}/webhooks/line/open-dashboard?uid=${encodedUserId}${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`;
+        const displayName = profile && profile.displayName ? String(profile.displayName) : '';
+        const pictureUrl = profile && profile.pictureUrl ? String(profile.pictureUrl) : '';
+        const dnParam = displayName ? `&dn=${encodeURIComponent(displayName)}` : '';
+        const picParam = pictureUrl ? `&pic=${encodeURIComponent(pictureUrl)}` : '';
+        const redirectUrl = `${backendUrl}/webhooks/line/open-dashboard?uid=${encodedUserId}${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}${dnParam}${picParam}`;
 
         statusEl.textContent = 'เปิด Dashboard...';
 
