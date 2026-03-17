@@ -18,12 +18,15 @@
     "crypto": "^1.0.1",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "express-session": "^1.18.2",
     "firebase-admin": "^13.4.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.18.0",
     "mongoose": "^8.17.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.10",
+    "passport": "^0.7.0",
+    "passport-line": "^0.0.4",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0"
   }
