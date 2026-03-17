@@ -161,7 +161,7 @@ async function autoUnifyMessagingUserOnLineLogin({ oauthUser, lineId, displayNam
 passport.use(new LineStrategy({
   channelID: '2008748910',
   channelSecret: '36ca849ef6db52fdf5126b41a03c6ef4',
-  callbackURL: 'http://localhost:5050/callback',
+  callbackURL: 'https://balanznew.onrender.com/callback',
   scope: ['profile', 'openid', 'email']
 }, async (accessToken, refreshToken, params, profile, done) => {
   try {
