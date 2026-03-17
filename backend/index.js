@@ -115,6 +115,43 @@ async function autoUnifyMessagingUserOnLineLogin({ oauthUser, lineId, displayNam
   if (!oauthUser || !lineId || !displayName) return oauthUser;
   if (oauthUser.lineMessagingUserId) return oauthUser;
 
+  // Deterministic unify: when LINE Login userId matches Messaging userId exactly, merge immediately.
+  try {
+    const placeholder = await User.findOne({ lineMessagingUserId: String(lineId) });
+    if (placeholder && String(placeholder._id) !== String(oauthUser._id)) {
+      const oauthCounts = await countUserData(oauthUser._id);
+      const oauthHasAny = (oauthCounts.txCount + oauthCounts.catCount + oauthCounts.budCount) > 0;
+
+      const placeholderCounts = await countUserData(placeholder._id);
+      const placeholderHasAny = (placeholderCounts.txCount + placeholderCounts.catCount + placeholderCounts.budCount) > 0;
+
+      // If the OAuth user is empty, keep the placeholder as canonical (keeps tx _id stable).
+      if (!oauthHasAny || placeholderHasAny) {
+        placeholder.lineUserId = String(lineId);
+        if (profilePic) placeholder.profilePic = profilePic;
+        if (email) placeholder.email = email;
+        await placeholder.save().catch(() => {});
+
+        const otherEmail = String(oauthUser.email || '');
+        const safeToDelete =
+          !oauthUser.password &&
+          (otherEmail.endsWith('@line.local') || otherEmail.endsWith('@local') || /^line_/i.test(otherEmail) || /^line_msg_/i.test(otherEmail));
+        await mergeUsers({ fromUserId: oauthUser._id, toUserId: placeholder._id, deleteSource: safeToDelete });
+        return (await User.findById(placeholder._id)) || placeholder;
+      }
+
+      // Otherwise merge placeholder into OAuth user.
+      const otherEmail = String(placeholder.email || '');
+      const safeToDelete =
+        !placeholder.password &&
+        (otherEmail.endsWith('@local') || /^line_/i.test(otherEmail) || /^line_msg_/i.test(otherEmail));
+      await mergeUsers({ fromUserId: placeholder._id, toUserId: oauthUser._id, deleteSource: safeToDelete });
+      return (await User.findById(oauthUser._id)) || oauthUser;
+    }
+  } catch (e) {
+    // ignore and fall back to heuristic unify
+  }
+
   const candidate = await findBotPlaceholderCandidate({ displayName, profilePic, excludeUserId: oauthUser._id });
   if (!candidate) return oauthUser;
   if (candidate.lineUserId) return oauthUser;
@@ -305,8 +342,13 @@ app.use(passport.session());
 
 // LINE Login routes
 app.get('/auth/line', passport.authenticate('line'));
+// If LINE auth fails, Passport redirects to `/login`. This backend doesn't implement a login page,
+// so forward users to the frontend with an error flag instead of showing "Cannot GET /login".
+app.get('/login', (req, res) => {
+  return res.redirect(`${FRONTEND_URL}/?error=line_login_failed`);
+});
 app.get('/callback', passport.authenticate('line', {
-  failureRedirect: '/login',
+  failureRedirect: `${FRONTEND_URL}/?error=line_login_failed`,
   session: true
 }), (req, res) => {
   // Successful authentication

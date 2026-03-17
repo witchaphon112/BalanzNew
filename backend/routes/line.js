@@ -1495,6 +1495,41 @@ async function resolveMessagingUser(lineMessagingUserId, source) {
     User.findOne({ lineUserId: lineMessagingUserId }),
   ]);
 
+  // Deterministic unify: for LIFF/LINE Login, the userId is often the same string (starts with "U...").
+  // If we have both a Messaging user and an OAuth user (lineUserId) for the same id, merge into one record
+  // so transactions show up consistently across LINE chat and web.
+  if (userByMessagingId && userByLegacyLineId && String(userByMessagingId._id) !== String(userByLegacyLineId._id)) {
+    try {
+      const [mTx, mCat, mBud, oTx, oCat, oBud] = await Promise.all([
+        Transaction.countDocuments({ userId: userByMessagingId._id }).catch(() => 0),
+        Category.countDocuments({ userId: userByMessagingId._id }).catch(() => 0),
+        Budget.countDocuments({ userId: userByMessagingId._id }).catch(() => 0),
+        Transaction.countDocuments({ userId: userByLegacyLineId._id }).catch(() => 0),
+        Category.countDocuments({ userId: userByLegacyLineId._id }).catch(() => 0),
+        Budget.countDocuments({ userId: userByLegacyLineId._id }).catch(() => 0),
+      ]);
+
+      const messagingScore = (Number(mTx) || 0) + (Number(mCat) || 0) + (Number(mBud) || 0);
+      const oauthScore = (Number(oTx) || 0) + (Number(oCat) || 0) + (Number(oBud) || 0);
+
+      // Prefer keeping the record that already has user data (transactions/categories/budgets).
+      const toUser = messagingScore >= oauthScore ? userByMessagingId : userByLegacyLineId;
+      const fromUser = toUser === userByMessagingId ? userByLegacyLineId : userByMessagingId;
+
+      const fromEmail = String(fromUser?.email || '');
+      const safeToDelete =
+        !fromUser?.password &&
+        (fromEmail.endsWith('@local') || fromEmail.endsWith('@line.local') || /^line_/i.test(fromEmail) || /^line_msg_/i.test(fromEmail));
+
+      await mergeUsers({ fromUserId: fromUser._id, toUserId: toUser._id, deleteSource: safeToDelete });
+      const unified = await User.findById(toUser._id);
+      return { user: unified || toUser, userByMessagingId, userByLegacyLineId };
+    } catch (e) {
+      console.error('resolveMessagingUser deterministic unify failed', e);
+      // fall through to best-effort behavior
+    }
+  }
+
   // If we found a legacy record that stored Messaging userId in `lineUserId`,
   // migrate it to the correct field so future lookups are consistent.
   if (!userByMessagingId && userByLegacyLineId && !userByLegacyLineId.lineMessagingUserId) {
