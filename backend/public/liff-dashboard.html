@@ -64,9 +64,14 @@
         // Encode userId
         const encodedUserId = btoa(userId);
 
-        // Call backend redirect endpoint
+        // Optional deep-link path inside the web app (must start with "/")
+        const sp = new URLSearchParams(window.location.search || '');
+        const nextRaw = String(sp.get('next') || '').trim();
+        const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
+
+        // Call backend one-tap endpoint (creates a one-time session then redirects to the web dashboard)
         const backendUrl = window.location.origin;
-        const redirectUrl = `${backendUrl}/webhooks/line/dashboard-redirect?uid=${encodedUserId}`;
+        const redirectUrl = `${backendUrl}/webhooks/line/open-dashboard?uid=${encodedUserId}${nextPath ? `&next=${encodeURIComponent(nextPath)}` : ''}`;
 
         statusEl.textContent = 'เปิด Dashboard...';
 

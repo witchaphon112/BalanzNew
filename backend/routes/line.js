@@ -9,6 +9,7 @@ const { transcribeAudioFile } = require('../utils/transcribeAudio');
 const { mergeUsers } = require('../utils/mergeUsers');
 const { parseSlipImageBuffer } = require('../utils/openaiSlip');
 const { summarizeFinanceDay } = require('../utils/openaiFinanceSummary');
+const { suggestCategoryIdFromNote } = require('../utils/openaiCategorySuggest');
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || 'db5bf415547cac649f72a92d111ea700';
 let CHANNEL_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || '';
@@ -569,6 +570,14 @@ function buildFinanceStatusFlexMessage({
   return {
     type: 'flex',
     altText: safeLabel ? `สรุปการเงิน (${safeLabel})` : 'สรุปการเงิน',
+    quickReply: {
+      items: [
+        {
+          type: 'action',
+          action: { type: 'postback', label: 'จดรายการ', data: 'action=quick_note' },
+        },
+      ],
+    },
     contents: {
       type: 'bubble',
       styles: {
@@ -904,7 +913,7 @@ function buildRecordedSuccessFlexMessage({
                   { type: 'text', text: typeLabel, size: 'sm', weight: 'bold', color: typePill.text, align: 'center' },
                 ],
               },
-              { type: 'text', text: `- ${isCategoryUnknown ? 'ไม่ระบุ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
+              { type: 'text', text: `- ${isCategoryUnknown ? 'อื่นๆ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
               {
                 type: 'text',
                 text: '↗',
@@ -953,7 +962,7 @@ function buildRecordedSuccessFlexMessage({
             type: 'box',
             layout: 'horizontal',
             contents: [
-              { type: 'text', text: `รวมหมวด ${isCategoryUnknown ? 'ไม่ระบุ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
+              { type: 'text', text: `รวมหมวด ${isCategoryUnknown ? 'อื่นๆ' : safeCategory}`, size: 'md', weight: 'bold', color: '#0F172A', flex: 1, wrap: true },
               { type: 'text', text: formatThb(safeCategoryTotal), size: 'md', weight: 'bold', color: '#22C55E', flex: 0 },
             ],
           },
@@ -1235,6 +1244,9 @@ function classifyCategoryFromNote(note, type) {
   if (has('กาแฟ', 'ชา', 'น้ำ', 'น้ำอัดลม', 'โค้ก', 'pepsi', 'coffee', 'cafe')) {
     return { name: 'เครื่องดื่ม', icon: 'drink' };
   }
+  if (has('ของใช้', 'ของใช้ส่วนตัว', 'ของใช้ในบ้าน', 'แชมพู', 'ยาสระผม', 'ครีมนวด', 'สบู่', 'ยาสีฟัน', 'แปรงสีฟัน', 'ทิชชู่', 'ผ้าอนามัย', 'ครีม', 'โลชั่น', 'shampoo', 'conditioner', 'soap', 'toothpaste')) {
+    return { name: 'ช้อปปิ้ง', icon: 'shopping' };
+  }
   if (has('grab', 'bolt', 'แท็กซี่', 'taxi', 'bts', 'mrt', 'รถเมล์', 'bus', 'train', 'เดินทาง', 'ค่าน้ำมัน', 'เติมน้ำมัน', 'parking', 'จอดรถ')) {
     return { name: 'เดินทาง', icon: 'transport' };
   }
@@ -1251,6 +1263,25 @@ function classifyCategoryFromNote(note, type) {
   return null;
 }
 
+function looksLikeTransferPayment(noteText) {
+  const t = String(noteText || '').toLowerCase();
+  return (
+    /(โอน|ชำระ|ชำระเงิน|พร้อมเพย์|promptpay|transfer|pay(ment)?|qr)/i.test(t) ||
+    /(โอนเงิน|โอนเข้|โอนออก|ตัดบัตร|บัตรเครดิต|credit\s*card|debit)/i.test(t)
+  );
+}
+
+function looksLikeNonTransferExpense(noteText) {
+  // If the note clearly looks like a purchase category (food/shopping/health/etc),
+  // treat it as non-transfer even if the slip contains "โอนเงินสำเร็จ".
+  try {
+    const hint = classifyCategoryFromNote(noteText, 'expense');
+    return Boolean(hint && hint.name);
+  } catch {
+    return false;
+  }
+}
+
 function normalizeThaiForMatch(text) {
   const normalizeDigits = (s) => String(s || '').replace(/[๐-๙]/g, (ch) => String('๐๑๒๓๔๕๖๗๘๙'.indexOf(ch)));
   return normalizeDigits(String(text || ''))
@@ -1261,6 +1292,61 @@ function normalizeThaiForMatch(text) {
     .replace(/บาท|฿/g, '')
     // keep Thai/English letters; drop punctuation/spaces
     .replace(/[^a-z\u0E00-\u0E7F]+/g, '');
+}
+
+async function findUserCategoryIdByAliases({ userId, type, aliases, iconHint } = {}) {
+  if (!userId) return null;
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const aliasList = Array.isArray(aliases) ? aliases.map((x) => String(x || '').trim()).filter(Boolean) : [];
+  const aliasNorms = aliasList.map((a) => normalizeThaiCommand(a).toLowerCase()).filter(Boolean);
+  if (aliasNorms.length === 0) return null;
+
+  const cats = await Category.find({ userId, type: safeType })
+    .select({ _id: 1, name: 1, icon: 1 })
+    .limit(300)
+    .lean()
+    .catch(() => []);
+  if (!Array.isArray(cats) || cats.length === 0) return null;
+
+  const iconNorm = iconHint ? normalizeThaiCommand(String(iconHint)).toLowerCase() : '';
+
+  let best = null;
+  let bestScore = -1;
+  for (const c of cats) {
+    const name = String(c?.name || '').trim();
+    if (!name) continue;
+    const n = normalizeThaiCommand(name).toLowerCase();
+    if (!n) continue;
+
+    let score = 0;
+    if (aliasNorms.includes(n)) score = 200;
+    else if (aliasNorms.some((a) => a && (n.includes(a) || a.includes(n)))) score = 120 + Math.min(60, n.length);
+    else continue;
+
+    if (iconNorm) {
+      const ci = normalizeThaiCommand(String(c?.icon || '')).toLowerCase();
+      if (ci && ci === iconNorm) score += 10;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  return best?._id || null;
+}
+
+function aliasesForInferredCategory(cat) {
+  const name = String(cat?.name || '').trim();
+  const icon = String(cat?.icon || '').trim();
+  if (!name) return { aliases: [], iconHint: icon };
+  if (name === 'ช้อปปิ้ง') return { aliases: ['ช้อปปิ้ง', 'ช็อปปิ้ง', 'shopping', 'ของใช้', 'ซื้อของ'], iconHint: icon || 'shopping' };
+  if (name === 'เครื่องดื่ม') return { aliases: ['เครื่องดื่ม', 'กาแฟ', 'ชา', 'drink', 'coffee'], iconHint: icon || 'drink' };
+  if (name === 'อาหาร') return { aliases: ['อาหาร', 'ข้าว', 'กับข้าว', 'food'], iconHint: icon || 'food' };
+  if (name === 'สุขภาพ') return { aliases: ['สุขภาพ', 'หมอ', 'ยา', 'health', 'medical'], iconHint: icon || 'health' };
+  if (name === 'เดินทาง') return { aliases: ['เดินทาง', 'รถ', 'รถไฟ', 'bts', 'mrt', 'grab', 'transport'], iconHint: icon || 'transport' };
+  if (name === 'บิล/สาธารณูปโภค') return { aliases: ['บิล', 'ค่าน้ำ', 'ค่าไฟ', 'อินเตอร์เน็ต', 'utilities'], iconHint: icon || 'bills' };
+  return { aliases: [name], iconHint: icon };
 }
 
 async function findBestUserCategoryMatch({ userId, noteText, preferredType }) {
@@ -1325,6 +1411,51 @@ async function ensureOtherCategoryId({ userId, type } = {}) {
   const safeType = type === 'income' ? 'income' : 'expense';
   const doc = await ensureUserCategory({ userId, type: safeType, name: 'อื่นๆ', icon: 'other' });
   return doc?._id || null;
+}
+
+async function suggestExistingCategoryIdWithAi({ userId, type, noteText } = {}) {
+  try {
+    if (!userId) return null;
+    const safeType = type === 'income' ? 'income' : 'expense';
+    const note = String(noteText || '').trim();
+    if (!note) return null;
+
+    // If the user has no categories (or only "อื่นๆ"), skip AI and fall back to "อื่นๆ".
+    const cats = await Category.find({ userId, type: safeType })
+      .select({ _id: 1, name: 1, icon: 1 })
+      .limit(120)
+      .lean()
+      .catch(() => []);
+    if (!Array.isArray(cats) || cats.length === 0) return null;
+
+    const allowTransferCategory =
+      safeType === 'expense' &&
+      looksLikeTransferPayment(note) &&
+      !looksLikeNonTransferExpense(note);
+    const transferNames = new Set(['โอนเงิน/ชำระเงิน', 'โอนเงิน', 'ชำระเงิน', 'โอน']);
+    const candidateCats = allowTransferCategory
+      ? cats
+      : cats.filter((c) => !transferNames.has(String(c?.name || '').trim()));
+    if (!candidateCats.length) return null;
+
+    const otherCat = candidateCats.find((c) => String(c?.name || '').trim() === 'อื่นๆ');
+    const withoutOther = candidateCats.filter((c) => String(c?.name || '').trim() !== 'อื่นๆ');
+    if (withoutOther.length === 0) return otherCat?._id || null;
+
+    const pickedId = await suggestCategoryIdFromNote({
+      language: 'th',
+      type: safeType,
+      noteText: note,
+      categories: candidateCats,
+    });
+    if (!pickedId) return null;
+    const match = candidateCats.find((c) => String(c?._id || '') === String(pickedId));
+    // If AI picked something not in list or empty, fall back to "อื่นๆ".
+    if (!match?._id) return otherCat?._id || null;
+    return match._id;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveMessagingUser(lineMessagingUserId) {
@@ -1550,8 +1681,13 @@ async function handleTextEvent(event) {
 
     const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}`;
     return sendReply(event.replyToken, {
-      type: 'text',
-      text: `แตะลิงก์นี้เพื่อเข้าเว็บด้วยบัญชีเดียวกับ LINE (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}`,
+      type: 'template',
+      altText: 'เข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)',
+      template: {
+        type: 'buttons',
+        text: 'เข้าเว็บด้วยบัญชีเดียวกับ LINE (ลิงก์หมดอายุใน 10 นาที)',
+        actions: [{ type: 'uri', label: 'เข้าเว็บเลย', uri: redirectUrl }],
+      },
     });
   }
 
@@ -1580,8 +1716,13 @@ async function handleTextEvent(event) {
     const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}&next=${encodeURIComponent(deepLinkNext)}`;
     const label = isOpenBudget ? 'งบประมาณ/หมวดงบ' : 'หมวด/งบประมาณ';
     return sendReply(event.replyToken, {
-      type: 'text',
-      text: `แตะลิงก์นี้เพื่อเปิดหน้า${label}ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}`,
+      type: 'template',
+      altText: `เปิดหน้า${label} (ลิงก์หมดอายุใน 10 นาที)`,
+      template: {
+        type: 'buttons',
+        text: `เปิดหน้า${label}ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)`,
+        actions: [{ type: 'uri', label: 'เปิดเลย', uri: redirectUrl }],
+      },
     });
   }
 
@@ -1767,14 +1908,22 @@ async function handleTextEvent(event) {
         if (cat && cat.name) {
           // Do NOT auto-create categories from LINE messages.
           // If the category doesn't exist, fall back to "อื่นๆ".
-          const doc = await Category.findOne({ userId: user._id, type: parsed.type, name: String(cat.name).trim() })
-            .select({ _id: 1 })
-            .lean();
-          categoryId = doc?._id || null;
+          const { aliases, iconHint } = aliasesForInferredCategory(cat);
+          categoryId = await findUserCategoryIdByAliases({ userId: user._id, type: parsed.type, aliases, iconHint });
         }
       }
     } catch (e) {
       console.warn('LINE auto-categorize failed:', e?.message || e);
+    }
+
+    // 2.5) If still unknown: ask AI to pick from existing categories (no auto-create).
+    try {
+      if (!categoryId && String(notesText || '').trim()) {
+        const aiId = await suggestExistingCategoryIdWithAi({ userId: user._id, type: parsed.type, noteText: notesText });
+        if (aiId) categoryId = aiId;
+      }
+    } catch {
+      // ignore
     }
 
     // 3) Fallback: always map to "อื่นๆ" instead of leaving category blank (uncategorized)
@@ -1910,6 +2059,12 @@ async function handleImageEvent(event) {
       const whenFromSlip = parseSlipDateTimeToDate({ date: parsed?.date, time: parsed?.time });
 
       let note = String(parsed?.notes || '').trim() || 'สลิปโอนเงิน';
+      // If notes contain generic status words + a memo, move the memo to the front.
+      // This improves auto-categorization (e.g. "ค่าของใช้ส่วนตัว ยาสระผม").
+      if (/โอนเงินสำเร็จ/i.test(note) && note.length > 16) {
+        const cleaned = note.replace(/โอนเงินสำเร็จ/gi, '').replace(/[•\-\|]+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (cleaned) note = cleaned;
+      }
       const sender = String(parsed?.sender_name || '').trim();
       const recipient = String(parsed?.recipient_name || '').trim();
       const ref = String(parsed?.reference || '').trim();
@@ -1927,22 +2082,33 @@ async function handleImageEvent(event) {
         if (cat && cat.name) {
           // Do NOT auto-create categories from LINE messages.
           // If the category doesn't exist, fall back to "อื่นๆ".
-          const doc = await Category.findOne({ userId: user._id, type, name: String(cat.name).trim() })
-            .select({ _id: 1 })
-            .lean();
-          categoryId = doc?._id || null;
+          const { aliases, iconHint } = aliasesForInferredCategory(cat);
+          categoryId = await findUserCategoryIdByAliases({ userId: user._id, type, aliases, iconHint });
         }
       } catch (e) {
         console.warn('LINE slip AI auto-categorize failed:', e?.message || e);
       }
 
+      // If still unknown: ask AI to pick from existing categories.
+      try {
+        if (!categoryId && String(note || '').trim()) {
+          const aiId = await suggestExistingCategoryIdWithAi({ userId: user._id, type, noteText: note });
+          if (aiId) categoryId = aiId;
+        }
+      } catch {
+        // ignore
+      }
+
       try {
         if (!categoryId) {
           const catName = type === 'income' ? 'รับโอน/เงินเข้า' : 'โอนเงิน/ชำระเงิน';
-          const doc = await Category.findOne({ userId: user._id, type, name: String(catName).trim() })
-            .select({ _id: 1 })
-            .lean();
-          categoryId = doc?._id || null;
+          // Only use this fallback if the note looks like a transfer/payment.
+          if (looksLikeTransferPayment(note) && !looksLikeNonTransferExpense(note)) {
+            const doc = await Category.findOne({ userId: user._id, type, name: String(catName).trim() })
+              .select({ _id: 1 })
+              .lean();
+            categoryId = doc?._id || null;
+          }
         }
       } catch (e) {
         console.warn('LINE slip AI category create failed:', e?.message || e);
@@ -2084,13 +2250,21 @@ async function handleAudioEvent(event) {
       try {
         const cat = classifyCategoryFromNote(notesText, parsed.type);
         if (cat && cat.name) {
-          const doc = await Category.findOne({ userId: user._id, type: parsed.type, name: String(cat.name).trim() })
-            .select({ _id: 1 })
-            .lean();
-          categoryId = doc?._id || null;
+          const { aliases, iconHint } = aliasesForInferredCategory(cat);
+          categoryId = await findUserCategoryIdByAliases({ userId: user._id, type: parsed.type, aliases, iconHint });
         }
       } catch (e) {
         console.warn('VOICE auto-categorize failed:', e?.message || e);
+      }
+
+      // If still unknown: ask AI to pick from existing categories.
+      try {
+        if (!categoryId && String(notesText || '').trim()) {
+          const aiId = await suggestExistingCategoryIdWithAi({ userId: user._id, type: parsed.type, noteText: notesText });
+          if (aiId) categoryId = aiId;
+        }
+      } catch {
+        // ignore
       }
 
       try {
@@ -2212,7 +2386,15 @@ async function handlePostbackEvent(event) {
     }
 
     const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}`;
-    return sendReply(event.replyToken, { type: 'text', text: `แตะลิงก์นี้เพื่อเข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}` });
+    return sendReply(event.replyToken, {
+      type: 'template',
+      altText: 'เข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)',
+      template: {
+        type: 'buttons',
+        text: 'เข้าเว็บ (ลิงก์หมดอายุใน 10 นาที)',
+        actions: [{ type: 'uri', label: 'เข้าเว็บเลย', uri: redirectUrl }],
+      },
+    });
   }
 
   if (actionValue === 'budget' || actionValue === 'open_budget' || actionValue === 'categories' || actionValue === 'open_categories') {
@@ -2234,7 +2416,15 @@ async function handlePostbackEvent(event) {
     }
 
     const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}&next=${encodeURIComponent('/budget')}`;
-    return sendReply(event.replyToken, { type: 'text', text: `แตะลิงก์นี้เพื่อไปหน้า “งบประมาณ/หมวด” ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)\n${redirectUrl}` });
+    return sendReply(event.replyToken, {
+      type: 'template',
+      altText: 'ไปหน้า งบประมาณ/หมวด (ลิงก์หมดอายุใน 10 นาที)',
+      template: {
+        type: 'buttons',
+        text: 'ไปหน้า “งบประมาณ/หมวด” ในเว็บทันที (ลิงก์หมดอายุใน 10 นาที)',
+        actions: [{ type: 'uri', label: 'เปิดเลย', uri: redirectUrl }],
+      },
+    });
   }
 
   if (actionValue === 'summary' || actionValue === 'summary_today') {
@@ -2391,24 +2581,24 @@ async function handlePostbackEvent(event) {
   return sendReply(event.replyToken, { type: 'text', text: `ไม่รองรับการกระทำ: ${actionValue || data}` });
 }
 
-// Redirect endpoint for rich menu URI action - generates JWT and redirects to dashboard
-// Usage: /line/dashboard-redirect?uid=<signed_userId>
+// Legacy redirect endpoint - generates JWT and redirects to dashboard.
+// Prefer `/webhooks/line/open-dashboard` for the one-time-session flow.
+// Usage: /webhooks/line/dashboard-redirect?uid=<base64(lineMessagingUserId)>
 router.get('/dashboard-redirect', async (req, res) => {
   try {
     const signedUid = req.query.uid;
     if (!signedUid) return res.status(400).send('Missing uid parameter');
 
-    // decode base64 signed userId (simple obfuscation - use proper signing in production)
-    let userId;
+    // decode base64 uid (simple obfuscation - use proper signing in production)
+    let lineMessagingUserId;
     try {
-      userId = Buffer.from(signedUid, 'base64').toString('utf8');
+      lineMessagingUserId = Buffer.from(signedUid, 'base64').toString('utf8');
     } catch (e) {
       return res.status(400).send('Invalid uid parameter');
     }
 
-    // find user by LINE userId
-    const user = await User.findOne({ lineUserId: userId });
-    if (!user) {
+    const { user } = await resolveMessagingUser(String(lineMessagingUserId || '').trim());
+    if (!user?._id) {
       const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
       return res.redirect(`${frontend}/login?error=user_not_found`);
     }
@@ -2417,13 +2607,83 @@ router.get('/dashboard-redirect', async (req, res) => {
     const secret = process.env.JWT_SECRET || 'dev-jwt-secret';
     const token = jwt.sign({ userId: user._id, role: user.role || 'user' }, secret, { expiresIn: '7d' });
     const frontend = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const dashboardUrl = `${frontend}/dashboard?token=${token}`;
+    const nextRaw = String(req.query.next || '').trim();
+    const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
+    const nextParam = nextPath ? `&next=${encodeURIComponent(nextPath)}` : '';
+    const profilePic = encodeURIComponent(user.profilePic || '');
+    const dashboardUrl = `${frontend}/dashboard?token=${encodeURIComponent(token)}&profilePic=${profilePic}${nextParam}`;
 
     // redirect to dashboard
     res.redirect(dashboardUrl);
   } catch (err) {
     console.error('dashboard-redirect error', err);
     res.status(500).send('Internal error');
+  }
+});
+
+// One-tap entrypoint for Rich Menu "URI action" (no extra bot message).
+// It creates the same one-time session token used by the postback flow, then redirects to session-login,
+// which finally redirects to the frontend with a JWT.
+//
+// Usage (dev): /webhooks/line/open-dashboard?uid=<base64(lineMessagingUserId)>
+// Optional: &next=/budget
+router.get('/open-dashboard', async (req, res) => {
+  try {
+    const signedUid = String(req.query.uid || '').trim();
+    if (!signedUid) return res.status(400).send('Missing uid parameter');
+
+    let lineMessagingUserId = '';
+    try {
+      lineMessagingUserId = Buffer.from(signedUid, 'base64').toString('utf8');
+    } catch {
+      lineMessagingUserId = '';
+    }
+    if (!lineMessagingUserId) return res.status(400).send('Invalid uid parameter');
+
+    const nextRaw = String(req.query.next || '').trim();
+    const nextPath = nextRaw && nextRaw.startsWith('/') ? nextRaw : '';
+
+    const { user } = await resolveMessagingUser(lineMessagingUserId);
+    if (!user?._id) return res.status(404).send('User not found');
+
+    const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+    const rawToken = createSessionToken();
+    const tokenHash = hashSessionToken(rawToken);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+
+    await LineLoginSession.create({
+      tokenHash,
+      userId: user._id,
+      lineUserId: String(lineMessagingUserId),
+      expiresAt,
+    });
+
+    const nextParam = nextPath ? `&next=${encodeURIComponent(nextPath)}` : '';
+    const redirectUrl = `${backendBase}/webhooks/line/session-login?token=${encodeURIComponent(rawToken)}${nextParam}`;
+    return res.redirect(redirectUrl);
+  } catch (err) {
+    console.error('open-dashboard error', err);
+    return res.status(500).send('Internal error');
+  }
+});
+
+// LIFF landing page (Rich Menu URI-friendly): no uid/token in the URL the user taps.
+// The LIFF JS gets the LINE userId, then redirects to `/webhooks/line/open-dashboard`.
+//
+// Usage: /webhooks/line/liff-dashboard?next=/budget
+router.get('/liff-dashboard', (req, res) => {
+  try {
+    const liffId = String(process.env.LIFF_ID || process.env.LINE_LIFF_ID || '').trim();
+    if (!liffId) return res.status(500).send('LIFF_ID not configured');
+
+    const filePath = path.join(__dirname, '../public/liff-dashboard.html');
+    let html = fs.readFileSync(filePath, 'utf8');
+    html = html.replace('{{LIFF_ID}}', liffId);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.status(200).send(html);
+  } catch (err) {
+    console.error('liff-dashboard error', err);
+    return res.status(500).send('Internal error');
   }
 });
 
@@ -2476,6 +2736,46 @@ const richUploadDir = path.join(__dirname, '../uploads/richmenu');
 try { fs.mkdirSync(richUploadDir, { recursive: true }); } catch (e) { /* ignore */ }
 const upload = multer({ dest: richUploadDir });
 
+function clampArea(area, maxW, maxH) {
+  const x = Math.max(0, Math.min(maxW - 1, Number(area?.x) || 0));
+  const y = Math.max(0, Math.min(maxH - 1, Number(area?.y) || 0));
+  const wRaw = Number(area?.width) || 0;
+  const hRaw = Number(area?.height) || 0;
+  const width = Math.max(1, Math.min(maxW - x, wRaw));
+  const height = Math.max(1, Math.min(maxH - y, hRaw));
+  return { x, y, width, height };
+}
+
+function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
+  const base = String(backendBase || '').trim() || 'http://localhost:5050';
+  const liffBase = `${base}/webhooks/line/liff-dashboard`;
+  const size = { width: 2500, height: 1686 };
+
+  // Coordinates tuned for `backend/uploads/richmenu/menuline.png` (2500x1686).
+  // Goal: make "หมวด/งบ" open the web `/budget` page in one tap via LIFF (no postback).
+  const rawAreas = [
+    // Big left panel: quick note UI in chat
+    { bounds: { x: 0, y: 0, width: 1520, height: 900 }, action: { type: 'postback', data: 'action=quick_note', displayText: 'จดรายการ' } },
+
+    // Top-right buttons (URI -> LIFF -> auto-login -> next)
+    { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fbudget` } }, // หมวด/งบ
+    { bounds: { x: 1956, y: 63, width: 515, height: 527 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fdashboard` } }, // สรุป
+
+    // Mid-right buttons
+    { bounds: { x: 1460, y: 509, width: 550, height: 631 }, action: { type: 'uri', uri: `${liffBase}?next=%2Fanalytics` } }, // วิเคราะห์
+    { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: `${liffBase}?next=%2Ftransactions` } }, // รายการ
+
+    // Bottom buttons (in-chat)
+    { bounds: { x: 60, y: 870, width: 1540, height: 490 }, action: { type: 'postback', data: 'action=announce', displayText: 'ประกาศ' } },
+    { bounds: { x: 1600, y: 870, width: 840, height: 490 }, action: { type: 'postback', data: 'action=help', displayText: 'ช่วยเหลือ' } },
+  ];
+
+  return rawAreas.map((a) => ({
+    bounds: clampArea(a.bounds, size.width, size.height),
+    action: a.action,
+  }));
+}
+
 // Health endpoint for debugging config (do not expose secrets)
 router.get('/health', (req, res) => {
   const hasToken = Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN);
@@ -2520,6 +2820,55 @@ router.get('/session-login', async (req, res) => {
   } catch (err) {
     console.error('session-login error', err);
     return res.status(500).send('Internal error');
+  }
+});
+
+// Install the default Balanz rich menu (uses the bundled `menuline.png`).
+// This makes "หมวด/งบ" open the web `/budget` page in one tap (URI -> LIFF).
+//
+// Usage:
+// - POST /webhooks/line/richmenu/install-default
+// Optional JSON body:
+// - setDefault: true|false (default true)
+// - chatBarText: string (default "เมนู")
+router.post('/richmenu/install-default', async (req, res) => {
+  try {
+    ensureClient();
+    if (!CHANNEL_TOKEN) return res.status(500).json({ error: 'LINE_CHANNEL_ACCESS_TOKEN not configured' });
+
+    const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
+    const chatBarText = String(req.body?.chatBarText || 'เมนู');
+    const setDefault = req.body?.setDefault === false ? false : true;
+
+    const richMenuObject = {
+      size: { width: 2500, height: 1686 },
+      selected: false,
+      name: 'balanz-default',
+      chatBarText,
+      areas: buildBalanzDefaultRichMenuAreas({ backendBase }),
+    };
+
+    const richMenuId = await client.createRichMenu(richMenuObject);
+
+    const imagePath = path.join(__dirname, '../uploads/richmenu/menuline.png');
+    const imgBuf = await sharp(imagePath).resize(2500, 1686, { fit: 'cover' }).png().toBuffer();
+    await client.setRichMenuImage(richMenuId, imgBuf);
+
+    const warnings = [];
+    if (setDefault) {
+      try {
+        await client.setDefaultRichMenu(richMenuId);
+      } catch (e) {
+        warnings.push({ op: 'setDefault', error: e?.message || 'setDefault failed' });
+      }
+    }
+
+    return res.json({ success: true, richMenuId, warnings });
+  } catch (err) {
+    console.error('richmenu/install-default error', err && err.response ? err.response.data : err);
+    const responseError = (err && err.response && err.response.data) ? err.response.data : (err && err.message ? err.message : 'error');
+    const status = (err && err.response && err.response.status) ? err.response.status : 500;
+    return res.status(status).json({ error: responseError });
   }
 });
 
