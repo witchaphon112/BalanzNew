@@ -18,7 +18,8 @@ const PRIMARY_COLOR_DARK = '#1D4ED8'; // blue-700
 const INCOME_COLOR = '#22C55E'; // emerald-500
 const EXPENSE_COLOR = '#F43F5E'; // rose-500
 const NET_SAVING_COLOR = '#0F172A'; // slate-900
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Use same-origin requests in the browser and rely on Next.js `rewrites()` to reach the backend.
+const API_BASE = '';
 
 const I18N = {
   th: {
@@ -1898,7 +1899,7 @@ export default function Dashboard() {
 
     try {
       const token = localStorage.getItem('token');
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const API_BASE = '';
       const res = await fetch(`${API_BASE}/api/transactions/${editingTransaction._id}`, {
         method: 'PUT',
         headers: {

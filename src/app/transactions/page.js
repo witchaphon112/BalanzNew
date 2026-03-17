@@ -41,7 +41,8 @@ import {
   X,
 } from 'lucide-react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Use same-origin requests in the browser and rely on Next.js `rewrites()` to reach the backend.
+const API_BASE = '';
 
 const MONTH_NAMES_TH = [
   'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',

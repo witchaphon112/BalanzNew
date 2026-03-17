@@ -3,9 +3,6 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 export default function Home() {
-  const backendBase = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '');
-  const lineAuthHref = backendBase ? `${backendBase}/auth/line` : '/auth/line';
-
   // Simple header component
   function Header() {
     return (
@@ -49,7 +46,7 @@ export default function Home() {
                      <div className="flex flex-col sm:flex-row flex-wrap gap-3 md:gap-4">
                       
                        <a
-                         href={lineAuthHref}
+                         href="/auth/line"
                          className="group relative inline-flex items-center justify-center px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-white bg-[#06C755] hover:bg-[#05b94d] shadow-lg hover:shadow-2xl active:scale-95 sm:transform sm:hover:-translate-y-0.5 transition-all duration-300 font-bold overflow-hidden text-base sm:text-lg w-full sm:w-auto"
                          style={{ minWidth: 180 }}
                        >

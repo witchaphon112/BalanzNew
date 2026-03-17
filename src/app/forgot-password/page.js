@@ -47,7 +47,7 @@ export default function ForgotPassword() {
     setSuccess("");
 
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const API_BASE = '';
       const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

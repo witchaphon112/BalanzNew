@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import LoadingMascot from '@/components/LoadingMascot';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Use same-origin requests in the browser and rely on Next.js `rewrites()` to reach the backend.
+const API_BASE = '';
 
 export default function Notifications() {
   const [notifications, setNotifications] = useState([]);

@@ -76,7 +76,7 @@ export default function ChangePassword() {
     try {
       setLoading(true);
       const token = localStorage.getItem("token");
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+      const API_BASE = '';
       
       const res = await fetch(`${API_BASE}/api/auth/change-password`, {
         method: "POST",

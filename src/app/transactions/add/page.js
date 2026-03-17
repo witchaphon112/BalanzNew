@@ -49,7 +49,8 @@ const CategoryIcon = ({ iconName, className = "w-6 h-6" }) => {
   return <span className="text-xl leading-none">{iconName || '?'}</span>;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+// Use same-origin requests in the browser and rely on Next.js `rewrites()` to reach the backend.
+const API_BASE = '';
 
 export default function AddTransaction() {
   const [formData, setFormData] = useState({
@@ -326,7 +327,7 @@ export default function AddTransaction() {
 
   const fetchCategories = async (token) => {
     try {
-      const res = await fetch('http://localhost:5050/api/categories', {
+      const res = await fetch(`${API_BASE}/api/categories`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -360,7 +361,7 @@ export default function AddTransaction() {
         try {
           const token = localStorage.getItem('token');
           // Add type field, default to current transaction type
-          const res = await fetch('http://localhost:5050/api/categories', {
+          const res = await fetch(`${API_BASE}/api/categories`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -399,7 +400,7 @@ export default function AddTransaction() {
         // ... (Assume budget check passed)
         
         if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบหมวดหมู่ "${categories.find(cat => cat._id === categoryId)?.name}"?`)) {
-          const res = await fetch(`http://localhost:5050/api/categories/${categoryId}`, {
+          const res = await fetch(`${API_BASE}/api/categories/${categoryId}`, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -426,7 +427,7 @@ export default function AddTransaction() {
      if (newName && newName.trim()) {
          try {
              const token = localStorage.getItem('token');
-             await fetch(`http://localhost:5050/api/categories/${category._id}`, {
+             await fetch(`${API_BASE}/api/categories/${category._id}`, {
                  method: 'PUT',
                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                  body: JSON.stringify({ name: newName, icon: category.icon, type: category.type })
@@ -1004,7 +1005,7 @@ export default function AddTransaction() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5050/api/transactions', {
+      const res = await fetch(`${API_BASE}/api/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...formData, amount: parseFloat(formData.amount) }),
