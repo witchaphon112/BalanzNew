@@ -2831,6 +2831,7 @@ router.get('/session-login', async (req, res) => {
 // Optional JSON body:
 // - setDefault: true|false (default true)
 // - chatBarText: string (default "เมนู")
+// - userId: string (LINE Messaging userId) to link this rich menu to a user (optional)
 router.post('/richmenu/install-default', async (req, res) => {
   try {
     ensureClient();
@@ -2860,6 +2861,15 @@ router.post('/richmenu/install-default', async (req, res) => {
         await client.setDefaultRichMenu(richMenuId);
       } catch (e) {
         warnings.push({ op: 'setDefault', error: e?.message || 'setDefault failed' });
+      }
+    }
+
+    const linkUserId = String(req.body?.userId || '').trim();
+    if (linkUserId) {
+      try {
+        await client.linkRichMenuToUser(linkUserId, richMenuId);
+      } catch (e) {
+        warnings.push({ op: 'linkUser', userId: linkUserId, error: e?.message || 'linkRichMenuToUser failed' });
       }
     }
 
