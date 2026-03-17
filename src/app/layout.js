@@ -66,15 +66,23 @@ export default function RootLayout({ children }) {
       const params = new URLSearchParams(window.location.search);
       const tokenFromUrl = params.get('token');
       const profilePic = params.get('profilePic');
+      const next = params.get('next');
       if (tokenFromUrl) {
         localStorage.setItem('token', tokenFromUrl);
         if (profilePic) localStorage.setItem('profilePic', decodeURIComponent(profilePic));
-        // remove token/profilePic from URL to keep it clean
+        // remove token/profilePic/next from URL to keep it clean
         params.delete('token');
         params.delete('profilePic');
+        params.delete('next');
         const newSearch = params.toString();
         const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
         window.history.replaceState({}, document.title, newUrl);
+
+        // If a deep-link target is provided, jump there after saving the token.
+        if (next && String(next).startsWith('/') && String(next) !== window.location.pathname) {
+          window.location.replace(String(next));
+          return;
+        }
       }
     } catch (e) {
       // ignore
