@@ -760,50 +760,7 @@ function buildQuickNoteFlexMessage() {
 function buildAnnounceFlexMessage() {
   // Deep link opens the LINE profile page directly in the app (better UX than https)
   const profileUrl = 'line://ti/p/@156twxxb';
-  const profileUrlHttp = 'https://line.me/R/ti/p/@156twxxb';
-  return {
-    type: 'flex',
-    altText: 'ประกาศ',
-    contents: {
-      type: 'bubble',
-      action: { type: 'uri', uri: profileUrl },
-      styles: {
-        header: { backgroundColor: '#10B981' },
-        body: { backgroundColor: '#FFFFFF' },
-      },
-      header: {
-        type: 'box',
-        layout: 'vertical',
-        paddingAll: '18px',
-        spacing: 'xs',
-        contents: [
-          { type: 'text', text: 'ประกาศ', weight: 'bold', size: 'xl', color: '#052E2B', wrap: true },
-          { type: 'text', text: 'แตะการ์ดนี้เพื่อเปิดหน้าโปรไฟล์/VOOM', size: 'sm', color: '#064E3B', wrap: true },
-        ],
-      },
-      body: {
-        type: 'box',
-        layout: 'vertical',
-        paddingAll: '18px',
-        spacing: 'md',
-        contents: [
-          {
-            type: 'box',
-            layout: 'vertical',
-            paddingAll: '12px',
-            cornerRadius: '14px',
-            backgroundColor: '#ECFDF5',
-            spacing: 'xs',
-            contents: [
-              { type: 'text', text: 'เปิดลิงก์:', size: 'sm', weight: 'bold', color: '#064E3B' },
-              { type: 'text', text: profileUrlHttp, size: 'xs', color: '#0F766E', wrap: true },
-            ],
-          },
-          { type: 'text', text: 'ทิป: แตะที่การ์ดเพื่อเปิด “หน้าโปรไฟล์” ทันที (ในแอป LINE)', size: 'xs', color: '#64748B', wrap: true },
-        ],
-      },
-    },
-  };
+  return { type: 'text', text: 'พี่กดโปรไฟล์จิ๋วเพื่อติดตามการประกาศข่าวสารได้เลยนะครับ', quickReply: { items: [{ type: 'action', action: { type: 'uri', label: 'กดโปรไฟล์จิ๋ว', uri: profileUrl } }] } };
 }
 
 async function sumCategoryTotalForMonth({ userId, categoryId, type, when } = {}) {
@@ -1252,7 +1209,9 @@ function parseTransactionText(text) {
   // Income keyword inference for inputs like: "เงินเดือน 20000", "โบนัส 5000"
   const incomeKeywords = [
     'เงินเดือน', 'โบนัส', 'รายได้', 'รายรับ', 'ค่าคอม', 'คอมมิชชั่น',
-    'commission', 'salary', 'bonus', 'income',
+    'ทุน', 'ทุนการศึกษา', 'สวัสดิการ', 'เบิก', 'ชดเชย',
+    'พ่อแม่', 'พ่อ', 'แม่', 'ครอบครัว', 'เงินให้ใช้', 'ค่าขนม',
+    'commission', 'salary', 'bonus', 'income', 'allowance', 'parents', 'scholarship', 'reimburse', 'benefit',
   ];
   const inferredIncome = incomeKeywords.some((k) => tl.includes(k));
 
@@ -1272,14 +1231,23 @@ function classifyCategoryFromNote(note, type) {
   const has = (...keys) => keys.some((k) => t.includes(k));
 
   if (type === 'income') {
-    if (has('เงินเดือน', 'salary')) return { name: 'เงินเดือน', icon: 'salary' };
-    if (has('โบนัส', 'bonus')) return { name: 'โบนัส', icon: 'gift' };
-    if (has('คืนเงิน', 'refund', 'rebate')) return { name: 'คืนเงิน', icon: 'money' };
-    if (has('ลงทุน', 'หุ้น', 'คริป', 'crypto', 'investment')) return { name: 'ลงทุน', icon: 'money' };
+    if (has('พ่อแม่', 'พ่อ', 'แม่', 'ครอบครัว', 'เงินให้ใช้', 'ค่าขนม', 'allowance', 'parents')) {
+      return { name: 'เงินสนับสนุน/ครอบครัว', icon: 'wallet' };
+    }
+    if (has('เงินเดือน', 'salary', 'ค่าจ้าง', 'wage')) return { name: 'เงินเดือน/ประจำ', icon: 'briefcase' };
+    if (has('โบนัส', 'bonus')) return { name: 'เงินเดือน/ประจำ', icon: 'briefcase' };
+    if (has('ฟรีแลนซ์', 'รับจ้าง', 'งานเสริม', 'ค่าคอม', 'คอมมิชชั่น', 'commission', 'freelance')) return { name: 'งานเสริม/ฟรีแลนซ์', icon: 'work' };
+    if (has('ทุน', 'ทุนการศึกษา', 'สวัสดิการ', 'เบิก', 'ชดเชย', 'reimburse', 'benefit', 'scholarship')) return { name: 'ทุน/สวัสดิการ', icon: 'landmark' };
+    if (has('คืนเงิน', 'รีฟันด์', 'refund', 'cashback', 'rebate')) return { name: 'คืนเงิน/รีฟันด์', icon: 'piggybank' };
+    if (has('ดอกเบี้ย', 'ปันผล', 'dividend', 'interest', 'ผลตอบแทน')) return { name: 'ดอกเบี้ย/ผลตอบแทน', icon: 'trendingup' };
+    if (has('ลงทุน', 'หุ้น', 'คริป', 'crypto', 'investment')) return { name: 'ดอกเบี้ย/ผลตอบแทน', icon: 'trendingup' };
     return null;
   }
 
   // expense
+  if (has('ค่าเทอม', 'ค่าเรียน', 'ค่าโรงเรียน', 'มหาลัย', 'มหาวิทยาลัย', 'หนังสือเรียน', 'อุปกรณ์เรียน', 'คอร์ส', 'ติว', 'ค่าสอบ', 'tuition', 'course', 'education')) {
+    return { name: 'การศึกษา', icon: 'education' };
+  }
   if (has('ข้าว', 'ก๋วยเตี๋ยว', 'อาหาร', 'ข้าวมันไก่', 'หมูปิ้ง', 'ข้าวเหนียว', 'ส้มตำ', 'ผัด', 'แกง', 'ไก่', 'หมู', 'ปลา', 'กะเพรา', 'กระเพรา')) {
     return { name: 'อาหาร', icon: 'food' };
   }
@@ -1292,6 +1260,9 @@ function classifyCategoryFromNote(note, type) {
   if (has('grab', 'bolt', 'แท็กซี่', 'taxi', 'bts', 'mrt', 'รถเมล์', 'bus', 'train', 'เดินทาง', 'ค่าน้ำมัน', 'เติมน้ำมัน', 'parking', 'จอดรถ')) {
     return { name: 'เดินทาง', icon: 'transport' };
   }
+  if (has('ค่าเช่า', 'หอ', 'คอนโด', 'บ้าน', 'ซ่อมบ้าน', 'เฟอร์', 'rent', 'apartment')) {
+    return { name: 'ที่พัก/บ้าน', icon: 'home' };
+  }
   if (has('ค่าไฟ', 'ค่าน้ำ', 'อินเตอร์เน็ต', 'เน็ตทรู', 'ais', 'dtac', 'true', 'wifi', 'โทรศัพท์', 'มือถือ', 'บิล', 'bill')) {
     return { name: 'บิล/สาธารณูปโภค', icon: 'bills' };
   }
@@ -1300,6 +1271,15 @@ function classifyCategoryFromNote(note, type) {
   }
   if (has('ยา', 'หมอ', 'โรงพยาบาล', 'คลินิก', 'health')) {
     return { name: 'สุขภาพ', icon: 'health' };
+  }
+  if (has('netflix', 'spotify', 'ดูหนัง', 'หนัง', 'โรงหนัง', 'เกม', 'เที่ยว', 'ท่องเที่ยว', 'movie', 'game', 'entertainment')) {
+    return { name: 'บันเทิง/ไลฟ์สไตล์', icon: 'music' };
+  }
+  if (has('ผ่อน', 'ดอกเบี้ย', 'บัตรเครดิต', 'สินเชื่อ', 'กยศ', 'loan', 'installment', 'credit card')) {
+    return { name: 'หนี้/ผ่อน/ดอกเบี้ย', icon: 'creditcard' };
+  }
+  if (has('ของขวัญ', 'ทำบุญ', 'บริจาค', 'donate', 'donation', 'gift')) {
+    return { name: 'ของขวัญ/ทำบุญ', icon: 'gift' };
   }
 
   return null;
@@ -1385,9 +1365,22 @@ function aliasesForInferredCategory(cat) {
   if (name === 'ช้อปปิ้ง') return { aliases: ['ช้อปปิ้ง', 'ช็อปปิ้ง', 'shopping', 'ของใช้', 'ซื้อของ'], iconHint: icon || 'shopping' };
   if (name === 'เครื่องดื่ม') return { aliases: ['เครื่องดื่ม', 'กาแฟ', 'ชา', 'drink', 'coffee'], iconHint: icon || 'drink' };
   if (name === 'อาหาร') return { aliases: ['อาหาร', 'ข้าว', 'กับข้าว', 'food'], iconHint: icon || 'food' };
+  if (name === 'การศึกษา') return { aliases: ['การศึกษา', 'ค่าเทอม', 'ค่าเรียน', 'โรงเรียน', 'มหาลัย', 'มหาวิทยาลัย', 'คอร์ส', 'ติว', 'หนังสือเรียน', 'tuition', 'course', 'education'], iconHint: icon || 'education' };
   if (name === 'สุขภาพ') return { aliases: ['สุขภาพ', 'หมอ', 'ยา', 'health', 'medical'], iconHint: icon || 'health' };
   if (name === 'เดินทาง') return { aliases: ['เดินทาง', 'รถ', 'รถไฟ', 'bts', 'mrt', 'grab', 'transport'], iconHint: icon || 'transport' };
   if (name === 'บิล/สาธารณูปโภค') return { aliases: ['บิล', 'ค่าน้ำ', 'ค่าไฟ', 'อินเตอร์เน็ต', 'utilities'], iconHint: icon || 'bills' };
+  if (name === 'ที่พัก/บ้าน') return { aliases: ['ที่พัก', 'บ้าน', 'ค่าเช่า', 'หอ', 'คอนโด', 'ซ่อมบ้าน', 'rent', 'home'], iconHint: icon || 'home' };
+  if (name === 'บันเทิง/ไลฟ์สไตล์') return { aliases: ['บันเทิง', 'ไลฟ์สไตล์', 'ดูหนัง', 'หนัง', 'เกม', 'netflix', 'spotify', 'เที่ยว', 'movie', 'game', 'entertainment'], iconHint: icon || 'music' };
+  if (name === 'หนี้/ผ่อน/ดอกเบี้ย') return { aliases: ['หนี้', 'ผ่อน', 'ดอกเบี้ย', 'บัตรเครดิต', 'สินเชื่อ', 'กยศ', 'loan', 'credit', 'installment', 'interest'], iconHint: icon || 'creditcard' };
+  if (name === 'ของขวัญ/ทำบุญ') return { aliases: ['ของขวัญ', 'ทำบุญ', 'บริจาค', 'donate', 'donation', 'gift'], iconHint: icon || 'gift' };
+
+  // Income-side common groups
+  if (name === 'เงินสนับสนุน/ครอบครัว') return { aliases: ['เงินจากพ่อแม่', 'เงินจากพ่อ', 'เงินจากแม่', 'พ่อแม่โอน', 'แม่โอน', 'พ่อโอน', 'ครอบครัว', 'เงินให้ใช้', 'ค่าขนม', 'allowance', 'parents'], iconHint: icon || 'wallet' };
+  if (name === 'เงินเดือน/ประจำ') return { aliases: ['เงินเดือน', 'salary', 'ค่าจ้าง', 'wage', 'รายได้ประจำ'], iconHint: icon || 'briefcase' };
+  if (name === 'งานเสริม/ฟรีแลนซ์') return { aliases: ['งานเสริม', 'ฟรีแลนซ์', 'รับจ้าง', 'ค่าคอม', 'คอมมิชชั่น', 'commission', 'freelance'], iconHint: icon || 'work' };
+  if (name === 'ทุน/สวัสดิการ') return { aliases: ['ทุน', 'ทุนการศึกษา', 'สวัสดิการ', 'เบิก', 'ชดเชย', 'reimburse', 'benefit', 'scholarship'], iconHint: icon || 'landmark' };
+  if (name === 'คืนเงิน/รีฟันด์') return { aliases: ['คืนเงิน', 'รีฟันด์', 'refund', 'cashback', 'rebate'], iconHint: icon || 'piggybank' };
+  if (name === 'ดอกเบี้ย/ผลตอบแทน') return { aliases: ['ดอกเบี้ย', 'ปันผล', 'dividend', 'interest', 'ผลตอบแทน'], iconHint: icon || 'trendingup' };
   return { aliases: [name], iconHint: icon };
 }
 
@@ -1446,6 +1439,37 @@ async function ensureUserCategory({ userId, type, name, icon }) {
     if (fallback) return fallback;
     throw e;
   }
+}
+
+function canAutoCreateInferredCategory({ type, name } = {}) {
+  const safeType = type === 'income' ? 'income' : 'expense';
+  const n = String(name || '').trim();
+  if (!n || n === 'อื่นๆ') return false;
+
+  const expenseAllowed = new Set([
+    'อาหาร',
+    'เครื่องดื่ม',
+    'ช้อปปิ้ง',
+    'เดินทาง',
+    'ที่พัก/บ้าน',
+    'บิล/สาธารณูปโภค',
+    'สุขภาพ',
+    'การศึกษา',
+    'บันเทิง/ไลฟ์สไตล์',
+    'หนี้/ผ่อน/ดอกเบี้ย',
+    'ของขวัญ/ทำบุญ',
+  ]);
+
+  const incomeAllowed = new Set([
+    'เงินสนับสนุน/ครอบครัว',
+    'เงินเดือน/ประจำ',
+    'งานเสริม/ฟรีแลนซ์',
+    'ทุน/สวัสดิการ',
+    'คืนเงิน/รีฟันด์',
+    'ดอกเบี้ย/ผลตอบแทน',
+  ]);
+
+  return safeType === 'income' ? incomeAllowed.has(n) : expenseAllowed.has(n);
 }
 
 async function ensureOtherCategoryId({ userId, type } = {}) {
@@ -2068,17 +2092,22 @@ async function handleTextEvent(event) {
           const { aliases, iconHint } = aliasesForInferredCategory(cat);
           categoryId = await findUserCategoryIdByAliases({ userId: user._id, type: parsed.type, aliases, iconHint });
 
-          // If the user has no categories yet, auto-create "อาหาร" when the note clearly matches food.
-          // This makes the first LINE message (e.g., "ข้าวมันไก่ 40") feel correct without manual setup.
-          if (!categoryId && String(parsed.type) === 'expense' && String(cat?.name || '').trim() === 'อาหาร') {
-            const existing = await Category.find({ userId: user._id, type: 'expense' })
+          // If the user has no categories yet (or only "อื่นๆ"), auto-create a sensible inferred category.
+          // This makes the first LINE message feel correct without manual setup.
+          if (!categoryId && canAutoCreateInferredCategory({ type: parsed.type, name: cat?.name })) {
+            const existing = await Category.find({ userId: user._id, type: parsed.type })
               .select({ name: 1 })
-              .limit(50)
+              .limit(80)
               .lean()
               .catch(() => []);
             const nonOtherCount = (existing || []).filter((c) => String(c?.name || '').trim() && String(c?.name || '').trim() !== 'อื่นๆ').length;
             if (nonOtherCount === 0) {
-              const created = await ensureUserCategory({ userId: user._id, type: 'expense', name: 'อาหาร', icon: iconHint || 'food' });
+              const created = await ensureUserCategory({
+                userId: user._id,
+                type: parsed.type,
+                name: String(cat?.name || '').trim(),
+                icon: iconHint || String(cat?.icon || '').trim() || 'other',
+              });
               if (created?._id) categoryId = created._id;
             }
           }

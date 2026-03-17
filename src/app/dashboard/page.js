@@ -3003,12 +3003,12 @@ export default function Dashboard() {
               </div>
 
               {/* Summary grid (match reference UI) */}
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="rounded-3xl border border-[color:var(--app-border)] bg-[var(--app-surface)] p-4 shadow-sm shadow-black/10">
                   <div className="text-xs font-semibold text-slate-400">{t('spent_today')}</div>
-                  <div className="mt-1 flex items-end gap-2">
-                    <div className="text-2xl font-extrabold text-[color:var(--app-text)]">{formatTHB(todaySpend)}</div>
-                    <div className="pb-1 text-sm font-semibold text-[color:var(--app-muted-2)]">
+                  <div className="mt-1 flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-2 min-w-0">
+                    <div className="text-xl sm:text-2xl font-extrabold text-[color:var(--app-text)] break-words">{formatTHB(todaySpend)}</div>
+                    <div className="sm:pb-1 text-xs sm:text-sm font-semibold text-[color:var(--app-muted-2)] break-words">
                       {dailyTargetToday > 0 ? t('per_day_allowance', { amount: formatTHB(dailyTargetToday) }) : t('no_income_this_month')}
                     </div>
                   </div>
