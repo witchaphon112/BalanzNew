@@ -2021,7 +2021,7 @@ async function handleImageEvent(event) {
   }
 
   // Ack quickly, then OCR + save transaction asynchronously (replyToken can be used only once).
-  await sendReply(event.replyToken, { type: 'text', text: 'รับรูปแล้ว กำลังอ่านสลิปด้วย AI ให้...' });
+  await sendReply(event.replyToken, { type: 'text', text: 'รับรูปแล้วครับ จิ๋วกำลังอ่านสลิปให้ พี่รอสักครูนะค๊าบบ..' });
 
   (async () => {
     try {
