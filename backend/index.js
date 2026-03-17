@@ -347,10 +347,24 @@ app.get('/auth/line', passport.authenticate('line'));
 app.get('/login', (req, res) => {
   return res.redirect(`${FRONTEND_URL}/?error=line_login_failed`);
 });
-app.get('/callback', passport.authenticate('line', {
-  failureRedirect: `${FRONTEND_URL}/?error=line_login_failed`,
-  session: true
-}), (req, res) => {
+app.get('/callback', (req, res, next) => {
+  return passport.authenticate('line', { session: true }, (err, user, info) => {
+    if (err || !user) {
+      const reason =
+        String(info?.message || info?.error || err?.message || 'unknown').slice(0, 120);
+      console.error('[line-login] callback failed:', { reason });
+      return res.redirect(`${FRONTEND_URL}/?error=line_login_failed&reason=${encodeURIComponent(reason)}`);
+    }
+    req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        const reason = String(loginErr?.message || 'login_failed').slice(0, 120);
+        console.error('[line-login] req.logIn failed:', { reason });
+        return res.redirect(`${FRONTEND_URL}/?error=line_login_failed&reason=${encodeURIComponent(reason)}`);
+      }
+      return next();
+    });
+  })(req, res, next);
+}, (req, res) => {
   // Successful authentication
   // Generate JWT token for the user
   const user = req.user;
