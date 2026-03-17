@@ -377,7 +377,7 @@ app.get('/callback', (req, res, next) => {
   const profilePic = encodeURIComponent(user.profilePic || '');
   res.redirect(`${FRONTEND_URL}/dashboard?token=${encodeURIComponent(token)}&profilePic=${profilePic}`);
 });
-
+//
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))

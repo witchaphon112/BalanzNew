@@ -1986,10 +1986,23 @@ async function handleTextEvent(event) {
       if (!categoryId) {
         const cat = classifyCategoryFromNote(notesText, parsed.type);
         if (cat && cat.name) {
-          // Do NOT auto-create categories from LINE messages.
-          // If the category doesn't exist, fall back to "อื่นๆ".
           const { aliases, iconHint } = aliasesForInferredCategory(cat);
           categoryId = await findUserCategoryIdByAliases({ userId: user._id, type: parsed.type, aliases, iconHint });
+
+          // If the user has no categories yet, auto-create "อาหาร" when the note clearly matches food.
+          // This makes the first LINE message (e.g., "ข้าวมันไก่ 40") feel correct without manual setup.
+          if (!categoryId && String(parsed.type) === 'expense' && String(cat?.name || '').trim() === 'อาหาร') {
+            const existing = await Category.find({ userId: user._id, type: 'expense' })
+              .select({ name: 1 })
+              .limit(50)
+              .lean()
+              .catch(() => []);
+            const nonOtherCount = (existing || []).filter((c) => String(c?.name || '').trim() && String(c?.name || '').trim() !== 'อื่นๆ').length;
+            if (nonOtherCount === 0) {
+              const created = await ensureUserCategory({ userId: user._id, type: 'expense', name: 'อาหาร', icon: iconHint || 'food' });
+              if (created?._id) categoryId = created._id;
+            }
+          }
         }
       }
     } catch (e) {
