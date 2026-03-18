@@ -1793,7 +1793,8 @@ async function handleTextEvent(event) {
   // NOTE: the server cannot force the client to open a link automatically — user must tap the quick-reply button.
   const isAnnounce = /^\s*ประกาศ\s*$/i.test(text);
   if (isAnnounce) {
-    return sendReply(event.replyToken, buildAnnounceFlexMessage());
+    // Do not send any message bubble. Use the rich menu "ประกาศ" (URI action) to open the VOOM/profile link.
+    return null;
   }
 
   if (!lineMessagingUserId) {
@@ -3136,6 +3137,7 @@ router.get('/session-login', async (req, res) => {
 // - setDefault: true|false (default true)
 // - chatBarText: string (default "เมนู")
 // - userId: string (LINE Messaging userId) to link this rich menu to a user (optional)
+// - forceRelink: true|false (default false) when userId provided, unlink any existing rich menu from that user before linking
 router.post('/richmenu/install-default', async (req, res) => {
   try {
     ensureClient();
@@ -3144,6 +3146,7 @@ router.post('/richmenu/install-default', async (req, res) => {
     const backendBase = process.env.BACKEND_URL || 'http://localhost:5050';
     const chatBarText = String(req.body?.chatBarText || 'เมนู');
     const setDefault = req.body?.setDefault === false ? false : true;
+    const forceRelink = req.body?.forceRelink === true;
 
     const richMenuObject = {
       size: { width: 2500, height: 1686 },
@@ -3171,6 +3174,16 @@ router.post('/richmenu/install-default', async (req, res) => {
     const linkUserId = String(req.body?.userId || '').trim();
     if (linkUserId) {
       try {
+        if (forceRelink) {
+          try {
+            // If a rich menu is already linked to this user, default rich menu won't override it.
+            // Unlink first so the new one takes effect immediately.
+            await client.getRichMenuIdOfUser(linkUserId);
+            await client.unlinkRichMenuFromUser(linkUserId);
+          } catch (e) {
+            // Ignore "not found" etc. We'll still attempt to link the new one.
+          }
+        }
         await client.linkRichMenuToUser(linkUserId, richMenuId);
       } catch (e) {
         warnings.push({ op: 'linkUser', userId: linkUserId, error: e?.message || 'linkRichMenuToUser failed' });
