@@ -758,8 +758,8 @@ function buildQuickNoteFlexMessage() {
 }
 
 function buildAnnounceFlexMessage() {
-  // Deep link opens the LINE profile page directly in the app (better UX than https)
-  const profileUrl = 'line://ti/p/@156twxxb';
+  // Opens the "ประกาศ" (LINE VOOM) profile link.
+  const profileUrl = 'https://linevoom.line.me/user/_dSs5kG-khi7BnuX1n_8YC2waG8f69Rq3sXRBcHg';
   return { type: 'text', text: 'พี่กดโปรไฟล์จิ๋วเพื่อติดตามการประกาศข่าวสารได้เลยนะครับ', quickReply: { items: [{ type: 'action', action: { type: 'uri', label: 'กดโปรไฟล์จิ๋ว', uri: profileUrl } }] } };
 }
 
@@ -2774,7 +2774,8 @@ async function handlePostbackEvent(event) {
   }
 
   if (actionValue === 'announce' || actionValue === 'ประกาศ') {
-    return sendReply(event.replyToken, buildAnnounceFlexMessage());
+    // No reply message (avoid sending chat text). Prefer using Rich Menu URI actions for announcements.
+    return null;
   }
 
   // unknown/unsupported postback: respond minimally for debugging
@@ -3055,7 +3056,8 @@ function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
   // Goal: make "หมวด/งบ" open the web `/budget` page in one tap via LIFF (no postback).
   const rawAreas = [
     // Big left panel: quick note UI in chat
-    { bounds: { x: 0, y: 0, width: 1520, height: 900 }, action: { type: 'postback', data: 'action=quick_note', displayText: 'จดรายการ' } },
+    // Note: omit `displayText` so tapping won't insert a chat bubble.
+    { bounds: { x: 0, y: 0, width: 1520, height: 900 }, action: { type: 'postback', data: 'action=quick_note' } },
 
     // Top-right buttons (URI -> LIFF -> auto-login -> next)
     { bounds: { x: 1515, y: 62, width: 515, height: 527 }, action: { type: 'uri', uri: liffUri('/budget') } }, // หมวด/งบ
@@ -3066,8 +3068,10 @@ function buildBalanzDefaultRichMenuAreas({ backendBase } = {}) {
     { bounds: { x: 1960, y: 509, width: 500, height: 627 }, action: { type: 'uri', uri: liffUri('/transactions') } }, // รายการ
 
     // Bottom buttons (in-chat)
-    { bounds: { x: 60, y: 870, width: 1540, height: 490 }, action: { type: 'postback', data: 'action=announce', displayText: 'ประกาศ' } },
-    { bounds: { x: 1600, y: 870, width: 840, height: 490 }, action: { type: 'postback', data: 'action=help', displayText: 'ช่วยเหลือ' } },
+    // "ประกาศ": open LINE VOOM profile directly (no bot message)
+    { bounds: { x: 60, y: 870, width: 1540, height: 490 }, action: { type: 'uri', uri: 'https://linevoom.line.me/user/_dSs5kG-khi7BnuX1n_8YC2waG8f69Rq3sXRBcHg' } },
+    // Note: omit `displayText` so tapping won't insert a chat bubble.
+    { bounds: { x: 1600, y: 870, width: 840, height: 490 }, action: { type: 'postback', data: 'action=help' } },
   ];
 
   return rawAreas.map((a) => ({
